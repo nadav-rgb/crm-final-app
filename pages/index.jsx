@@ -88,60 +88,81 @@ return (
 <div style={{
   display: 'grid',
   gridTemplateColumns: 'repeat(3, 1fr)',
-  gap: '20px',
-  marginBottom: 28
+  gap: '24px',
+  marginBottom: 36
 }}>
   {[
-    { num: visibleContacts.length, label: 'לקוחות', color: '#6c5ce7', accent: 'rgba(108,92,231,0.10)' },
-    { num: withActions.length, label: 'פעולות ממתינות', color: '#f39c12', accent: 'rgba(243,156,18,0.10)' },
-    { num: needsRenew.length, label: 'דורשים חידוש', color: '#e74c3c', accent: 'rgba(231,76,60,0.10)' },
-  ].map(({ num, label, color, accent }) => (
+    { num: visibleContacts.length, label: 'לקוחות', color: '#6c5ce7', rgb: '108,92,231' },
+    { num: withActions.length, label: 'פעולות ממתינות', color: '#f59e0b', rgb: '245,158,11' },
+    { num: needsRenew.length, label: 'דורשים חידוש', color: '#ef4444', rgb: '239,68,68' },
+  ].map(({ num, label, color, rgb }) => (
     <div
       key={label}
       style={{
-        background: 'linear-gradient(145deg, #ffffff 0%, #f9fafb 100%)',
+        background: `linear-gradient(160deg, rgba(${rgb},0.04) 0%, #ffffff 45%)`,
         borderRadius: '20px',
-        padding: '28px 24px',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 10px 32px rgba(0,0,0,0.07)',
-        border: '1px solid rgba(0,0,0,0.06)',
+        padding: '32px 28px 28px',
+        boxShadow: `0 0 0 1px rgba(0,0,0,0.055), 0 2px 4px rgba(0,0,0,0.04), 0 12px 28px rgba(0,0,0,0.07), 0 32px 56px rgba(${rgb},0.07)`,
         display: 'flex',
         flexDirection: 'column',
-        gap: '14px',
-        transition: 'transform 0.2s ease, box-shadow 0.2s ease',
-        cursor: 'pointer'
+        gap: '6px',
+        transition: 'transform 0.28s cubic-bezier(0.34,1.2,0.64,1), box-shadow 0.28s ease',
+        cursor: 'pointer',
+        position: 'relative',
+        overflow: 'hidden'
       }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.transform = 'translateY(-3px)';
-        e.currentTarget.style.boxShadow = '0 4px 8px rgba(0,0,0,0.04), 0 18px 44px rgba(0,0,0,0.10)';
+        e.currentTarget.style.transform = 'translateY(-6px)';
+        e.currentTarget.style.boxShadow = `0 0 0 1px rgba(0,0,0,0.055), 0 8px 16px rgba(0,0,0,0.06), 0 24px 48px rgba(0,0,0,0.10), 0 48px 72px rgba(${rgb},0.10)`;
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.transform = 'translateY(0)';
-        e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.04), 0 10px 32px rgba(0,0,0,0.07)';
+        e.currentTarget.style.boxShadow = `0 0 0 1px rgba(0,0,0,0.055), 0 2px 4px rgba(0,0,0,0.04), 0 12px 28px rgba(0,0,0,0.07), 0 32px 56px rgba(${rgb},0.07)`;
       }}
     >
+      {/* Thin colored top bar */}
       <div style={{
-        width: 40,
-        height: 40,
-        borderRadius: 12,
-        background: accent,
+        position: 'absolute',
+        top: 0, left: 0, right: 0,
+        height: 3,
+        background: `linear-gradient(90deg, ${color}cc, ${color}44)`,
+        borderRadius: '20px 20px 0 0'
+      }} />
+
+      {/* Colored dot badge */}
+      <div style={{
+        width: 32,
+        height: 32,
+        borderRadius: 10,
+        background: `rgba(${rgb},0.10)`,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
+        marginBottom: 14
       }}>
-        <div style={{
-          width: 12,
-          height: 12,
-          borderRadius: '50%',
-          background: color,
-          boxShadow: `0 0 0 3px ${color}30`
-        }} />
+        <div style={{ width: 10, height: 10, borderRadius: '50%', background: color }} />
       </div>
 
-      <div style={{ fontSize: 44, fontWeight: 800, color: '#111827', lineHeight: 1, letterSpacing: '-0.02em' }}>
+      {/* Hero number */}
+      <div style={{
+        fontSize: 58,
+        fontWeight: 800,
+        color: '#0f172a',
+        lineHeight: 1,
+        letterSpacing: '-0.035em',
+        fontVariantNumeric: 'tabular-nums'
+      }}>
         {num}
       </div>
 
-      <div style={{ fontSize: 13, fontWeight: 500, color: '#6b7280', lineHeight: 1.3 }}>
+      {/* Label — clearly secondary */}
+      <div style={{
+        fontSize: 12,
+        fontWeight: 500,
+        color: '#94a3b8',
+        letterSpacing: '0.02em',
+        marginTop: 8
+      }}>
         {label}
       </div>
     </div>
