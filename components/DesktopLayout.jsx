@@ -45,7 +45,7 @@ export default function DesktopLayout({ children, title, subtitle, actions, back
           background: 'linear-gradient(180deg, #8b6dd1 0%, #5a4bd1 50%, #4a3bc1 100%)',
           display: 'flex', flexDirection: 'column',
           transition: 'width 0.38s cubic-bezier(0.4, 0, 0.2, 1)',
-          overflow: 'hidden', zIndex: 100,
+          overflow: 'hidden', zIndex: 3000,
           boxShadow: open ? '-8px 0 32px rgba(90,75,209,0.22)' : '-2px 0 10px rgba(90,75,209,0.09)',
         }}
         onMouseEnter={() => setOpen(true)}
@@ -156,7 +156,14 @@ export default function DesktopLayout({ children, title, subtitle, actions, back
       </div>
 
       {/* ═══ תוכן ═══ */}
-      <div style={{ flex: 1, marginRight: 62, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+     <div style={{
+  flex: 1,
+  marginRight: open ? 230 : 62,
+  transition: 'margin-right 0.3s ease',
+  display: 'flex',
+  flexDirection: 'column',
+  overflow: 'hidden'
+}}>
         {/* כותרת */}
         <div style={{ background: 'rgba(255,255,255,0.8)', backdropFilter: 'blur(12px)', borderBottom: '0.5px solid rgba(0,0,0,0.06)', padding: '16px 28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, position: 'relative', zIndex: 2000 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
