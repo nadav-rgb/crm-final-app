@@ -120,7 +120,7 @@ export default function ContactsPage() {
 
       {/* תצוגת ריבועים */}
       {viewMode === 'grid' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
           {sorted.length === 0
             ? <div style={{ gridColumn: '1/-1', textAlign: 'center', color: '#ccc', padding: 48, fontSize: 14, fontWeight: 500 }}>לא נמצאו לקוחות</div>
             : sorted.map(c => <GridCard key={c.id} contact={c} can={can} viewMode={viewMode} />)
