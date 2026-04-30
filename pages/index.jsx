@@ -89,7 +89,8 @@ return (
   display: 'grid',
   gridTemplateColumns: 'repeat(3, 1fr)',
   gap: '24px',
-  marginBottom: 36
+  marginTop: 8,
+  marginBottom: 44
 }}>
   {[
     { num: visibleContacts.length, label: 'לקוחות', color: '#6c5ce7', rgb: '108,92,231' },
@@ -99,10 +100,10 @@ return (
     <div
       key={label}
       style={{
-        background: `linear-gradient(160deg, rgba(${rgb},0.04) 0%, #ffffff 45%)`,
+        background: '#ffffff',
         borderRadius: '20px',
         padding: '32px 28px 28px',
-        boxShadow: `0 0 0 1px rgba(0,0,0,0.055), 0 2px 4px rgba(0,0,0,0.04), 0 12px 28px rgba(0,0,0,0.07), 0 32px 56px rgba(${rgb},0.07)`,
+        boxShadow: `0 0 0 1px rgba(0,0,0,0.07), 0 2px 6px rgba(0,0,0,0.06), 0 16px 32px rgba(0,0,0,0.10), 0 40px 64px rgba(0,0,0,0.06), 0 0 72px 10px rgba(${rgb},0.08)`,
         display: 'flex',
         flexDirection: 'column',
         gap: '6px',
@@ -112,12 +113,12 @@ return (
         overflow: 'hidden'
       }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.transform = 'translateY(-6px)';
-        e.currentTarget.style.boxShadow = `0 0 0 1px rgba(0,0,0,0.055), 0 8px 16px rgba(0,0,0,0.06), 0 24px 48px rgba(0,0,0,0.10), 0 48px 72px rgba(${rgb},0.10)`;
+        e.currentTarget.style.transform = 'translateY(-7px)';
+        e.currentTarget.style.boxShadow = `0 0 0 1px rgba(0,0,0,0.07), 0 8px 20px rgba(0,0,0,0.08), 0 28px 52px rgba(0,0,0,0.13), 0 56px 80px rgba(0,0,0,0.07), 0 0 96px 14px rgba(${rgb},0.12)`;
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.transform = 'translateY(0)';
-        e.currentTarget.style.boxShadow = `0 0 0 1px rgba(0,0,0,0.055), 0 2px 4px rgba(0,0,0,0.04), 0 12px 28px rgba(0,0,0,0.07), 0 32px 56px rgba(${rgb},0.07)`;
+        e.currentTarget.style.boxShadow = `0 0 0 1px rgba(0,0,0,0.07), 0 2px 6px rgba(0,0,0,0.06), 0 16px 32px rgba(0,0,0,0.10), 0 40px 64px rgba(0,0,0,0.06), 0 0 72px 10px rgba(${rgb},0.08)`;
       }}
     >
       {/* Thin colored top bar */}
@@ -125,7 +126,7 @@ return (
         position: 'absolute',
         top: 0, left: 0, right: 0,
         height: 3,
-        background: `linear-gradient(90deg, ${color}cc, ${color}44)`,
+        background: `linear-gradient(90deg, ${color}, ${color}55)`,
         borderRadius: '20px 20px 0 0'
       }} />
 
@@ -145,11 +146,11 @@ return (
 
       {/* Hero number */}
       <div style={{
-        fontSize: 58,
+        fontSize: 64,
         fontWeight: 800,
         color: '#0f172a',
         lineHeight: 1,
-        letterSpacing: '-0.035em',
+        letterSpacing: '-0.04em',
         fontVariantNumeric: 'tabular-nums'
       }}>
         {num}
@@ -161,7 +162,7 @@ return (
         fontWeight: 500,
         color: '#94a3b8',
         letterSpacing: '0.02em',
-        marginTop: 8
+        marginTop: 10
       }}>
         {label}
       </div>
