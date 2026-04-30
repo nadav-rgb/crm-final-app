@@ -1,0 +1,137 @@
+/* ============================================================
+   DESIGN TOKENS — מקרבים CRM
+   כאן משנים צבעים, גדלים, צללים ומרווחים לכל המערכת
+   ============================================================ */
+
+:root {
+
+  /* ── Brand Colors ─────────────────────────────────────────
+     לשנות כאן כדי לעדכן את כל צבעי המותג במערכת          */
+  --color-brand-primary:     #6c5ce7;
+  --color-brand-primary-hover: #5a4bd1;
+  --color-brand-light:       #f0effe;
+  --color-brand-subtle:      rgba(108, 92, 231, 0.08);
+
+  /* ── Background ──────────────────────────────────────────
+     רקע הדף הראשי ורקע כרטיסים                           */
+  --color-bg-page:           #fff8f0;
+  --color-bg-page-gradient:  linear-gradient(160deg, #fff8f0 0%, #fff2e6 50%, #ffead8 100%);
+  --color-bg-card:           #fffaf5;
+  --color-bg-card-hover:     #fff5ee;
+  --color-bg-white:          #ffffff;
+
+  /* ── Text ────────────────────────────────────────────────
+     היררכיית טקסט — primary, secondary, muted             */
+  --color-text-primary:      #1a1a1a;
+  --color-text-secondary:    #555555;
+  --color-text-muted:        #aaaaaa;
+  --color-text-placeholder:  #bbbbbb;
+
+  /* ── Sidebar ─────────────────────────────────────────────
+     לשנות את גרדיאנט הסרגל הצדדי כאן                     */
+  --color-sidebar-from:      #8b6dd1;
+  --color-sidebar-to:        #4a3bc1;
+  --color-sidebar-text:      rgba(255, 255, 255, 0.82);
+  --color-sidebar-text-active: #ffffff;
+  --color-sidebar-hover:     rgba(255, 255, 255, 0.10);
+  --color-sidebar-active:    rgba(255, 255, 255, 0.20);
+
+  /* ── Status Colors ───────────────────────────────────────
+     צבעי סטטוס לקוחות — לפי שמות הסטטוסים החדשים:
+     קשר חי / קשר מתמשך / דורש חידוש / על סף ניתוק        */
+  --status-active-color:     #27ae60;
+  --status-active-bg:        #edfaf1;
+  --status-active-border:    #27ae60;
+
+  --status-ongoing-color:    #2980b9;
+  --status-ongoing-bg:       #ebf5fb;
+  --status-ongoing-border:   #3498db;
+
+  --status-renew-color:      #d68910;
+  --status-renew-bg:         #fff8ec;
+  --status-renew-border:     #f39c12;
+
+  --status-edge-color:       #c0392b;
+  --status-edge-bg:          #fff0f0;
+  --status-edge-border:      #e74c3c;
+
+  --status-former-color:     #888888;
+  --status-former-bg:        #f5f5f5;
+  --status-former-border:    #cccccc;
+
+  /* ── Borders ─────────────────────────────────────────────*/
+  --color-border:            rgba(0, 0, 0, 0.07);
+  --color-border-subtle:     rgba(0, 0, 0, 0.04);
+  --color-border-input:      #e8e8e8;
+  --color-border-focus:      var(--color-brand-primary);
+
+  /* ── Semantic Colors ──────────────────────────────────── */
+  --color-success:           #27ae60;
+  --color-success-bg:        #edfaf1;
+  --color-warning:           #f39c12;
+  --color-warning-bg:        #fff8ec;
+  --color-danger:            #e74c3c;
+  --color-danger-bg:         #fff0f0;
+
+  /* ── Typography ──────────────────────────────────────────
+     גדלי פונט — לשנות כאן להתאמת טיפוגרפיה כללית         */
+  --font-family:             'Rubik', sans-serif;
+  --font-size-xs:            11px;
+  --font-size-sm:            12px;
+  --font-size-base:          13px;
+  --font-size-md:            14px;
+  --font-size-lg:            15px;
+  --font-size-xl:            17px;
+  --font-size-2xl:           20px;
+  --font-size-3xl:           24px;
+  --font-weight-regular:     400;
+  --font-weight-medium:      500;
+  --font-weight-bold:        700;
+  --line-height-normal:      1.5;
+  --line-height-relaxed:     1.8;
+
+  /* ── Spacing ─────────────────────────────────────────────
+     מרווחים — base unit = 4px                              */
+  --space-1:   4px;
+  --space-2:   8px;
+  --space-3:   12px;
+  --space-4:   16px;
+  --space-5:   20px;
+  --space-6:   24px;
+  --space-8:   32px;
+  --space-10:  40px;
+  --space-12:  48px;
+
+  /* ── Border Radius ───────────────────────────────────────
+     לשנות כאן כדי להפוך ל"מרובע יותר" או "עגול יותר"     */
+  --radius-sm:   8px;
+  --radius-md:   12px;
+  --radius-lg:   14px;
+  --radius-xl:   16px;
+  --radius-2xl:  20px;
+  --radius-full: 9999px;
+
+  /* ── Shadows ─────────────────────────────────────────────
+     צללים — להגדיל עבור מראה "מורם" יותר                  */
+  --shadow-xs:  0 1px 2px rgba(0,0,0,0.04);
+  --shadow-sm:  0 1px 4px rgba(0,0,0,0.06);
+  --shadow-md:  0 2px 8px rgba(0,0,0,0.08);
+  --shadow-lg:  0 4px 16px rgba(0,0,0,0.10);
+  --shadow-xl:  0 8px 32px rgba(0,0,0,0.12);
+  --shadow-brand: 0 4px 16px rgba(108,92,231,0.25);
+  --shadow-brand-hover: 0 6px 24px rgba(108,92,231,0.35);
+
+  /* ── Motion ──────────────────────────────────────────────
+     אנימציות — לשנות כאן כדי להאיץ/להאיט את כל המערכת    */
+  --motion-fast:    0.15s ease;
+  --motion-normal:  0.22s ease;
+  --motion-slow:    0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  --motion-bounce:  0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ── Z-index ──────────────────────────────────────────── */
+  --z-base:     1;
+  --z-dropdown: 50;
+  --z-sidebar:  100;
+  --z-modal:    200;
+  --z-toast:    300;
+}

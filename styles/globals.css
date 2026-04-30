@@ -1,0 +1,612 @@
+/**
+ * globals.css — סגנונות בסיס מערכת מקרבים
+ * ==========================================
+ * TODO [future]: העבר לחלוטין ל-CSS Variables + Tailwind / CSS Modules
+ *
+ * מבנה:
+ *  1. Google Fonts
+ *  2. Reset
+ *  3. CSS Variables (tokens)
+ *  4. Base styles
+ *  5. Layout
+ *  6. Components — Card, Badge, Button, Form, Nav
+ *  7. Status colors
+ *  8. Animations & Motion Layer ← שודרג
+ */
+
+/* ─── 1. Fonts ──────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;700&display=swap');
+
+/* ─── 2. Reset ──────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { direction: rtl; font-size: 16px; }
+
+/* ─── 3. CSS Variables ──────────────────────── */
+:root {
+  /* Brand */
+  --color-brand:        #6c5ce7;
+  --color-brand-light:  #a29bfe;
+  --color-brand-bg:     #f0effe;
+  --color-sidebar-from: #8b6dd1;
+  --color-sidebar-to:   #4a3bc1;
+
+  /* Neutrals */
+  --color-bg:        linear-gradient(160deg, #fff8f0 0%, #fff2e6 50%, #ffead8 100%);
+  --color-card:      #fffaf5;
+  --color-border:    rgba(0,0,0,0.07);
+  --color-white:     #ffffff;
+
+  /* Text */
+  --text-primary:     #1a1a1a;
+  --text-secondary:   #555;
+  --text-muted:       #aaa;
+  --text-placeholder: #bbb;
+
+  /* Status */
+  --status-live-bg:      #edfaf1;
+  --status-live-text:    #27ae60;
+  --status-live-border:  #27ae60;
+  --status-ongoing-bg:     #ebf5fb;
+  --status-ongoing-text:   #2980b9;
+  --status-ongoing-border: #3498db;
+  --status-renew-bg:     #fff8ec;
+  --status-renew-text:   #d68910;
+  --status-renew-border: #f39c12;
+  --status-edge-bg:     #fff0f0;
+  --status-edge-text:   #c0392b;
+  --status-edge-border: #e74c3c;
+  --status-former-bg:     #f5f5f5;
+  --status-former-text:   #888;
+  --status-former-border: #ccc;
+
+  /* Actions */
+  --color-success: #27ae60;
+  --color-warning: #f39c12;
+  --color-danger:  #e74c3c;
+  --color-info:    #3498db;
+
+  /* Radius */
+  --radius-sm:   8px;
+  --radius-md:   12px;
+  --radius-lg:   14px;
+  --radius-xl:   16px;
+  --radius-full: 9999px;
+
+  /* Shadow */
+  --shadow-card:    0 1px 3px rgba(0,0,0,0.04), 0 2px 10px rgba(0,0,0,0.03);
+  --shadow-hover:   0 6px 20px rgba(0,0,0,0.10);
+  --shadow-btn:     0 2px 8px rgba(108,92,231,0.22);
+  --shadow-btn-hover: 0 5px 18px rgba(108,92,231,0.35);
+  --shadow-raised:  0 4px 14px rgba(0,0,0,0.08);
+
+  /* Spacing */
+  --space-xs:   4px;
+  --space-sm:   8px;
+  --space-md:   12px;
+  --space-lg:   16px;
+  --space-xl:   20px;
+  --space-2xl:  24px;
+  --space-page: 28px;
+
+  /* ── Motion Layer ──────────────────────────
+   * שלושה קצבים. כל אנימציה במערכת משתמשת
+   * באחד מהם בלבד. לא לשנות ערכים בודדים —
+   * רק כאן.
+   * TODO [future]: הגדר spring easing curves
+   */
+  --ease-out:    cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  --motion-instant: 0.1s var(--ease-out);   /* hover מיידי, focus */
+  --motion-fast:    0.18s var(--ease-out);  /* כפתורים, chips */
+  --motion-normal:  0.26s var(--ease-out);  /* כרטיסים, dropdowns */
+  --motion-slow:    0.38s var(--ease-in-out); /* sidebar, modals */
+}
+
+/* ─── 4. Base ────────────────────────────────── */
+body {
+  font-family: 'Rubik', sans-serif;
+  background: #fff8f0;
+  color: var(--text-primary);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* מניעת קפיצות layout בזמן transitions */
+* { will-change: auto; }
+
+h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.2px; }
+h2 { font-size: 17px; font-weight: 700; }
+h3 { font-size: 15px; font-weight: 400; }
+p  { font-size: 14px; color: var(--text-secondary); font-weight: 400; }
+
+/* ─── 5. Layout ──────────────────────────────── */
+.page {
+  max-width: 480px;
+  margin: 0 auto;
+  padding-bottom: 80px;
+  min-height: 100vh;
+}
+
+/* ─── 6. Components ──────────────────────────── */
+
+/* ══ Card ══════════════════════════════════════
+ * TODO [future]: עדכן כאן את כל הכרטיסים
+ */
+.card {
+  background: var(--color-card);
+  border-radius: var(--radius-lg);
+  border: 0.5px solid var(--color-border);
+  padding: var(--space-lg);
+  margin-bottom: 10px;
+  box-shadow: var(--shadow-card);
+  transition:
+    box-shadow var(--motion-normal),
+    transform   var(--motion-normal),
+    border-color var(--motion-fast);
+  cursor: default;
+}
+.card:hover {
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-2px);
+  border-color: rgba(108,92,231,0.12);
+}
+.card:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-card);
+}
+
+/* Status borders */
+.card--live     { border-right: 3px solid var(--status-live-border);    }
+.card--ongoing  { border-right: 3px solid var(--status-ongoing-border); }
+.card--renew    { border-right: 3px solid var(--status-renew-border);   }
+.card--edge     { border-right: 3px solid var(--status-edge-border);    }
+.card--former   { border-right: 3px solid var(--status-former-border);  }
+/* Legacy */
+.card-critical { border-right: 3px solid var(--status-edge-border);   }
+.card-urgent   { border-right: 3px solid var(--status-renew-border);  }
+.card-warning  { border-right: 3px solid var(--status-ongoing-border);}
+.card-ok       { border-right: 3px solid var(--status-live-border);   }
+
+/* ══ Badge ══════════════════════════════════════
+ * TODO [future]: עדכן כאן את כל התגיות
+ */
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  font-weight: 700;
+  white-space: nowrap;
+  transition: opacity var(--motion-fast);
+}
+.badge--live    { background: var(--status-live-bg);    color: var(--status-live-text);    }
+.badge--ongoing { background: var(--status-ongoing-bg); color: var(--status-ongoing-text); }
+.badge--renew   { background: var(--status-renew-bg);   color: var(--status-renew-text);   }
+.badge--edge    { background: var(--status-edge-bg);    color: var(--status-edge-text);    }
+.badge--former  { background: var(--status-former-bg);  color: var(--status-former-text);  }
+/* Legacy */
+.badge-critical { background: var(--status-edge-bg);    color: var(--status-edge-text);    }
+.badge-urgent   { background: var(--status-renew-bg);   color: var(--status-renew-text);   }
+.badge-warning  { background: var(--status-ongoing-bg); color: var(--status-ongoing-text); }
+.badge-ok       { background: var(--status-live-bg);    color: var(--status-live-text);    }
+.badge-overdue  { background: var(--status-edge-bg);    color: var(--status-edge-text);    }
+.badge-active   { background: var(--status-live-bg);    color: var(--status-live-text);    }
+.badge-inactive { background: var(--status-former-bg);  color: var(--status-former-text);  }
+.badge-manager  { background: var(--color-brand-bg);    color: var(--color-brand);         }
+
+/* ══ Button ══════════════════════════════════════
+ * TODO [future]: עדכן כאן את כל הכפתורים
+ * כל כפתור במערכת יורש מכאן — לא inline style
+ */
+.btn {
+  padding: 9px 18px;
+  border: 1.5px solid rgba(0,0,0,0.12);
+  border-radius: var(--radius-md);
+  background: var(--color-white);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 400;
+  font-family: 'Rubik', sans-serif;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  /* Motion */
+  transition:
+    background     var(--motion-fast),
+    border-color   var(--motion-fast),
+    box-shadow     var(--motion-fast),
+    transform      var(--motion-fast),
+    color          var(--motion-fast);
+  user-select: none;
+  -webkit-user-select: none;
+}
+.btn:hover {
+  background: #f5f5f5;
+  border-color: #bbb;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(0,0,0,0.09);
+}
+.btn:active {
+  transform: translateY(0) scale(0.98);
+  box-shadow: none;
+  background: #efefef;
+  transition-duration: 0.08s;
+}
+.btn:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+/* Primary */
+.btn-primary {
+  background: linear-gradient(135deg, var(--color-brand) 0%, var(--color-brand-light) 100%);
+  border: none;
+  color: #fff;
+  font-weight: 700;
+  box-shadow: var(--shadow-btn);
+}
+.btn-primary:hover {
+  background: linear-gradient(135deg, #5a4bd1 0%, #8e83f0 100%);
+  box-shadow: var(--shadow-btn-hover);
+  transform: translateY(-1px);
+}
+.btn-primary:active {
+  background: linear-gradient(135deg, #4f41be 0%, #7b72e0 100%);
+  box-shadow: var(--shadow-btn);
+  transform: translateY(0) scale(0.98);
+}
+
+/* ══ Chip / Filter ══════════════════════════════
+ * TODO [future]: עדכן כאן את עיצוב ה-chips
+ */
+.chips {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex-direction: row-reverse;
+  padding-bottom: 2px;
+}
+.chips::-webkit-scrollbar { display: none; }
+
+.chip {
+  padding: 6px 14px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-family: 'Rubik', sans-serif;
+  font-weight: 500;
+  border: 1.5px solid #e8e8e8;
+  background: #fff;
+  color: #888;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background    var(--motion-fast),
+    border-color  var(--motion-fast),
+    color         var(--motion-fast),
+    box-shadow    var(--motion-fast),
+    transform     var(--motion-fast);
+  user-select: none;
+}
+.chip:hover {
+  border-color: #bbb;
+  color: #444;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.07);
+}
+.chip:active {
+  transform: translateY(0) scale(0.97);
+  transition-duration: 0.08s;
+}
+.chip.active, .chip-active {
+  border-color: var(--color-brand);
+  background: var(--color-brand);
+  color: #fff;
+  font-weight: 700;
+  box-shadow: 0 2px 10px rgba(108,92,231,0.3);
+  transform: none;
+}
+.chip-group { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* ══ Form ═══════════════════════════════════════
+ * TODO [future]: עדכן כאן את כל שדות הטופס
+ */
+.form-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+.form-input, .form-select, .form-textarea {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1.5px solid #ebebeb;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  background: #fafafa;
+  color: var(--text-primary);
+  direction: rtl;
+  font-family: 'Rubik', sans-serif;
+  transition:
+    border-color var(--motion-fast),
+    background   var(--motion-fast),
+    box-shadow   var(--motion-fast);
+  appearance: none;
+  -webkit-appearance: none;
+}
+.form-input:focus, .form-select:focus, .form-textarea:focus {
+  outline: none;
+  border-color: var(--color-brand);
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(108,92,231,0.12);
+}
+.form-input:hover:not(:focus),
+.form-select:hover:not(:focus),
+.form-textarea:hover:not(:focus) {
+  border-color: #d0d0d0;
+}
+.form-error { border-color: var(--color-danger) !important; }
+.form-textarea { resize: vertical; min-height: 90px; }
+.error-msg {
+  display: block;
+  font-size: 12px;
+  color: var(--color-danger);
+  margin-top: 5px;
+  font-weight: 500;
+}
+
+/* ══ Topbar ═════════════════════════════════════ */
+.topbar {
+  background: rgba(255,255,255,0.88);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 0.5px solid rgba(0,0,0,0.07);
+  padding: 14px 16px 10px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.topbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+/* ══ Section title ══════════════════════════════ */
+.section-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.08em;
+  margin: 16px 0 10px;
+  text-transform: uppercase;
+}
+
+/* ══ Stats ══════════════════════════════════════ */
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.stat-box {
+  background: var(--color-white);
+  border-radius: var(--radius-lg);
+  padding: 14px 12px;
+  text-align: center;
+  border: 0.5px solid var(--color-border);
+  box-shadow: var(--shadow-card);
+  transition:
+    transform   var(--motion-normal),
+    box-shadow  var(--motion-normal),
+    border-color var(--motion-fast);
+  cursor: default;
+}
+.stat-box:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-raised);
+  border-color: rgba(108,92,231,0.1);
+}
+.stat-num { font-size: 24px; font-weight: 700; color: var(--text-primary); }
+.stat-lbl { font-size: 11px; color: var(--text-muted); margin-top: 3px; font-weight: 500; }
+.stat-num.red   { color: var(--color-danger);  }
+.stat-num.amber { color: var(--color-warning); }
+
+/* ══ Search ═════════════════════════════════════ */
+.search-wrap { position: relative; margin-bottom: 10px; }
+.search-icon {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-placeholder);
+  font-size: 16px;
+  pointer-events: none;
+}
+
+/* ══ Empty state ════════════════════════════════ */
+.empty-state {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--text-placeholder);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* ══ Bottom nav ═════════════════════════════════ */
+.bottom-nav {
+  position: fixed;
+  bottom: 0; right: 0; left: 0;
+  background: rgba(255,255,255,0.94);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border-top: 0.5px solid rgba(0,0,0,0.07);
+  display: flex;
+  z-index: 200;
+  max-width: 480px;
+  margin: 0 auto;
+}
+.nav-item {
+  flex: 1;
+  padding: 10px 4px 14px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-placeholder);
+  cursor: pointer;
+  text-decoration: none;
+  border: none;
+  background: none;
+  font-family: 'Rubik', sans-serif;
+  transition:
+    color      var(--motion-fast),
+    transform  var(--motion-fast);
+  user-select: none;
+}
+.nav-item:hover { color: var(--color-brand); transform: translateY(-1px); }
+.nav-item.active { color: var(--color-brand); font-weight: 700; }
+.nav-icon { font-size: 22px; display: block; margin-bottom: 2px; transition: transform var(--motion-fast); }
+.nav-item:hover .nav-icon { transform: scale(1.12); }
+.nav-item.active .nav-icon { transform: scale(1.08); }
+
+/* List / Stats bar */
+.list { padding: 14px; }
+.stats-bar {
+  padding: 6px 16px;
+  font-size: 12px;
+  color: var(--text-muted);
+  display: flex;
+  justify-content: space-between;
+  font-weight: 500;
+}
+
+/* ─── 7. Status color helpers ────────────────── */
+.status-live-bg      { background: var(--status-live-bg);    }
+.status-live-text    { color: var(--status-live-text);       }
+.status-ongoing-bg   { background: var(--status-ongoing-bg); }
+.status-ongoing-text { color: var(--status-ongoing-text);    }
+.status-renew-bg     { background: var(--status-renew-bg);   }
+.status-renew-text   { color: var(--status-renew-text);      }
+.status-edge-bg      { background: var(--status-edge-bg);    }
+.status-edge-text    { color: var(--status-edge-text);       }
+
+/* ─── 8. Animations & Motion Layer ──────────── */
+/* TODO [future]: עדכן כאן את כל האנימציות */
+
+/* כניסת כרטיסים לעמוד */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+.card { animation: fadeInUp 0.28s var(--ease-out) both; }
+
+/* כניסה עדינה לרכיבים כלליים */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Stagger — כרטיסים ברשימה נכנסים בזה אחר זה */
+.card:nth-child(1)  { animation-delay: 0.00s; }
+.card:nth-child(2)  { animation-delay: 0.04s; }
+.card:nth-child(3)  { animation-delay: 0.07s; }
+.card:nth-child(4)  { animation-delay: 0.10s; }
+.card:nth-child(5)  { animation-delay: 0.12s; }
+.card:nth-child(6)  { animation-delay: 0.14s; }
+.card:nth-child(n+7) { animation-delay: 0.15s; }
+
+/* Modal / overlay */
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(16px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0)    scale(1);    }
+}
+.modal-enter { animation: slideUp 0.3s var(--ease-out) both; }
+
+/* Sidebar */
+@keyframes sidebarIn {
+  from { opacity: 0; transform: translateX(12px); }
+  to   { opacity: 1; transform: translateX(0);    }
+}
+
+/* ── Scrollbar ───────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #ddd; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #bbb; }
+
+/* ── Focus ring global ───────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ── Link reset ──────────────────────────────── */
+a { color: inherit; text-decoration: none; }
+
+
+/* =========================================================
+   PHASE 44 - Visible Premium Motion Layer
+   Targets the inline-style-heavy UI without changing logic.
+   ========================================================= */
+:root {
+  --premium-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --premium-fast: 180ms var(--premium-ease);
+  --premium-normal: 320ms var(--premium-ease);
+  --premium-shadow: 0 14px 35px rgba(48, 35, 110, 0.14);
+  --premium-shadow-soft: 0 8px 24px rgba(48, 35, 110, 0.10);
+}
+button, a, select, input, textarea, [role=button], .motion-target {
+  transition: transform var(--premium-fast), box-shadow var(--premium-normal), background var(--premium-normal), border-color var(--premium-fast), color var(--premium-fast), opacity var(--premium-fast), filter var(--premium-fast) !important;
+}
+button:hover:not(:disabled), [role=button]:hover, .motion-target:hover {
+  transform: translateY(-2px) scale(1.012) !important;
+  box-shadow: var(--premium-shadow-soft) !important;
+}
+button:active:not(:disabled), [role=button]:active, .motion-target:active {
+  transform: translateY(0) scale(0.985) !important;
+  filter: brightness(0.98);
+}
+div[style*="cursor: pointer"] {
+  transition: transform var(--premium-fast), box-shadow var(--premium-normal), background var(--premium-normal), border-color var(--premium-fast), color var(--premium-fast), opacity var(--premium-fast) !important;
+}
+div[style*="cursor: pointer"]:hover {
+  transform: translateY(-2px) scale(1.01) !important;
+  box-shadow: var(--premium-shadow-soft) !important;
+}
+div[style*="cursor: pointer"]:active {
+  transform: translateY(0) scale(0.985) !important;
+}
+.card, .app-card, .stat-box {
+  transition: transform var(--premium-normal), box-shadow var(--premium-normal), border-color var(--premium-fast), background var(--premium-normal) !important;
+}
+.card:hover, .app-card:hover, .stat-box:hover {
+  transform: translateY(-4px) scale(1.01) !important;
+  box-shadow: var(--premium-shadow) !important;
+}
+.premium-page-enter { animation: premiumPageEnter 420ms var(--premium-ease) both; }
+@keyframes premiumPageEnter {
+  from { opacity: 0; transform: translateY(10px) scale(0.992); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.premium-sidebar-item {
+  transition: transform var(--premium-fast), background var(--premium-normal), box-shadow var(--premium-normal), border-color var(--premium-fast) !important;
+}
+.premium-sidebar-item:hover {
+  transform: translateX(-4px) scale(1.025) !important;
+  box-shadow: inset -3px 0 0 rgba(255,255,255,0.35), 0 10px 24px rgba(20,14,70,0.16) !important;
+}
+.premium-sidebar-icon { transition: transform var(--premium-fast), filter var(--premium-fast) !important; }
+.premium-sidebar-item:hover .premium-sidebar-icon {
+  transform: scale(1.18) rotate(-2deg) !important;
+  filter: drop-shadow(0 4px 8px rgba(0,0,0,0.18));
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}
