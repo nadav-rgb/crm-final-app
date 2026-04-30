@@ -181,7 +181,7 @@ export default function LandingPage() {
       </div>
 
       {/* ═══ תוכן ═══ */}
-      <div style={{ flex: 1, marginRight: 60, overflowY: 'auto', padding: '28px 36px' }}>
+      <div style={{ flex: 1, marginRight: open ? 220 : 60, overflowY: 'auto', padding: '28px 36px', transition: 'margin-right 0.35s cubic-bezier(0.4, 0, 0.2, 1)' }}>
 
         <div style={{ marginBottom: 24 }}>
           <div style={{ fontSize: 24, fontWeight: 600, color: '#3d2c1e' }}>מרכז הפעילות</div>
