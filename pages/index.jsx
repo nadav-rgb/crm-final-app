@@ -88,60 +88,60 @@ return (
 <div style={{
   display: 'grid',
   gridTemplateColumns: 'repeat(3, 1fr)',
-  gap: '16px',
-  marginBottom: 24
+  gap: '20px',
+  marginBottom: 28
 }}>
   {[
-    { num: visibleContacts.length, label: 'לקוחות', color: '#6c5ce7' },
-    { num: withActions.length, label: 'פעולות ממתינות', color: '#f39c12' },
-    { num: needsRenew.length, label: 'דורשים חידוש', color: '#e74c3c' },
-  ].map(({ num, label, color }) => (
+    { num: visibleContacts.length, label: 'לקוחות', color: '#6c5ce7', accent: 'rgba(108,92,231,0.10)' },
+    { num: withActions.length, label: 'פעולות ממתינות', color: '#f39c12', accent: 'rgba(243,156,18,0.10)' },
+    { num: needsRenew.length, label: 'דורשים חידוש', color: '#e74c3c', accent: 'rgba(231,76,60,0.10)' },
+  ].map(({ num, label, color, accent }) => (
     <div
       key={label}
       style={{
-        background: '#ffffff',
+        background: 'linear-gradient(145deg, #ffffff 0%, #f9fafb 100%)',
         borderRadius: '20px',
-        padding: '20px',
-        boxShadow: '0 12px 30px rgba(0,0,0,0.06)',
-        border: '1px solid rgba(0,0,0,0.05)',
+        padding: '28px 24px',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 10px 32px rgba(0,0,0,0.07)',
+        border: '1px solid rgba(0,0,0,0.06)',
         display: 'flex',
         flexDirection: 'column',
-        justifyContent: 'space-between',
-        transition: 'all 0.2s ease',
+        gap: '14px',
+        transition: 'transform 0.2s ease, box-shadow 0.2s ease',
         cursor: 'pointer'
       }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.transform = 'translateY(-4px)';
-        e.currentTarget.style.boxShadow = '0 18px 40px rgba(0,0,0,0.08)';
+        e.currentTarget.style.transform = 'translateY(-3px)';
+        e.currentTarget.style.boxShadow = '0 4px 8px rgba(0,0,0,0.04), 0 18px 44px rgba(0,0,0,0.10)';
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.transform = 'translateY(0)';
-        e.currentTarget.style.boxShadow = '0 12px 30px rgba(0,0,0,0.06)';
+        e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.04), 0 10px 32px rgba(0,0,0,0.07)';
       }}
     >
       <div style={{
-        width: 36,
-        height: 36,
-        borderRadius: 10,
-        background: `${color}15`,
+        width: 40,
+        height: 40,
+        borderRadius: 12,
+        background: accent,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        marginBottom: 10
       }}>
         <div style={{
-          width: 10,
-          height: 10,
+          width: 12,
+          height: 12,
           borderRadius: '50%',
-          background: color
+          background: color,
+          boxShadow: `0 0 0 3px ${color}30`
         }} />
       </div>
 
-      <div style={{ fontSize: 32, fontWeight: 700, color: '#1a1a1a' }}>
+      <div style={{ fontSize: 44, fontWeight: 800, color: '#111827', lineHeight: 1, letterSpacing: '-0.02em' }}>
         {num}
       </div>
 
-      <div style={{ fontSize: 13, color: '#888', marginTop: 4 }}>
+      <div style={{ fontSize: 13, fontWeight: 500, color: '#6b7280', lineHeight: 1.3 }}>
         {label}
       </div>
     </div>
