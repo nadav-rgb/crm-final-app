@@ -88,10 +88,10 @@ export default function LandingPage() {
   const outcomeBg    = { 'חיובי': '#eaf3de', 'שלילי': '#fcebeb', 'ניטרלי': '#fdf6ef', 'ממתין למענה': '#faeeda' };
 
   const stats = [
-    { num: filteredContacts.length, label: 'סה"כ לקוחות', color: '#c47a2e' },
-    { num: filteredInteractions.length, label: 'סה"כ קשרים', color: '#8b6d3f' },
-    { num: activists.filter(a => a.role !== 'manager' && a.status === 'active').length, label: 'פעילים פעילים', color: '#c47a2e' },
-    { num: filteredContacts.filter(c => c.days_since_last_contact >= 30).length, label: 'על סף ניתוק', color: '#a32d2d' },
+    { num: filteredContacts.length, label: 'סה"כ לקוחות', color: '#c47a2e', rgb: '196,122,46' },
+    { num: filteredInteractions.length, label: 'סה"כ קשרים', color: '#8b6d3f', rgb: '139,109,63' },
+    { num: activists.filter(a => a.role !== 'manager' && a.status === 'active').length, label: 'פעילים פעילים', color: '#c47a2e', rgb: '196,122,46' },
+    { num: filteredContacts.filter(c => c.days_since_last_contact >= 30).length, label: 'על סף ניתוק', color: '#a32d2d', rgb: '163,45,45' },
   ];
 
   return (
@@ -191,11 +191,77 @@ export default function LandingPage() {
         </div>
 
         {/* סטטיסטיקות */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 28 }}>
-          {stats.map(({ num, label, color }) => (
-            <div key={label} style={{ background: 'rgba(255,255,255,0.75)', borderRadius: 14, padding: '16px 20px', border: '0.5px solid rgba(196,122,46,0.15)', borderTop: `3px solid ${color}` }}>
-              <div style={{ fontSize: 30, fontWeight: 600, color }}>{num}</div>
-              <div style={{ fontSize: 12, color: '#a08060', marginTop: 4 }}>{label}</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginTop: 8, marginBottom: 44 }}>
+          {stats.map(({ num, label, color, rgb }) => (
+            <div
+              key={label}
+              style={{
+                background: '#ffffff',
+                borderRadius: '20px',
+                padding: '28px 22px 24px',
+                boxShadow: `0 0 0 1px rgba(0,0,0,0.07), 0 2px 6px rgba(0,0,0,0.06), 0 16px 32px rgba(0,0,0,0.10), 0 40px 64px rgba(0,0,0,0.06), 0 0 72px 10px rgba(${rgb},0.08)`,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '6px',
+                transition: 'transform 0.28s cubic-bezier(0.34,1.2,0.64,1), box-shadow 0.28s ease',
+                cursor: 'pointer',
+                position: 'relative',
+                overflow: 'hidden'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-7px)';
+                e.currentTarget.style.boxShadow = `0 0 0 1px rgba(0,0,0,0.07), 0 8px 20px rgba(0,0,0,0.08), 0 28px 52px rgba(0,0,0,0.13), 0 56px 80px rgba(0,0,0,0.07), 0 0 96px 14px rgba(${rgb},0.12)`;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = `0 0 0 1px rgba(0,0,0,0.07), 0 2px 6px rgba(0,0,0,0.06), 0 16px 32px rgba(0,0,0,0.10), 0 40px 64px rgba(0,0,0,0.06), 0 0 72px 10px rgba(${rgb},0.08)`;
+              }}
+            >
+              {/* Thin colored top bar */}
+              <div style={{
+                position: 'absolute',
+                top: 0, left: 0, right: 0,
+                height: 3,
+                background: `linear-gradient(90deg, ${color}, ${color}55)`,
+                borderRadius: '20px 20px 0 0'
+              }} />
+
+              {/* Colored dot badge */}
+              <div style={{
+                width: 32,
+                height: 32,
+                borderRadius: 10,
+                background: `rgba(${rgb},0.10)`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: 12
+              }}>
+                <div style={{ width: 10, height: 10, borderRadius: '50%', background: color }} />
+              </div>
+
+              {/* Hero number */}
+              <div style={{
+                fontSize: 64,
+                fontWeight: 800,
+                color: '#0f172a',
+                lineHeight: 1,
+                letterSpacing: '-0.04em',
+                fontVariantNumeric: 'tabular-nums'
+              }}>
+                {num}
+              </div>
+
+              {/* Label — clearly secondary */}
+              <div style={{
+                fontSize: 12,
+                fontWeight: 500,
+                color: '#94a3b8',
+                letterSpacing: '0.02em',
+                marginTop: 10
+              }}>
+                {label}
+              </div>
             </div>
           ))}
         </div>
