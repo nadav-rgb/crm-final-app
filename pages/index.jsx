@@ -39,16 +39,22 @@ export default function Dashboard() {
       )
     : null;
 
-  return (
-    <DesktopLayout
-      title="אזור אישי"
-      subtitle={`${activeProject?.name} · שלום, ${currentUser?.name}`}
-      actions={can.addContact && (
-        <Link href="/contacts/add" className="btn btn-primary" style={{ textDecoration: 'none', fontSize: 13 }}>
-          + הוסף לקוח
-        </Link>
-      )}
-    >
+return (
+  <DesktopLayout
+    title="אזור אישי"
+    subtitle={`${activeProject?.name} · שלום, ${currentUser?.name}`}
+    actions={can.addContact && (
+      <Link href="/contacts/add" className="btn btn-primary" style={{ textDecoration: 'none', fontSize: 13 }}>
+        + הוסף לקוח
+      </Link>
+    )}
+  >
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 24,
+      padding: '4px 0 24px'
+    }}>
       {/* קשרים החודש — הבולט */}
       {can.addContact && (
         <div style={{ display: 'grid', gridTemplateColumns: activeProject?.id === 2 ? '1fr 1fr 1fr' : '1fr 1fr', gap: 14, marginBottom: 24 }}>
@@ -78,20 +84,69 @@ export default function Dashboard() {
           )}
         </div>
       )}
-
-      {/* סטטיסטיקות */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 24 }}>
-        {[
-          { num: visibleContacts.length,  label: 'לקוחות', color: '#6c5ce7' },
-          { num: withActions.length,      label: 'פעולות ממתינות', color: '#f39c12' },
-          { num: needsRenew.length,       label: 'דורשים חידוש', color: '#e74c3c' },
-        ].map(({ num, label, color }) => (
-          <div key={label} style={{ background: '#fffaf5', borderRadius: 14, padding: '16px', border: '0.5px solid rgba(0,0,0,0.06)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', textAlign: 'center', borderTop: `3px solid ${color}` }}>
-            <div style={{ fontSize: 28, fontWeight: 700, color }}>{num}</div>
-            <div style={{ fontSize: 12, color: '#aaa', marginTop: 4 }}>{label}</div>
-          </div>
-        ))}
+{/* סטטיסטיקות */}
+<div style={{
+  display: 'grid',
+  gridTemplateColumns: 'repeat(3, 1fr)',
+  gap: '16px',
+  marginBottom: 24
+}}>
+  {[
+    { num: visibleContacts.length, label: 'לקוחות', color: '#6c5ce7' },
+    { num: withActions.length, label: 'פעולות ממתינות', color: '#f39c12' },
+    { num: needsRenew.length, label: 'דורשים חידוש', color: '#e74c3c' },
+  ].map(({ num, label, color }) => (
+    <div
+      key={label}
+      style={{
+        background: '#ffffff',
+        borderRadius: '20px',
+        padding: '20px',
+        boxShadow: '0 12px 30px rgba(0,0,0,0.06)',
+        border: '1px solid rgba(0,0,0,0.05)',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'space-between',
+        transition: 'all 0.2s ease',
+        cursor: 'pointer'
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.transform = 'translateY(-4px)';
+        e.currentTarget.style.boxShadow = '0 18px 40px rgba(0,0,0,0.08)';
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.transform = 'translateY(0)';
+        e.currentTarget.style.boxShadow = '0 12px 30px rgba(0,0,0,0.06)';
+      }}
+    >
+      <div style={{
+        width: 36,
+        height: 36,
+        borderRadius: 10,
+        background: `${color}15`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 10
+      }}>
+        <div style={{
+          width: 10,
+          height: 10,
+          borderRadius: '50%',
+          background: color
+        }} />
       </div>
+
+      <div style={{ fontSize: 32, fontWeight: 700, color: '#1a1a1a' }}>
+        {num}
+      </div>
+
+      <div style={{ fontSize: 13, color: '#888', marginTop: 4 }}>
+        {label}
+      </div>
+    </div>
+  ))}
+</div>
 
       {/* לקוחות דורשים חידוש */}
       {needsRenew.length > 0 && (
@@ -113,6 +168,7 @@ export default function Dashboard() {
           </div>
         </>
       )}
-    </DesktopLayout>
-  );
+    </div>
+  </DesktopLayout>
+);
 }
