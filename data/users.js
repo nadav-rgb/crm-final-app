@@ -29,6 +29,9 @@ const users = [
   { id: 42,  username: 'binyamin', password: 'binyamin123', name: 'בנימין רוזנברג', role: 'activist', project_id: 4 },
   { id: 43,  username: 'orit',   password: 'orit123',    name: 'אורית שפירא',  role: 'activist', project_id: 4 },
 
+  // רכזים
+  { id: 200, username: 'coord1',   password: 'coord123',   name: 'רכז ראשי',     role: 'coord',    project_id: 2 },
+
   // בעלי גישה לתשלומים — אחדות יהודית (ניתן להוסיף עוד בהמשך)
   { id: 201, username: 'finance1', password: 'finance123', name: 'יוסי הלוי',     role: 'finance',  project_id: 2 },
   { id: 202, username: 'finance2', password: 'finance456', name: 'רות אדלר',      role: 'finance',  project_id: 2 },

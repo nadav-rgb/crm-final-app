@@ -39,14 +39,16 @@ export function AuthProvider({ children }) {
   }
 
   const role = currentUser?.role;
+  const MEETING_HOUSE_RESULTS_WHITELIST = []; // מזהי משתמשים עם גישה מיוחדת — להרחבה עתידית
   const can  = {
-    seeSensitiveData: ['activist', 'coord', 'head', 'ceo'].includes(role),
-    addContact:       role === 'activist',
-    callContact:      role === 'activist',
-    seeActivists:     role !== 'activist' && role !== 'finance',
-    seePayments:      role === 'finance' || role === 'head' || role === 'ceo',
-    seeMeetingHouses: role === 'ceo' || ((role === 'head' || role === 'finance') && currentUser?.project_id === 2),
-    ownProjectId:     currentUser?.project_id ?? null,
+    seeSensitiveData:       ['activist', 'coord', 'head', 'ceo'].includes(role),
+    addContact:             role === 'activist',
+    callContact:            role === 'activist',
+    seeActivists:           role !== 'activist' && role !== 'finance',
+    seePayments:            role === 'finance' || role === 'head' || role === 'ceo' || role === 'coord',
+    seeMeetingHouses:       role === 'ceo' || role === 'head' || role === 'coord' || role === 'finance',
+    seeMeetingHouseResults: role === 'ceo' || role === 'head' || role === 'coord' || MEETING_HOUSE_RESULTS_WHITELIST.includes(currentUser?.id),
+    ownProjectId:           currentUser?.project_id ?? null,
   };
 
   return (

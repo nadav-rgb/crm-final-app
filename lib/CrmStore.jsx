@@ -45,7 +45,7 @@ export function CrmProvider({ children }) {
   const [baseMeetings, setBaseMeetings] = useState(loadInitialBaseMeetings); // דיווחי מפגשי בסיס קיימים/שמורים
   const [newParticipantBonuses, setNewParticipantBonuses] = useState([]); // { activist_id, contact_id, contactName, date, month }
 
-  function addInteraction({ id, contact_id, activist_id, type, quality, duration_minutes, outcome, date, time, notes, description, ai_summary, next_action, next_action_date }) {
+  function addInteraction({ id, contact_id, activist_id, type, quality, duration_minutes, outcome, date, time, notes, description, ai_summary, next_action, next_action_date, mitzvot_level }) {
     const contact = contacts.find(c => c.id === contact_id);
     const newInteraction = {
       id:               id ?? Date.now(),
@@ -62,6 +62,7 @@ export function CrmProvider({ children }) {
       ai_summary:       ai_summary ?? '',
       contact_name:     contact?.name ?? '',
       project_id:       contact?.project_id ?? null,
+      ...(mitzvot_level !== undefined && mitzvot_level !== null ? { mitzvot_level } : {}),
     };
     setInteractions(prev => [newInteraction, ...prev]);
 
@@ -71,13 +72,17 @@ export function CrmProvider({ children }) {
 
     setContacts(prev => prev.map(c => {
       if (c.id !== contact_id) return c;
-      return {
+      const updated = {
         ...c,
         days_since_last_contact: diffDays,
         last_interaction_date:   date,
         next_action:             next_action      !== undefined ? next_action      : c.next_action,
         next_action_date:        next_action_date !== undefined ? next_action_date : c.next_action_date,
       };
+      if (mitzvot_level !== undefined && mitzvot_level !== null && mitzvot_level !== c.mitzvot_level) {
+        updated.mitzvot_level = mitzvot_level;
+      }
+      return updated;
     }));
   }
 

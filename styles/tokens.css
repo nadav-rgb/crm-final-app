@@ -7,15 +7,15 @@
 
   /* ── Brand Colors ─────────────────────────────────────────
      לשנות כאן כדי לעדכן את כל צבעי המותג במערכת          */
-  --color-brand-primary:     #6c5ce7;
-  --color-brand-primary-hover: #5a4bd1;
+  --color-brand-primary:     #3a249b;
+  --color-brand-primary-hover: #2a1870;
   --color-brand-light:       #f0effe;
-  --color-brand-subtle:      rgba(108, 92, 231, 0.08);
+  --color-brand-subtle:      rgba(58, 36, 155, 0.08);
 
   /* ── Background ──────────────────────────────────────────
      רקע הדף הראשי ורקע כרטיסים                           */
-  --color-bg-page:           #fff8f0;
-  --color-bg-page-gradient:  linear-gradient(160deg, #fff8f0 0%, #fff2e6 50%, #ffead8 100%);
+  --color-bg-page:           #fbf7f1;
+  --color-bg-page-gradient:  linear-gradient(160deg, #fbf7f1 0%, #f8efe5 48%, #f4e8dc 100%);
   --color-bg-card:           #fffaf5;
   --color-bg-card-hover:     #fff5ee;
   --color-bg-white:          #ffffff;
@@ -118,8 +118,8 @@
   --shadow-md:  0 2px 8px rgba(0,0,0,0.08);
   --shadow-lg:  0 4px 16px rgba(0,0,0,0.10);
   --shadow-xl:  0 8px 32px rgba(0,0,0,0.12);
-  --shadow-brand: 0 4px 16px rgba(108,92,231,0.25);
-  --shadow-brand-hover: 0 6px 24px rgba(108,92,231,0.35);
+  --shadow-brand: 0 4px 16px rgba(58,36,155,0.25);
+  --shadow-brand-hover: 0 6px 24px rgba(58,36,155,0.35);
 
   /* ── Motion ──────────────────────────────────────────────
      אנימציות — לשנות כאן כדי להאיץ/להאיט את כל המערכת    */

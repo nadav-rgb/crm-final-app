@@ -14,7 +14,7 @@ function makeName(seed) {
   return `${firstNames[seed % firstNames.length]} ${lastNames[(seed*3)%lastNames.length]}`;
 }
 
-function makeContacts(activistId, projectId, startId, isMeetingPlace) {
+function makeContacts(activistId, projectId, startId, isMeetingPlace, houseConfig) {
   const result = [];
   for (let i = 0; i < 10; i++) {
     const id   = startId + i;
@@ -23,9 +23,11 @@ function makeContacts(activistId, projectId, startId, isMeetingPlace) {
     const lastDate = new Date(2026,3,28-days).toISOString().split('T')[0];
     const gender = i%2===0?'male':'female';
     const mitzvot = gender==='male' ? {...maleBase} : {...femaleBase};
-    // הוסף קצת וריאציה לסרגל המצוות
     const keys = Object.keys(mitzvot);
     keys.slice(0,3).forEach(k => { mitzvot[k] = Math.min(4, mitzvot[k] + Math.floor(i/3)); });
+
+    const houseCity   = houseConfig?.city ?? city;
+    const houseNumber = houseConfig?.number ?? `${10+i}`;
 
     const c = {
       id, activist_id:activistId, project_id:projectId,
@@ -36,7 +38,7 @@ function makeContacts(activistId, projectId, startId, isMeetingPlace) {
       profession: professions[(activistId+i)%professions.length],
       age: 25+((activistId*7+i*3)%40),
       gender,
-      high_potential: i < 3, // שלושת הראשונים הם פוטנציאל גבוה
+      high_potential: i < 3,
       days_since_last_contact: days,
       last_interaction_date: lastDate,
       next_action: i<4?['לתאם פגישה','לשלוח חומר','לבדוק עניין','להתקשר'][i]:null,
@@ -46,10 +48,16 @@ function makeContacts(activistId, projectId, startId, isMeetingPlace) {
       notes: i%3===0?'מעוניין בחיזוק קשר':'',
       how_met: isMeetingPlace?null:['הומלץ על ידי חבר','פגישה קהילתית','אירוע','הכרות ישירה'][i%4],
       mitzvot,
-      mitzvot_history: [], // היסטוריית שינויים בסרגל
-      is_graduate: true, // בוגר בית מפגש
+      mitzvot_history: [],
+      is_graduate: true,
       referred_by: null,
-      ...(isMeetingPlace?{meeting_place_city:city, meeting_place_number:`${10+i}`}:{}),
+      ...(isMeetingPlace ? {
+        meeting_place_city: houseCity,
+        meeting_place_number: houseNumber,
+        meetingHouseCity: houseCity,
+        meetingHouseNumber: houseNumber,
+        meetingHouseKey: `${houseNumber}_${houseCity}`,
+      } : {}),
     };
     result.push(c);
   }
@@ -60,9 +68,9 @@ const contacts = [
   ...makeContacts(11,1,1001,false),
   ...makeContacts(12,1,1011,false),
   ...makeContacts(13,1,1021,false),
-  ...makeContacts(21,2,2001,true),
-  ...makeContacts(22,2,2011,true),
-  ...makeContacts(23,2,2021,true),
+  ...makeContacts(21,2,2001,true,{number:'101',city:'ירושלים'}),
+  ...makeContacts(22,2,2011,true,{number:'102',city:'תל אביב'}),
+  ...makeContacts(23,2,2021,true,{number:'102',city:'תל אביב'}),
   ...makeContacts(31,3,3001,false),
   ...makeContacts(32,3,3011,false),
   ...makeContacts(33,3,3021,false),

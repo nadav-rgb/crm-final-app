@@ -3,8 +3,14 @@ import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '../lib/AuthStore';
 import { useCrm } from '../lib/CrmStore';
+import { getNotificationsForUser } from '../lib/notificationDemo';
 import activists from '../data/activists';
 import Link from 'next/link';
+import {
+  Home, User, Users, Calendar, UserPlus,
+  ClipboardList, Star, CreditCard, Bell, BellRing,
+  MessageSquare, Building2, FolderOpen,
+} from 'lucide-react';
 
 const TORAH_DEFAULT = 'וְאָהַבְתָּ לְרֵעֲךָ כָּמוֹךָ — זה כלל גדול בתורה. כל מי שמקרב יהודי אחד לאביו שבשמים, כאילו קיים עולם מלא. השבוע נזכור שכל שיחה, כל פגישה, כל חיוך — הם צינור להאיר את עולמם של אחינו.';
 
@@ -16,23 +22,36 @@ const PROJECTS = [
   { id: 4, name: 'נפש יהודי' },
 ];
 
-const BG = 'linear-gradient(160deg, #fff8f0 0%, #fff2e6 50%, #ffead8 100%)';
+const BG = 'radial-gradient(ellipse 100% 75% at 50% 0%, rgba(255,255,255,0.82) 0%, transparent 62%), radial-gradient(ellipse 45% 65% at 98% 25%, rgba(58,36,155,0.048) 0%, transparent 52%), radial-gradient(ellipse 50% 40% at -2% 95%, rgba(196,122,46,0.07) 0%, transparent 52%), linear-gradient(175deg, #fbf8f3 0%, #f7ece1 50%, #f2e4d8 100%)';
+
+// Matches DesktopLayout exactly
+const SIDEBAR_BG = 'linear-gradient(180deg, rgba(42,24,112,0.90) 0%, rgba(58,36,155,0.86) 52%, rgba(35,20,100,0.90) 100%)';
+const SIDEBAR_COLLAPSED = 64;
+const SIDEBAR_EXPANDED  = 240;
+const ICO = { size: 18, strokeWidth: 1.8 };
 
 export default function LandingPage() {
   const { currentUser, activeProject, switchProject, logout, can } = useAuth();
-  const { contacts, interactions, messages } = useCrm();
+  const { contacts, interactions, messages, baseMeetings } = useCrm();
   const router = useRouter();
 
   const isActivist = currentUser?.role === 'activist';
   const isCeo      = currentUser?.role === 'ceo' || currentUser?.role === 'head';
 
-  const [open,         setOpen]        = useState(false);
-  const [projectsOpen, setProjectsOpen]= useState(false);
-  const [selectedProj, setSelectedProj]= useState(isCeo ? 0 : (currentUser?.project_id ?? 0));
-  const [torahText,    setTorahText]   = useState(TORAH_DEFAULT);
-  const [editingTorah, setEditingTorah]= useState(false);
-  const [torahDraft,   setTorahDraft]  = useState(TORAH_DEFAULT);
-  const scrollRef = useRef(null);
+  const [open,              setOpen]             = useState(false);
+  const [projectsOpen,      setProjectsOpen]     = useState(false);
+  const [selectedProj,      setSelectedProj]     = useState(isCeo ? 0 : (currentUser?.project_id ?? 0));
+  const [torahText,         setTorahText]        = useState(TORAH_DEFAULT);
+  const [editingTorah,      setEditingTorah]     = useState(false);
+  const [torahDraft,        setTorahDraft]       = useState(TORAH_DEFAULT);
+  const [notificationsOpen, setNotificationsOpen]= useState(false);
+  const scrollRef  = useRef(null);
+  const sidebarRef = useRef(null);
+  const closeTimer = useRef(null);
+  useEffect(() => { if (sidebarRef.current?.matches(':hover')) setOpen(true); }, []);
+
+  const notifications       = getNotificationsForUser(currentUser, baseMeetings);
+  const unreadNotifications = notifications.filter(n => !n.read).length;
 
   // פעילות אחרונה — פעיל רואה רק את הפרויקט שלו, מנכ"ל לפי פרויקט נבחר
   const filteredInteractions = isActivist
@@ -97,58 +116,133 @@ export default function LandingPage() {
   return (
     <div style={{ display: 'flex', height: '100vh', background: BG, direction: 'rtl', overflow: 'hidden', position: 'relative' }}>
 
-      {/* ═══ סיידבר ═══ */}
+      {/* ═══ סיידבר — overlay, not push, matches DesktopLayout ═══ */}
       <div
         style={{
           position: 'fixed', top: 0, right: 0, bottom: 0,
-          width: open ? 220 : 60,
-          background: 'linear-gradient(180deg, #8b6dd1 0%, #5a4bd1 50%, #4a3bc1 100%)',
+          width: open ? SIDEBAR_EXPANDED : SIDEBAR_COLLAPSED,
+          background: SIDEBAR_BG,
+          backdropFilter: 'blur(22px) saturate(1.4)',
+          WebkitBackdropFilter: 'blur(22px) saturate(1.4)',
           display: 'flex', flexDirection: 'column',
-          transition: 'width 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
-          overflow: 'hidden', zIndex: 100,
-          boxShadow: '-4px 0 20px rgba(83,74,183,0.15)',
+          transition: 'width 0.36s cubic-bezier(0.4, 0, 0.2, 1)',
+          overflow: 'hidden', zIndex: 3000,
+          boxShadow: open
+            ? '-14px 0 52px rgba(10,4,36,0.60)'
+            : '-5px 0 22px rgba(10,4,36,0.35)',
         }}
-        onMouseEnter={() => setOpen(true)}
-        onMouseLeave={() => { if (!projectsOpen) setOpen(false); }}
+        ref={sidebarRef}
+        onMouseEnter={() => { if (closeTimer.current) clearTimeout(closeTimer.current); setOpen(true); }}
+        onMouseLeave={() => { closeTimer.current = setTimeout(() => setOpen(false), 200); }}
       >
-        {/* לוגו — לחיצה מנתקת */}
-        <div style={{ padding: '14px 0 12px', display: 'flex', alignItems: 'center', paddingRight: open ? 14 : 0, justifyContent: open ? 'flex-start' : 'center', borderBottom: '0.5px solid rgba(255,255,255,0.12)', gap: 10, transition: 'padding 0.35s ease' }}>
-          <button onClick={logout} title="יציאה מהמערכת"
-            style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(255,255,255,0.2)', border: 'none', cursor: 'pointer', color: '#fff', fontWeight: 700, fontSize: 15, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease', fontFamily: 'Rubik, sans-serif' }}
-            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.35)'; e.currentTarget.style.transform = 'scale(1.08)'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.2)'; e.currentTarget.style.transform = 'scale(1)'; }}>
+
+        {/* ─── Header ─── */}
+        <div style={{
+          padding: '18px 14px 14px',
+          display: 'flex', alignItems: 'center',
+          justifyContent: 'flex-start',
+          borderBottom: '1px solid rgba(255,255,255,0.08)',
+          gap: 10,
+          flexShrink: 0,
+        }}>
+          <button
+            onClick={logout}
+            title="יציאה מהמערכת"
+            style={{
+              width: 36, height: 36, borderRadius: 10,
+              background: 'linear-gradient(135deg, rgba(167,139,250,0.18) 0%, rgba(109,78,202,0.28) 100%)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              cursor: 'pointer', color: '#fff',
+              fontWeight: 700, fontSize: 15, flexShrink: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              transition: 'all 0.22s ease',
+              fontFamily: 'Rubik, sans-serif',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = 'linear-gradient(135deg, rgba(167,139,250,0.52) 0%, rgba(124,92,231,0.58) 100%)';
+              e.currentTarget.style.border = '1px solid rgba(167,139,250,0.6)';
+              e.currentTarget.style.transform = 'scale(1.06)';
+              e.currentTarget.style.boxShadow = '0 4px 20px rgba(167,139,250,0.4)';
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.background = 'linear-gradient(135deg, rgba(167,139,250,0.18) 0%, rgba(109,78,202,0.28) 100%)';
+              e.currentTarget.style.border = '1px solid rgba(255,255,255,0.12)';
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.boxShadow = 'none';
+            }}>
             מ
           </button>
-          {open && <span style={{ color: '#fff', fontWeight: 700, fontSize: 15, whiteSpace: 'nowrap' }}>מקרבים</span>}
+          <span style={{
+            color: 'rgba(255,255,255,0.88)',
+            fontWeight: 700,
+            fontSize: 15,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            maxWidth: open ? 180 : 0,
+            opacity: open ? 1 : 0,
+            transition: 'opacity 0.22s ease, max-width 0.32s ease',
+          }}>מקרבים</span>
         </div>
 
-        {/* ניווט */}
-        <div style={{ flex: 1, padding: '12px 0', overflowY: 'auto' }}>
-          {can.seeSensitiveData && <SideItem icon="👤" label="אזור אישי"      open={open} onClick={() => router.push('/')} />}
-          <SideItem icon="🏠" label="מרכז הפעילות" open={open} active />
-          <SideItem icon="👥" label="לקוחות"        open={open} onClick={() => router.push('/contacts')} />
-          {can.seeActivists  && <SideItem icon="⭐" label="פעילים"      open={open} onClick={() => router.push('/activists')} />}
-          <SideItem icon="🔔" label="תזכורות קשר"  open={open} onClick={() => router.push('/reminders')} />
-          {can.addContact    && <SideItem icon="➕" label="הוסף לקוח"   open={open} onClick={() => router.push('/contacts/add')} highlight />}
-          {can.seeMeetingHouses && <SideItem icon="🏘️" label="בתי מפגש" open={open} onClick={() => router.push("/meeting-houses")} />}
+        {/* ─── ניווט ─── */}
+        <div className="sidebar-nav" style={{ flex: 1, padding: '8px 0', overflowY: 'auto', overflowX: 'hidden', minHeight: 0 }}>
+          <SideItem icon={<Home    {...ICO} />} label="מרכז הפעילות" open={open} active />
+          {can.seeSensitiveData && (
+            <SideItem icon={<User  {...ICO} />} label="אזור אישי"    open={open} onClick={() => router.push('/')} />
+          )}
+          <SideItem icon={<Users {...ICO} />} label="לקוחות" open={open} onClick={() => router.push('/contacts')} />
+
+          {can.addContact && currentUser?.project_id === 2 && (
+            <SideItem icon={<Calendar     {...ICO} />} label="פעולות היום"    open={open} onClick={() => router.push('/today')} />
+          )}
+          {can.addContact && (
+            <SideItem icon={<UserPlus     {...ICO} />} label="הוסף לקוח"      open={open} onClick={() => router.push('/contacts/add')} cta />
+          )}
+          {(can.addContact || can.seeMeetingHouses) && (
+            <SideItem icon={<ClipboardList {...ICO} />} label="מפגשי בסיס"    open={open} onClick={() => router.push('/base-meetings')} />
+          )}
+
+          {can.seeActivists && (
+            <SideItem icon={<Star         {...ICO} />} label="פעילים"         open={open} onClick={() => router.push('/activists')} />
+          )}
+          {can.seePayments && (
+            <SideItem icon={<CreditCard   {...ICO} />} label="דוחות תשלום"    open={open} onClick={() => router.push('/payments')} />
+          )}
+          <SideItem icon={<Bell           {...ICO} />} label="תזכורות קשר"    open={open} onClick={() => router.push('/reminders')} />
+          <SideItem icon={<BellRing       {...ICO} />} label="התראות מערכת"   open={open} onClick={() => router.push('/notifications')} />
+          <SideItem icon={<MessageSquare  {...ICO} />} label="צ׳אט פעילים"    open={open} onClick={() => router.push('/chat')} />
+          {(can.seeMeetingHouses || currentUser?.role === 'activist') && (
+            <SideItem icon={<Building2    {...ICO} />} label="בתי מפגש"       open={open} onClick={() => router.push('/meeting-houses')} />
+          )}
 
           {/* פרויקטים — רק למנכ"ל וראש פרויקט */}
           {!isActivist && (
             <>
-              <div onClick={() => { setProjectsOpen(p => !p); if (!open) setOpen(true); }}
-                style={{ display: 'flex', alignItems: 'center', padding: '10px 13px', cursor: 'pointer', gap: 10, margin: '1px 6px', borderRadius: 8 }}
-                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+              <div
+                onClick={() => { setProjectsOpen(p => !p); if (!open) setOpen(true); }}
+                style={{
+                  display: 'flex', alignItems: 'center', padding: '10px 13px',
+                  cursor: 'pointer', gap: 10, margin: '2px 6px', borderRadius: 11,
+                  transition: 'background 0.2s ease',
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
                 onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
               >
-                <span style={{ fontSize: 18, flexShrink: 0 }}>📁</span>
-                {open && <>
-                  <span style={{ color: 'rgba(255,255,255,0.82)', fontSize: 13, flex: 1, whiteSpace: 'nowrap' }}>פרויקט</span>
-                  <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10 }}>{projectsOpen ? '▲' : '▼'}</span>
-                </>}
+                <span style={{ display: 'flex', alignItems: 'center', color: 'rgba(255,255,255,0.58)', flexShrink: 0 }}>
+                  <FolderOpen {...ICO} />
+                </span>
+                <span style={{ color: 'rgba(255,255,255,0.75)', fontSize: 14, flex: 1, whiteSpace: 'nowrap', fontWeight: 600, lineHeight: '18px', opacity: open ? 1 : 0, transform: open ? 'none' : 'translateX(6px)', transition: 'opacity 0.22s ease, transform 0.22s ease', pointerEvents: open ? 'auto' : 'none' }}>פרויקט</span>
+                <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, opacity: open ? 1 : 0, transform: open ? 'none' : 'translateX(4px)', transition: 'opacity 0.22s ease, transform 0.22s ease', pointerEvents: open ? 'auto' : 'none' }}>{projectsOpen ? '▲' : '▼'}</span>
               </div>
               {open && projectsOpen && PROJECTS.map(p => (
                 <div key={p.id} onClick={() => { setSelectedProj(p.id); switchProject(p.id); setProjectsOpen(false); }}
-                  style={{ padding: '7px 14px', fontSize: 12, cursor: 'pointer', color: selectedProj === p.id ? '#fff' : 'rgba(255,255,255,0.55)', background: selectedProj === p.id ? 'rgba(255,255,255,0.15)' : 'transparent', marginRight: 20, borderRadius: 6, whiteSpace: 'nowrap' }}>
+                  style={{
+                    padding: '7px 14px', fontSize: 13, cursor: 'pointer',
+                    color: selectedProj === p.id ? '#c4b5fd' : 'rgba(255,255,255,0.50)',
+                    background: selectedProj === p.id ? 'rgba(167,139,250,0.14)' : 'transparent',
+                    fontWeight: selectedProj === p.id ? 600 : 400,
+                    marginRight: 20, borderRadius: 8, whiteSpace: 'nowrap', transition: 'all 0.15s ease',
+                  }}>
                   {selectedProj === p.id ? '◉ ' : '○ '}{p.name}
                 </div>
               ))}
@@ -156,37 +250,86 @@ export default function LandingPage() {
           )}
         </div>
 
-        {/* פרויקט + משתמש בתחתית */}
-        <div style={{ borderTop: '0.5px solid rgba(255,255,255,0.15)' }}>
+        {/* ─── תחתית ─── */}
+        <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', flexShrink: 0 }}>
           {open && (
-            <div style={{ padding: '8px 14px', fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
-              <div>פרויקט פעיל</div>
-              <div style={{ color: '#fff', fontWeight: 500, fontSize: 12, marginTop: 2 }}>
+            <div style={{ padding: '10px 16px 6px' }}>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.32)', textTransform: 'uppercase', letterSpacing: '0.09em', marginBottom: 3 }}>פרויקט פעיל</div>
+              <div style={{ color: 'rgba(255,255,255,0.80)', fontWeight: 600, fontSize: 12 }}>
                 {isActivist ? activeProject?.name : selectedProj === 0 ? 'כל הפרויקטים' : PROJECTS.find(p => p.id === selectedProj)?.name}
               </div>
             </div>
           )}
-          <div style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 11, fontWeight: 600, flexShrink: 0 }}>
+          <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: '50%',
+              background: 'linear-gradient(135deg, #6d4eca 0%, #9c6ef0 100%)',
+              boxShadow: '0 2px 10px rgba(109,78,202,0.5)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#fff', fontSize: 11, fontWeight: 700, flexShrink: 0,
+            }}>
               {currentUser?.name?.split(' ').map(w => w[0]).slice(0, 2).join('')}
             </div>
             {open && <>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ color: '#fff', fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentUser?.name}</div>
+                <div style={{ color: 'rgba(255,255,255,0.92)', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentUser?.name}</div>
               </div>
-              <button onClick={logout} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>יציאה</button>
+              <button
+                onClick={logout}
+                style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.38)', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', transition: 'color 0.18s ease' }}
+                onMouseEnter={e => e.currentTarget.style.color = 'rgba(255,255,255,0.85)'}
+                onMouseLeave={e => e.currentTarget.style.color = 'rgba(255,255,255,0.38)'}>
+                יציאה
+              </button>
             </>}
           </div>
         </div>
       </div>
 
-      {/* ═══ תוכן ═══ */}
-      <div style={{ flex: 1, marginRight: open ? 220 : 60, overflowY: 'auto', padding: '28px 36px', transition: 'margin-right 0.35s cubic-bezier(0.4, 0, 0.2, 1)' }}>
+      {/* ═══ תוכן — overlay: always collapsed margin, sidebar overlays on expand ═══ */}
+      <div style={{ flex: 1, marginRight: SIDEBAR_COLLAPSED, overflowY: 'auto', padding: '28px 36px' }}>
 
-        <div style={{ marginBottom: 24 }}>
-          <div style={{ fontSize: 24, fontWeight: 600, color: '#3d2c1e' }}>מרכז הפעילות</div>
-          <div style={{ fontSize: 13, color: '#a08060', marginTop: 4 }}>
-            ברוך הבא, {currentUser?.name} · {isActivist ? activeProject?.name : selectedProj === 0 ? 'כל הפרויקטים' : PROJECTS.find(p => p.id === selectedProj)?.name}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
+          <div>
+            <div style={{ fontSize: 24, fontWeight: 600, color: '#3d2c1e' }}>מרכז הפעילות</div>
+            <div style={{ fontSize: 13, color: '#a08060', marginTop: 4 }}>
+              ברוך הבא, {currentUser?.name} · {isActivist ? activeProject?.name : selectedProj === 0 ? 'כל הפרויקטים' : PROJECTS.find(p => p.id === selectedProj)?.name}
+            </div>
+          </div>
+
+          {/* פעמון התראות */}
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+            <button
+              onClick={() => setNotificationsOpen(v => !v)}
+              style={{ position: 'relative', width: 40, height: 40, borderRadius: 12, border: '1.5px solid rgba(196,122,46,0.25)', background: 'rgba(255,255,255,0.85)', cursor: 'pointer', fontSize: 18, boxShadow: '0 1px 4px rgba(0,0,0,0.05)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              🔔
+              {unreadNotifications > 0 && (
+                <span style={{ position: 'absolute', top: -6, left: -6, minWidth: 18, height: 18, borderRadius: 99, background: '#e24b4a', color: '#fff', fontSize: 10, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>
+                  {unreadNotifications}
+                </span>
+              )}
+            </button>
+
+            {notificationsOpen && (
+              <div style={{ position: 'absolute', top: 48, left: 0, width: 340, maxHeight: 430, overflowY: 'auto', background: '#fff', border: '0.5px solid rgba(0,0,0,0.09)', borderRadius: 16, boxShadow: '0 22px 70px rgba(0,0,0,0.22)', zIndex: 10000, padding: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px 10px', borderBottom: '0.5px solid #eee', marginBottom: 8 }}>
+                  <b style={{ fontSize: 14, color: '#2d1f5e' }}>התראות מערכת</b>
+                  <Link href="/notifications" style={{ fontSize: 12, color: '#6c5ce7', textDecoration: 'none', fontWeight: 800 }} onClick={() => setNotificationsOpen(false)}>לכל ההתראות</Link>
+                </div>
+                {notifications.slice(0, 5).map(n => (
+                  <Link key={n.id} href={n.link || '/notifications'} style={{ textDecoration: 'none' }} onClick={() => setNotificationsOpen(false)}>
+                    <div style={{ padding: '10px 8px', borderRadius: 10, background: n.priority === 'high' ? '#fff7ec' : '#fff', borderBottom: '0.5px solid #f1f1f1' }}>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: '#2d1f5e', marginBottom: 3 }}>{n.title}</div>
+                      <div style={{ fontSize: 12, color: '#666', lineHeight: 1.45 }}>{n.body.length > 96 ? n.body.slice(0, 96) + '...' : n.body}</div>
+                    </div>
+                  </Link>
+                ))}
+                {notifications.length === 0 && (
+                  <div style={{ textAlign: 'center', color: '#aaa', padding: 20, fontSize: 13 }}>אין התראות</div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -217,51 +360,12 @@ export default function LandingPage() {
                 e.currentTarget.style.boxShadow = `0 0 0 1px rgba(0,0,0,0.07), 0 2px 6px rgba(0,0,0,0.06), 0 16px 32px rgba(0,0,0,0.10), 0 40px 64px rgba(0,0,0,0.06), 0 0 72px 10px rgba(${rgb},0.08)`;
               }}
             >
-              {/* Thin colored top bar */}
-              <div style={{
-                position: 'absolute',
-                top: 0, left: 0, right: 0,
-                height: 3,
-                background: `linear-gradient(90deg, ${color}, ${color}55)`,
-                borderRadius: '20px 20px 0 0'
-              }} />
-
-              {/* Colored dot badge */}
-              <div style={{
-                width: 32,
-                height: 32,
-                borderRadius: 10,
-                background: `rgba(${rgb},0.10)`,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginBottom: 12
-              }}>
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: `linear-gradient(90deg, ${color}, ${color}55)`, borderRadius: '20px 20px 0 0' }} />
+              <div style={{ width: 32, height: 32, borderRadius: 10, background: `rgba(${rgb},0.10)`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
                 <div style={{ width: 10, height: 10, borderRadius: '50%', background: color }} />
               </div>
-
-              {/* Hero number */}
-              <div style={{
-                fontSize: 64,
-                fontWeight: 800,
-                color: '#0f172a',
-                lineHeight: 1,
-                letterSpacing: '-0.04em',
-                fontVariantNumeric: 'tabular-nums'
-              }}>
-                {num}
-              </div>
-
-              {/* Label — clearly secondary */}
-              <div style={{
-                fontSize: 12,
-                fontWeight: 500,
-                color: '#94a3b8',
-                letterSpacing: '0.02em',
-                marginTop: 10
-              }}>
-                {label}
-              </div>
+              <div style={{ fontSize: 64, fontWeight: 800, color: '#0f172a', lineHeight: 1, letterSpacing: '-0.04em', fontVariantNumeric: 'tabular-nums' }}>{num}</div>
+              <div style={{ fontSize: 12, fontWeight: 500, color: '#94a3b8', letterSpacing: '0.02em', marginTop: 10 }}>{label}</div>
             </div>
           ))}
         </div>
@@ -359,14 +463,55 @@ export default function LandingPage() {
   );
 }
 
-function SideItem({ icon, label, open, onClick, active, highlight }) {
+function SideItem({ icon, label, open, onClick, active, highlight, cta }) {
   const [hov, setHov] = useState(false);
   return (
-    <div onClick={onClick}
-      style={{ display: 'flex', alignItems: 'center', padding: '10px 13px', cursor: 'pointer', gap: 10, margin: '1px 6px', borderRadius: 8, background: active ? 'rgba(255,255,255,0.18)' : hov ? 'rgba(255,255,255,0.1)' : highlight ? 'rgba(255,255,255,0.08)' : 'transparent', transition: 'background 0.15s' }}
-      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}>
-      <span style={{ fontSize: 18, flexShrink: 0 }}>{icon}</span>
-      {open && <span style={{ color: highlight ? '#ffd580' : active ? '#fff' : 'rgba(255,255,255,0.82)', fontSize: 13, whiteSpace: 'nowrap', fontWeight: active ? 500 : 400 }}>{label}</span>}
+    <div
+      onClick={onClick}
+      style={{
+        display: 'flex', alignItems: 'center',
+        padding: cta ? '12px 13px' : '10px 13px',
+        cursor: 'pointer', gap: 11,
+        margin: cta ? '5px 6px' : '2px 6px',
+        borderRadius: 11,
+        background: active
+          ? 'linear-gradient(135deg, rgba(167,139,250,0.26) 0%, rgba(124,92,231,0.20) 100%)'
+          : cta
+          ? hov
+            ? 'linear-gradient(135deg, rgba(42,24,112,0.88) 0%, rgba(109,78,202,0.78) 100%)'
+            : 'linear-gradient(135deg, rgba(42,24,112,0.72) 0%, rgba(109,78,202,0.62) 100%)'
+          : hov
+          ? 'rgba(255,255,255,0.09)'
+          : highlight
+          ? 'rgba(255,213,128,0.08)'
+          : 'transparent',
+        boxShadow: active
+          ? '0 2px 20px rgba(167,139,250,0.18)'
+          : cta
+          ? '0 3px 14px rgba(42,24,112,0.32)'
+          : 'none',
+        borderRight: active ? '2.5px solid #a78bfa' : cta ? '2.5px solid rgba(167,139,250,0.55)' : '2.5px solid transparent',
+        transition: 'background 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease',
+      }}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+    >
+      <span style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        color: active ? '#c4b5fd' : (cta || hov) ? 'rgba(255,255,255,0.96)' : 'rgba(255,255,255,0.58)',
+        filter: active ? 'drop-shadow(0 0 5px rgba(196,181,253,0.55))' : cta ? 'drop-shadow(0 0 4px rgba(167,139,250,0.45))' : 'none',
+        transition: 'color 0.2s ease, filter 0.2s ease',
+      }}>{icon}</span>
+      <span style={{
+        color: cta ? 'rgba(255,255,255,0.96)' : highlight ? '#fde68a' : active ? '#fff' : 'rgba(255,255,255,0.78)',
+        fontSize: 14, whiteSpace: 'nowrap',
+        fontWeight: (cta || active) ? 700 : 600,
+        lineHeight: '18px',
+        opacity: open ? 1 : 0,
+        transform: open ? 'none' : 'translateX(6px)',
+        transition: 'opacity 0.22s ease, transform 0.22s ease, color 0.18s ease',
+        pointerEvents: open ? 'auto' : 'none',
+      }}>{label}</span>
     </div>
   );
 }

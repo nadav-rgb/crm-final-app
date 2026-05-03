@@ -24,6 +24,11 @@ const baseMeetingReports = [
     answers: 'המפגש הראשון היה מוצלח מאוד. השתתפו 8 אנשים. האווירה הייתה חמה ומקבלת. הנושא היה היכרות ומבוא לפרויקט. כולם הביעו עניין רב.',
     submitted: true,
     submitted_at: '2026-04-01',
+    reminderStage: 0,
+    raw_text: null,
+    ai_summary: null,
+    ai_status: null,
+    created_from_voice: false,
   },
   {
     id: 2,
@@ -38,6 +43,11 @@ const baseMeetingReports = [
     answers: 'המפגש השני — עיון בנושא שבת. 10 משתתפים. נשאלו שאלות מעמיקות. אחד המשתתפים הביע רצון להתחיל שמירת שבת.',
     submitted: true,
     submitted_at: '2026-04-08',
+    reminderStage: 0,
+    raw_text: null,
+    ai_summary: null,
+    ai_status: null,
+    created_from_voice: false,
   },
   {
     id: 3,
@@ -52,6 +62,11 @@ const baseMeetingReports = [
     answers: null,
     submitted: false,
     submitted_at: null,
+    reminderStage: 0,
+    raw_text: null,
+    ai_summary: null,
+    ai_status: null,
+    created_from_voice: false,
   },
   {
     id: 4,
@@ -66,6 +81,11 @@ const baseMeetingReports = [
     answers: null,
     submitted: false,
     submitted_at: null,
+    reminderStage: 0,
+    raw_text: null,
+    ai_summary: null,
+    ai_status: null,
+    created_from_voice: false,
   },
 ];
 

@@ -96,14 +96,14 @@ export default function ContactsPage() {
         <div style={{ display: 'flex', border: '1.5px solid #e8e8e8', borderRadius: 10, overflow: 'hidden', flexShrink: 0 }}>
           <button onClick={() => setViewMode('grid')}
             style={{ padding: '7px 12px', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 16,
-              background: viewMode === 'grid' ? '#6c5ce7' : '#fff',
+              background: viewMode === 'grid' ? '#3a249b' : '#fff',
               color:      viewMode === 'grid' ? '#fff'    : '#aaa',
               transition: 'all 0.18s ease' }}>
             ⊞
           </button>
           <button onClick={() => setViewMode('list')}
             style={{ padding: '7px 12px', border: 'none', borderRight: '1.5px solid #e8e8e8', cursor: 'pointer', fontFamily: 'inherit', fontSize: 16,
-              background: viewMode === 'list' ? '#6c5ce7' : '#fff',
+              background: viewMode === 'list' ? '#3a249b' : '#fff',
               color:      viewMode === 'list' ? '#fff'    : '#aaa',
               transition: 'all 0.18s ease' }}>
             ☰
@@ -137,6 +137,21 @@ export default function ContactsPage() {
           }
         </div>
       )}
+
+      {/* לקוחות לשעבר — כפתור תחתי */}
+      <div style={{ marginTop: 20, display: 'flex', justifyContent: 'flex-end' }}>
+        <Link href="/former-contacts" style={{ textDecoration: 'none' }}>
+          <button style={{
+            padding: '6px 16px', borderRadius: 9,
+            border: '1.5px solid rgba(58,36,155,0.22)',
+            background: 'rgba(58,36,155,0.06)',
+            color: '#3a249b', fontSize: 12, fontWeight: 600,
+            cursor: 'pointer', fontFamily: 'Rubik, sans-serif',
+          }}>
+            {formerCount > 0 ? `לקוחות לשעבר (${formerCount})` : 'לקוחות לשעבר'}
+          </button>
+        </Link>
+      </div>
     </DesktopLayout>
   );
 }

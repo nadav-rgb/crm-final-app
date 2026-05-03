@@ -81,14 +81,14 @@
 .app-btn:active { transform: translateY(0); box-shadow: none; }
 
 .app-btn--primary {
-  background: linear-gradient(135deg, var(--color-brand-primary) 0%, #a29bfe 100%);
+  background: linear-gradient(135deg, var(--color-brand-primary) 0%, #6d4eca 100%);
   border: none;
   color: #fff;
   font-weight: var(--font-weight-bold);
   box-shadow: var(--shadow-brand);
 }
 .app-btn--primary:hover {
-  background: linear-gradient(135deg, var(--color-brand-primary-hover) 0%, #8e83f0 100%);
+  background: linear-gradient(135deg, var(--color-brand-primary-hover) 0%, #5a3dba 100%);
   box-shadow: var(--shadow-brand-hover);
 }
 

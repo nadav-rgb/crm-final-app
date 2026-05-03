@@ -5,7 +5,7 @@ import DesktopLayout from '../../components/DesktopLayout';
 import { useAuth } from '../../lib/AuthStore';
 import { saveManualMeetingHouse } from '../../lib/meetingHousesStorage';
 
-const emptyMeetings = [1, 2, 3, 4].map(num => ({ meetingNumber: num, date: '', startTime: '' }));
+const emptyMeetings = [1, 2, 3, 4].map(num => ({ meetingNumber: num, date: '', startTime: '', completed: false, notes: '', summary: '' }));
 
 export default function NewMeetingHousePage() {
   const router = useRouter();

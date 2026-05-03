@@ -9,15 +9,16 @@ import { calcInteractionPayment } from '../../../lib/paymentCalc';
 import DesktopLayout from '../../../components/DesktopLayout';
 import { summarizeInteractionDemo } from '../../../lib/aiDemo';
 import { createPaymentInteractionNotifications } from '../../../lib/notificationDemo';
+import VoiceInput from '../../../components/VoiceInput';
 import users from '../../../data/users';
 
 const TODAY = new Date().toISOString().split('T')[0];
 
 const EMPTY = {
-  type:'', quality:'', outcome:'חיובי', date:TODAY,
-  long_enough: null, // מעל 15 דק' / פחות
-  notes:'', description:'', ai_summary:'',
-  set_next_action:false, next_action:'', next_action_date:'',
+  type: '', quality: '', outcome: 'חיובי', date: TODAY,
+  long_enough: null,
+  notes: '', description: '', ai_summary: '',
+  next_action: '', next_action_date: '',
 };
 
 export default function AddInteractionPage() {
@@ -32,11 +33,25 @@ export default function AddInteractionPage() {
   const [errors,  setErrors]  = useState({});
   const [success, setSuccess] = useState(false);
 
-  if (!contact) return <DesktopLayout title="הוסף קשר"><div>לקוח לא נמצא</div></DesktopLayout>;
+  if (!contact) {
+    return <DesktopLayout title="הוסף קשר"><div style={{ padding: 40, color: '#aaa' }}>לקוח לא נמצא</div></DesktopLayout>;
+  }
+
+  // Security: activist can only report for their own contact
+  if (currentUser?.role === 'activist' && contact.activist_id !== currentUser.id) {
+    return (
+      <DesktopLayout title="הוספת קשר" backHref={`/contact/${contactId}`} backLabel="← חזרה">
+        <div style={{ textAlign: 'center', padding: 60, color: '#aaa' }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>🔒</div>
+          <div style={{ fontSize: 15 }}>אין הרשאה — לא ניתן לדווח קשר עבור לקוח שאינו שלך</div>
+        </div>
+      </DesktopLayout>
+    );
+  }
 
   const isAchdut = activeProject?.id === 2 || contact.project_id === 2;
 
-  // חישוב תשלום חי — כולל בדיקת מגבלות חודשיות קיימות
+  // Live payment calculation
   const duration = form.long_enough === 'yes' ? 16 : form.long_enough === 'no' ? 5 : 0;
   const currentMonthKey = form.date?.slice(0, 7);
   const previousContactMonthly = interactions.filter(i =>
@@ -62,23 +77,29 @@ export default function AddInteractionPage() {
     setErrors(prev => ({ ...prev, [field]: undefined }));
   }
 
-  function validate() {
-    const e = {};
-    if (!form.type)        e.type        = 'נא לבחור סוג קשר';
-    if (!form.quality)     e.quality     = 'נא לבחור איכות קשר';
-    if (!form.description || !form.description.trim()) e.description = 'תיאור המפגש הוא שדה חובה';
-    if (!form.date)        e.date        = 'נא לבחור תאריך';
-    if (form.date > TODAY) e.date        = 'תאריך לא יכול להיות בעתיד';
-    if (isAchdut && !form.long_enough) e.long_enough = 'נא לציין משך הקשר';
-    if (form.set_next_action) {
-      if (!form.next_action)      e.next_action      = 'נא לתאר את הפעולה הבאה';
-      if (!form.next_action_date) e.next_action_date = 'נא לבחור תאריך';
-    }
-    return e;
+  // Reset quality when switching to וידאו + ידידותי was selected
+  function handleTypeChange(t) {
+    setForm(prev => ({
+      ...prev,
+      type: t,
+      quality: t === 'וידאו' && prev.quality === 'ידידותי' ? '' : prev.quality,
+    }));
+    setErrors(prev => ({ ...prev, type: undefined, quality: undefined }));
+  }
+
+  function handleVoiceTranscript(text) {
+    const updated = form.description ? form.description + '\n' + text : text;
+    set('description', updated);
+    const summary = summarizeInteractionDemo(updated, {
+      contactName: contact.name, type: form.type, quality: form.quality,
+    });
+    if (summary) set('ai_summary', summary);
   }
 
   function handleAiSummary() {
-    const summary = summarizeInteractionDemo(form.description, { contactName: contact.name, type: form.type, quality: form.quality });
+    const summary = summarizeInteractionDemo(form.description, {
+      contactName: contact.name, type: form.type, quality: form.quality,
+    });
     if (!summary) {
       setErrors(prev => ({ ...prev, description: 'כדי להפעיל סיכום AI דמו צריך קודם לכתוב תיאור מפגש' }));
       return;
@@ -86,12 +107,25 @@ export default function AddInteractionPage() {
     set('ai_summary', summary);
   }
 
+  function validate() {
+    const e = {};
+    if (!form.type)                              e.type         = 'נא לבחור סוג קשר';
+    if (!form.quality)                           e.quality      = 'נא לבחור איכות קשר';
+    if (!form.description?.trim())               e.description  = 'תיאור המפגש הוא שדה חובה';
+    if (!form.date)                              e.date         = 'נא לבחור תאריך';
+    if (form.date > TODAY)                       e.date         = 'תאריך לא יכול להיות בעתיד';
+    if (isAchdut && !form.long_enough)           e.long_enough  = 'נא לציין משך הקשר';
+    if (!form.next_action?.trim())               e.next_action  = 'נא לתאר את הפעולה הבאה';
+    if (!form.next_action_date)                  e.next_action_date = 'נא לבחור תאריך יעד';
+    return e;
+  }
+
   function handleSubmit() {
     const e = validate();
     if (Object.keys(e).length > 0) { setErrors(e); return; }
-    const interactionId = Date.now();
+
     const interactionPayload = {
-      id:               interactionId,
+      id:               Date.now(),
       contact_id:       contactId,
       activist_id:      currentUser.id,
       type:             form.type,
@@ -99,12 +133,12 @@ export default function AddInteractionPage() {
       duration_minutes: form.long_enough === 'yes' ? 16 : 5,
       outcome:          form.outcome,
       date:             form.date,
-      time:             new Date().toTimeString().slice(0,5),
+      time:             new Date().toTimeString().slice(0, 5),
       notes:            form.notes.trim(),
       description:      form.description.trim(),
       ai_summary:       form.ai_summary.trim(),
-      next_action:      form.set_next_action ? form.next_action.trim() : null,
-      next_action_date: form.set_next_action ? form.next_action_date   : null,
+      next_action:      form.next_action.trim(),
+      next_action_date: form.next_action_date,
     };
 
     addInteraction(interactionPayload);
@@ -122,20 +156,25 @@ export default function AddInteractionPage() {
     setSuccess(true);
   }
 
-  const card = { background:'#fffaf5', borderRadius:14, padding:'16px 18px', marginBottom:12, border:'0.5px solid rgba(0,0,0,0.06)', boxShadow:'0 1px 4px rgba(0,0,0,0.04)' };
+  const card = {
+    background: '#fffaf5', borderRadius: 14, padding: '16px 18px', marginBottom: 12,
+    border: '0.5px solid rgba(0,0,0,0.06)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+  };
 
   if (success) return (
     <DesktopLayout title="קשר נוסף בהצלחה">
-      <div style={{ textAlign:'center', padding:'60px 20px' }}>
-        <div style={{ fontSize:56, marginBottom:16 }}>✅</div>
-        <h2 style={{ marginBottom:8 }}>הקשר תועד!</h2>
+      <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+        <div style={{ fontSize: 56, marginBottom: 16 }}>✅</div>
+        <h2 style={{ marginBottom: 8 }}>הקשר תועד!</h2>
         {isAchdut && payableCheck && (
-          <div style={{ fontSize:14, color: payableCheck.payable?'#27ae60':'#888', marginBottom:8, fontWeight:700 }}>
-            {payableCheck.payable ? `✓ קשר מזכה בתשלום — ${payableCheck.amount} ₪` : '✗ קשר זה אינו מזכה בתשלום'}
+          <div style={{ fontSize: 14, color: payableCheck.payable ? '#27ae60' : '#888', marginBottom: 8, fontWeight: 700 }}>
+            {payableCheck.payable
+              ? `✓ קשר מזכה בתשלום — ${payableCheck.amount} ₪`
+              : '✗ קשר זה אינו מזכה בתשלום'}
           </div>
         )}
-        <p style={{ fontSize:14, color:'#aaa', marginBottom:28 }}>הקשר עם {contact.name} נשמר.</p>
-        <Link href={`/contact/${contactId}`} className="btn btn-primary" style={{ textDecoration:'none', padding:'10px 24px' }}>
+        <p style={{ fontSize: 14, color: '#aaa', marginBottom: 28 }}>הקשר עם {contact.name} נשמר.</p>
+        <Link href={`/contact/${contactId}`} className="btn btn-primary" style={{ textDecoration: 'none', padding: '10px 24px' }}>
           חזרה לפרופיל הלקוח
         </Link>
       </div>
@@ -144,14 +183,18 @@ export default function AddInteractionPage() {
 
   return (
     <DesktopLayout title={`קשר חדש — ${contact.name}`} backHref={`/contact/${contactId}`} backLabel="← חזרה">
-      <div style={{ maxWidth:560 }}>
+      <div style={{ maxWidth: 560 }}>
 
         {/* סוג קשר */}
         <div style={card}>
-          <label className="form-label">סוג קשר <span style={{color:'#e24b4a'}}>*</span></label>
+          <label className="form-label">סוג קשר <span style={{ color: '#e24b4a' }}>*</span></label>
           <div className="chip-group">
             {CONFIG.interactionTypes.map(t => (
-              <button key={t} type="button" className={`chip ${form.type===t?'chip-active':''}`} onClick={()=>set('type',t)}>{t}</button>
+              <button key={t} type="button"
+                className={`chip ${form.type === t ? 'chip-active' : ''}`}
+                onClick={() => handleTypeChange(t)}>
+                {t}
+              </button>
             ))}
           </div>
           {errors.type && <span className="error-msg">{errors.type}</span>}
@@ -159,33 +202,55 @@ export default function AddInteractionPage() {
 
         {/* איכות קשר */}
         <div style={card}>
-          <label className="form-label">איכות הקשר <span style={{color:'#e24b4a'}}>*</span></label>
+          <label className="form-label">איכות הקשר <span style={{ color: '#e24b4a' }}>*</span></label>
           <div className="chip-group">
-            {CONFIG.interactionQuality.map(q => (
-              <button key={q} type="button" className={`chip ${form.quality===q?'chip-active':''}`} onClick={()=>set('quality',q)}>{q}</button>
-            ))}
+            {CONFIG.interactionQuality.map(q => {
+              const blocked = q === 'ידידותי' && form.type === 'וידאו';
+              return (
+                <button key={q} type="button"
+                  disabled={blocked}
+                  title={blocked ? 'וידאו ידידותי אינו זמין' : undefined}
+                  className={`chip ${form.quality === q ? 'chip-active' : ''}`}
+                  onClick={() => !blocked && set('quality', q)}
+                  style={blocked ? { opacity: 0.35, cursor: 'not-allowed' } : {}}>
+                  {q}
+                </button>
+              );
+            })}
           </div>
+          {form.type === 'וידאו' && (
+            <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>
+              וידאו ידידותי אינו זמין — ניתן לבחור תורני בלבד
+            </div>
+          )}
           {errors.quality && <span className="error-msg">{errors.quality}</span>}
         </div>
 
         {/* משך זמן — אחדות יהודית בלבד */}
         {isAchdut && (
           <div style={card}>
-            <label className="form-label">משך זמן הקשר <span style={{color:'#e24b4a'}}>*</span></label>
-            <div style={{ display:'flex', gap:10 }}>
-              {[{v:'yes',l:'מעל 15 דקות ✓'},{v:'no',l:'פחות מ-15 דקות'}].map(({v,l})=>(
-                <button key={v} type="button" onClick={()=>set('long_enough',v)}
-                  style={{ flex:1, padding:'10px', borderRadius:12, border:`1.5px solid ${form.long_enough===v?'#6c5ce7':'#e8e8e8'}`, background:form.long_enough===v?'#f0effe':'#fafafa', color:form.long_enough===v?'#6c5ce7':'#555', fontWeight:form.long_enough===v?700:400, cursor:'pointer', fontFamily:'Rubik,sans-serif', fontSize:13, transition:'all 0.18s' }}>
+            <label className="form-label">משך זמן הקשר <span style={{ color: '#e24b4a' }}>*</span></label>
+            <div style={{ display: 'flex', gap: 10 }}>
+              {[{ v: 'yes', l: 'מעל 15 דקות ✓' }, { v: 'no', l: 'פחות מ-15 דקות' }].map(({ v, l }) => (
+                <button key={v} type="button" onClick={() => set('long_enough', v)}
+                  style={{
+                    flex: 1, padding: '10px', borderRadius: 12, cursor: 'pointer',
+                    border: `1.5px solid ${form.long_enough === v ? '#6c5ce7' : '#e8e8e8'}`,
+                    background: form.long_enough === v ? '#f0effe' : '#fafafa',
+                    color: form.long_enough === v ? '#6c5ce7' : '#555',
+                    fontWeight: form.long_enough === v ? 700 : 400,
+                    fontFamily: 'Rubik,sans-serif', fontSize: 13, transition: 'all 0.18s',
+                  }}>
                   {l}
                 </button>
               ))}
             </div>
             {errors.long_enough && <span className="error-msg">{errors.long_enough}</span>}
-
-            {/* אינדיקטור תשלום */}
             {payableCheck && (
-              <div style={{ marginTop:10, padding:'8px 12px', borderRadius:10, fontSize:13, fontWeight:700, background:payableCheck.payable?'#edfaf1':'#f5f5f5', color:payableCheck.payable?'#27ae60':'#888' }}>
-                {payableCheck.payable ? `✓ קשר מזכה בתשלום — ${payableCheck.amount} ₪` : `✗ ${payableCheck.reason || 'לא מזכה בתשלום'}`}
+              <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 10, fontSize: 13, fontWeight: 700, background: payableCheck.payable ? '#edfaf1' : '#f5f5f5', color: payableCheck.payable ? '#27ae60' : '#888' }}>
+                {payableCheck.payable
+                  ? `✓ קשר מזכה בתשלום — ${payableCheck.amount} ₪`
+                  : `✗ ${payableCheck.reason || 'לא מזכה בתשלום'}`}
               </div>
             )}
           </div>
@@ -193,48 +258,51 @@ export default function AddInteractionPage() {
 
         {/* תאריך */}
         <div style={card}>
-          <label className="form-label">תאריך <span style={{color:'#e24b4a'}}>*</span></label>
-          <input type="date" className={`form-input ${errors.date?'form-error':''}`} value={form.date} max={TODAY} onChange={e=>set('date',e.target.value)} />
+          <label className="form-label">תאריך <span style={{ color: '#e24b4a' }}>*</span></label>
+          <input type="date" className={`form-input ${errors.date ? 'form-error' : ''}`}
+            value={form.date} max={TODAY} onChange={e => set('date', e.target.value)} />
           {errors.date && <span className="error-msg">{errors.date}</span>}
         </div>
 
-        {/* תיאור המפגש — חובה */}
+        {/* תיאור המפגש */}
         <div style={card}>
-          <label className="form-label">תיאור המפגש <span style={{color:'#e24b4a'}}>*</span></label>
-          <textarea className={`form-textarea ${errors.description?'form-error':''}`} rows={4}
+          <label className="form-label">תיאור המפגש <span style={{ color: '#e24b4a' }}>*</span></label>
+          <textarea className={`form-textarea ${errors.description ? 'form-error' : ''}`} rows={4}
             placeholder="תאר את המפגש בפירוט — מי הלקוח, מה דובר, מה הפוטנציאל..."
-            value={form.description} onChange={e=>set('description',e.target.value)} />
+            value={form.description} onChange={e => set('description', e.target.value)} />
           {errors.description && <span className="error-msg">{errors.description}</span>}
-          <button type="button" onClick={handleAiSummary} style={{ marginTop:10, border:'none', borderRadius:10, padding:'9px 12px', background:'#f0effe', color:'#6c5ce7', fontWeight:800, cursor:'pointer', fontFamily:'inherit' }}>סכם עם AI דמו חכם</button>
+          <VoiceInput onTranscript={handleVoiceTranscript} />
+          <button type="button" onClick={handleAiSummary}
+            style={{ marginTop: 10, border: 'none', borderRadius: 10, padding: '9px 12px', background: '#f0effe', color: '#6c5ce7', fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>
+            סכם עם AI דמו חכם
+          </button>
           {form.ai_summary && (
-            <pre style={{ marginTop:10, whiteSpace:'pre-wrap', background:'#fff', border:'0.5px solid #e8e8e8', borderRadius:12, padding:'12px', fontFamily:'inherit', fontSize:13, color:'#333', lineHeight:1.7 }}>{form.ai_summary}</pre>
+            <pre style={{ marginTop: 10, whiteSpace: 'pre-wrap', background: '#fff', border: '0.5px solid #e8e8e8', borderRadius: 12, padding: '12px', fontFamily: 'inherit', fontSize: 13, color: '#333', lineHeight: 1.7 }}>
+              {form.ai_summary}
+            </pre>
           )}
         </div>
 
-        {/* פעולה הבאה */}
+        {/* פעולה הבאה — חובה תמיד */}
         <div style={card}>
-          <label style={{ display:'flex', alignItems:'center', gap:10, cursor:'pointer' }}>
-            <input type="checkbox" checked={form.set_next_action}
-              onChange={e=>{ set('set_next_action',e.target.checked); if(!e.target.checked) setForm(p=>({...p,next_action:'',next_action_date:''})); }}
-              style={{ width:18, height:18 }} />
-            <span className="form-label" style={{ margin:0 }}>הגדר פעולה הבאה</span>
-          </label>
-          {form.set_next_action && (
-            <div style={{ marginTop:12 }}>
-              <label className="form-label">תיאור <span style={{color:'#e24b4a'}}>*</span></label>
-              <input type="text" className={`form-input ${errors.next_action?'form-error':''}`} placeholder="למשל: לתאם פגישה..." value={form.next_action} onChange={e=>set('next_action',e.target.value)} style={{ marginBottom:10 }} />
-              {errors.next_action && <span className="error-msg">{errors.next_action}</span>}
-              <label className="form-label">תאריך יעד <span style={{color:'#e24b4a'}}>*</span></label>
-              <input type="date" className={`form-input ${errors.next_action_date?'form-error':''}`} value={form.next_action_date} min={TODAY} onChange={e=>set('next_action_date',e.target.value)} />
-              {errors.next_action_date && <span className="error-msg">{errors.next_action_date}</span>}
-            </div>
-          )}
+          <label className="form-label">פעולה הבאה <span style={{ color: '#e24b4a' }}>*</span></label>
+          <input type="text" className={`form-input ${errors.next_action ? 'form-error' : ''}`}
+            placeholder="למשל: לתאם פגישה..."
+            value={form.next_action} onChange={e => set('next_action', e.target.value)}
+            style={{ marginBottom: 10 }} />
+          {errors.next_action && <span className="error-msg">{errors.next_action}</span>}
+          <label className="form-label">תאריך יעד <span style={{ color: '#e24b4a' }}>*</span></label>
+          <input type="date" className={`form-input ${errors.next_action_date ? 'form-error' : ''}`}
+            value={form.next_action_date} min={TODAY}
+            onChange={e => set('next_action_date', e.target.value)} />
+          {errors.next_action_date && <span className="error-msg">{errors.next_action_date}</span>}
         </div>
 
-        <div style={{ display:'flex', gap:10, marginBottom:20 }}>
-          <button className="btn" style={{ flex:1 }} onClick={()=>setForm(EMPTY)}>נקה</button>
-          <button className="btn btn-primary" style={{ flex:2 }} onClick={handleSubmit}>שמור קשר</button>
+        <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
+          <button className="btn" style={{ flex: 1 }} onClick={() => setForm(EMPTY)}>נקה</button>
+          <button className="btn btn-primary" style={{ flex: 2 }} onClick={handleSubmit}>שמור קשר</button>
         </div>
+
       </div>
     </DesktopLayout>
   );

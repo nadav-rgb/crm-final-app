@@ -3,25 +3,25 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import DesktopLayout from '../../components/DesktopLayout';
 import { useAuth } from '../../lib/AuthStore';
-import { getMeetingHouses, importExternalMeetingHousesDemo } from '../../lib/meetingHousesStorage';
+import { getMeetingHouses, updateMeetingHouseAssignments, importExternalMeetingHousesDemo } from '../../lib/meetingHousesStorage';
+import { createDemoNotification } from '../../lib/notificationDemo';
 import activists from '../../data/activists';
+
+const achdutActivists = activists.filter(a => a.project_id === 2 && a.role === 'activist' && a.status === 'active');
 
 function formatDate(dateString) {
   if (!dateString) return '—';
   return new Date(dateString).toLocaleDateString('he-IL');
 }
 
-function getActivistNames(ids) {
-  if (!ids?.length) return 'עדיין לא שובצו פעילים';
-  return ids.map(id => activists.find(a => a.id === id)?.name).filter(Boolean).join(', ');
-}
-
-function getFirstMeeting(house) {
-  return house.meetings?.find(m => m.meetingNumber === 1) || house.meetings?.[0] || null;
-}
+const STATUS_LABELS = {
+  upcoming: { label: 'לפני תחילה', color: '#6c5ce7', bg: '#f0effe' },
+  active:   { label: 'פעיל',        color: '#27ae60', bg: '#edfaf1' },
+  completed:{ label: 'הסתיים',      color: '#aaa',    bg: '#f5f5f5' },
+};
 
 export default function MeetingHousesPage() {
-  const { can } = useAuth();
+  const { can, currentUser } = useAuth();
   const [houses, setHouses] = useState([]);
   const [importMessage, setImportMessage] = useState('');
 
@@ -29,17 +29,62 @@ export default function MeetingHousesPage() {
     setHouses(getMeetingHouses());
   }, []);
 
+  const activeHouses = houses.filter(h => {
+    if (h.status === 'completed') return false;
+    if (currentUser?.role === 'activist') {
+      const uid = Number(currentUser.id);
+      return (h.assignedActivists ?? []).some(a => Number(a) === uid) ||
+             Number(h.assignedActivistId) === uid;
+    }
+    return true;
+  });
+
   function handleExternalImport() {
     const imported = importExternalMeetingHousesDemo();
     setHouses(getMeetingHouses());
-    setImportMessage('יובאו ' + imported.length + ' בתי מפגש מדמו חיצוני. בעתיד הפעולה הזו תוחלף בסנכרון מ-Google Sheets / Forms.');
+    setImportMessage('יובאו ' + imported.length + ' בתי מפגש מדמו חיצוני.');
   }
 
-  if (!can.seeMeetingHouses) {
+  function handleAssign(houseId, activistId, houseNumber, houseCity) {
+    const updated = updateMeetingHouseAssignments(houseId, [activistId]);
+    if (!updated) return;
+    setHouses(getMeetingHouses());
+    const activist = achdutActivists.find(a => a.id === activistId);
+    if (!activist) return;
+
+    const firstMeeting = updated.meetings?.[0];
+    const dateStr = firstMeeting?.date ? formatDate(firstMeeting.date) : 'טרם נקבע';
+    createDemoNotification({
+      id: `assignment_${houseId}_${activistId}_${Date.now()}`,
+      type: 'assignment',
+      title: 'שובצת לבית מפגש',
+      body: `שובצת לבית מפגש ${houseNumber} ב${houseCity}. המפגש הראשון: ${dateStr}.`,
+      user_id: activistId,
+      project_id: 2,
+      priority: 'high',
+      created_at: new Date().toISOString(),
+      link: `/meeting-houses/${houseId}`,
+    });
+    if (currentUser) {
+      createDemoNotification({
+        id: `assignment_manager_${houseId}_${activistId}_${Date.now()}`,
+        type: 'assignment',
+        title: 'שיבוץ נשמר',
+        body: `שיבצת את ${activist.name} לבית מפגש ${houseNumber} ב${houseCity}.`,
+        user_id: currentUser.id,
+        project_id: 2,
+        priority: 'normal',
+        created_at: new Date().toISOString(),
+        link: `/meeting-houses/${houseId}`,
+      });
+    }
+  }
+
+  if (!can.seeMeetingHouses && currentUser?.role !== 'activist') {
     return (
-      <DesktopLayout title="בתי מפגש" subtitle="אחדות עכשיו">
-        <div style={{ textAlign:'center', padding:60, color:'#aaa' }}>
-          <div style={{ fontSize:48, marginBottom:12 }}>🔒</div>
+      <DesktopLayout title="בתי מפגש חדשים">
+        <div style={{ textAlign: 'center', padding: 60, color: '#aaa' }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>🔒</div>
           <div>אין הרשאה לדף זה</div>
         </div>
       </DesktopLayout>
@@ -48,64 +93,131 @@ export default function MeetingHousesPage() {
 
   return (
     <DesktopLayout
-      title="בתי מפגש"
-      subtitle="אחדות עכשיו · ניהול בתי מפגש ושיבוץ פעילים"
+      title="בתי מפגש חדשים"
+      subtitle={`${activeHouses.length} בתי מפגש פעילים · אחדות יהודית`}
       actions={(
-        <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-          <button onClick={handleExternalImport} style={{ border:'0.5px solid rgba(108,92,231,0.35)', borderRadius:10, padding:'9px 15px', fontFamily:'inherit', fontWeight:800, cursor:'pointer', background:'#fff', color:'#6c5ce7' }}>
-            ייבא נתונים חיצוניים דמו
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={handleExternalImport} style={{ border: '0.5px solid rgba(108,92,231,0.35)', borderRadius: 10, padding: '9px 15px', fontFamily: 'inherit', fontWeight: 700, cursor: 'pointer', background: '#fff', color: '#6c5ce7', fontSize: 13 }}>
+            ייבא דמו חיצוני
           </button>
-          <Link href="/meeting-houses/new" style={{ textDecoration:'none' }}>
-            <button style={{ border:'none', borderRadius:10, padding:'9px 15px', fontFamily:'inherit', fontWeight:800, cursor:'pointer', background:'#6c5ce7', color:'#fff' }}>
-              הוסף בית מפגש
+          <Link href="/meeting-houses/new" style={{ textDecoration: 'none' }}>
+            <button style={{ border: 'none', borderRadius: 10, padding: '9px 15px', fontFamily: 'inherit', fontWeight: 700, cursor: 'pointer', background: '#6c5ce7', color: '#fff', fontSize: 13 }}>
+              + הוסף בית מפגש
             </button>
           </Link>
         </div>
       )}
     >
-      <div style={{ marginBottom:18, background:'#fffaf5', border:'0.5px solid rgba(0,0,0,0.07)', borderRadius:14, padding:'14px 18px', color:'#6b5a49', fontSize:13, lineHeight:1.7 }}>
-        בשלב זה אפשר להזין בית מפגש ידנית בתוך המערכת, או ללחוץ על ייבוא דמו כדי לראות כיצד נתונים שמוקלדים בעתיד ב־Google Sheets / Google Forms ייכנסו אוטומטית לאותו מודול.
-        <div style={{ marginTop:8, color:'#8a6b4f' }}>
-          המבנה האחיד כולל: יישוב, מספר בית מפגש, מארח, מנחה, ארבעה תאריכים ושעת התחלה לכל מפגש.
-        </div>
-      </div>
-
       {importMessage && (
-        <div style={{ marginBottom:16, background:'#eefaf2', border:'0.5px solid rgba(22,120,65,0.15)', borderRadius:12, padding:'12px 16px', color:'#1f7a45', fontSize:13, fontWeight:700 }}>
+        <div style={{ marginBottom: 16, background: '#eefaf2', border: '0.5px solid rgba(22,120,65,0.15)', borderRadius: 12, padding: '12px 16px', color: '#1f7a45', fontSize: 13, fontWeight: 700 }}>
           {importMessage}
         </div>
       )}
 
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))', gap:14 }}>
-        {houses.map(house => {
-          const firstMeeting = getFirstMeeting(house);
-          return (
-            <Link key={house.id} href={`/meeting-houses/${house.id}`} style={{ textDecoration:'none' }}>
-              <div style={{ background:'#fff', border:'0.5px solid rgba(0,0,0,0.08)', borderRadius:16, padding:18, minHeight:220, boxShadow:'0 1px 5px rgba(0,0,0,0.04)', cursor:'pointer' }}>
-                <div style={{ display:'flex', justifyContent:'space-between', gap:10, alignItems:'flex-start', marginBottom:10 }}>
-                  <div>
-                    <div style={{ fontSize:18, fontWeight:800, color:'#2d1f5e' }}>בית מפגש {house.houseNumber}</div>
-                    <div style={{ fontSize:13, color:'#a08060', marginTop:4 }}>{house.settlement || house.city}</div>
-                  </div>
-                  <span style={{ fontSize:11, padding:'4px 9px', borderRadius:999, background: house.source === 'external-demo' ? '#e9f8ef' : '#f0effe', color: house.source === 'external-demo' ? '#1f7a45' : '#6c5ce7', fontWeight:700, whiteSpace:'nowrap' }}>{house.source === 'external-demo' ? 'יובא חיצונית' : house.status}</span>
-                </div>
-
-                <div style={{ fontSize:13, color:'#555', lineHeight:1.9 }}>
-                  <div><b>מארח:</b> {house.hostName}</div>
-                  <div><b>מנחה:</b> {house.facilitatorName}</div>
-                  <div><b>מפגש ראשון:</b> {formatDate(firstMeeting?.date)} · {firstMeeting?.startTime || '—'}</div>
-                  <div><b>מספר מפגשים:</b> {house.meetings?.length || 4}</div>
-                </div>
-
-                <div style={{ marginTop:14, paddingTop:12, borderTop:'0.5px solid #f0f0f0', fontSize:12, color:'#777', lineHeight:1.6 }}>
-                  <b>פעילים משובצים:</b><br />
-                  {getActivistNames(house.assignedActivists)}
-                </div>
-              </div>
-            </Link>
-          );
-        })}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
+        {activeHouses.length === 0 ? (
+          <div style={{ gridColumn: '1/-1', textAlign: 'center', color: '#ccc', padding: 48, fontSize: 14 }}>
+            אין בתי מפגש פעילים · <Link href="/meeting-houses/completed" style={{ color: '#6c5ce7' }}>לצפייה בבתי מפגש שהסתיימו</Link>
+          </div>
+        ) : activeHouses.map(house => (
+          <HouseCard
+            key={house.id}
+            house={house}
+            onAssign={(activistId) => handleAssign(house.id, activistId, house.houseNumber, house.settlement || house.city)}
+          />
+        ))}
       </div>
     </DesktopLayout>
+  );
+}
+
+function HouseCard({ house, onAssign }) {
+  const [selectedId, setSelectedId] = useState('');
+  const completedCount = house.meetings.filter(m => m.completed).length;
+  const statusInfo = STATUS_LABELS[house.status] || STATUS_LABELS.upcoming;
+  const assignedActivist = achdutActivists.find(a => a.id === house.assignedActivistId || house.assignedActivists?.[0] === a.id);
+  const availableActivists = achdutActivists.filter(a => !house.assignedActivists?.includes(a.id));
+  const firstMeeting = house.meetings?.[0];
+
+  function doAssign() {
+    const id = Number(selectedId);
+    if (!id) return;
+    onAssign(id);
+    setSelectedId('');
+  }
+
+  return (
+    <div style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)', borderRadius: 16, padding: 18, boxShadow: '0 1px 5px rgba(0,0,0,0.04)', display: 'flex', flexDirection: 'column', gap: 0 }}>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: '#2d1f5e' }}>בית מפגש {house.houseNumber}</div>
+          <div style={{ fontSize: 12, color: '#a08060', marginTop: 3 }}>📍 {house.settlement || house.city}</div>
+        </div>
+        <span style={{ fontSize: 11, padding: '4px 10px', borderRadius: 999, background: statusInfo.bg, color: statusInfo.color, fontWeight: 700, whiteSpace: 'nowrap' }}>
+          {statusInfo.label}
+        </span>
+      </div>
+
+      {/* Info */}
+      <div style={{ fontSize: 12, color: '#666', lineHeight: 1.8, marginBottom: 10 }}>
+        <div><span style={{ color: '#aaa' }}>מנחה: </span>{house.facilitatorName || '—'}</div>
+        <div><span style={{ color: '#aaa' }}>מארח: </span>{house.hostName || '—'}</div>
+        <div><span style={{ color: '#aaa' }}>מפגש ראשון: </span>{firstMeeting?.date ? new Date(firstMeeting.date).toLocaleDateString('he-IL') : '—'}</div>
+      </div>
+
+      {/* Progress bar */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <span style={{ fontSize: 11, color: '#aaa', fontWeight: 600 }}>התקדמות מפגשים</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: completedCount > 0 ? '#27ae60' : '#6c5ce7' }}>{completedCount}/4</span>
+        </div>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {[1, 2, 3, 4].map(n => (
+            <div key={n} style={{ flex: 1, height: 6, borderRadius: 4, background: n <= completedCount ? '#27ae60' : '#e8e8e8' }} />
+          ))}
+        </div>
+      </div>
+
+      {/* Activist */}
+      <div style={{ background: '#fafafa', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
+        <div style={{ fontSize: 11, color: '#aaa', marginBottom: 4 }}>פעיל משובץ</div>
+        {assignedActivist ? (
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#2d1f5e' }}>⭐ {assignedActivist.name}</div>
+        ) : (
+          <div style={{ fontSize: 12, color: '#ccc' }}>לא שובץ עדיין</div>
+        )}
+      </div>
+
+      {/* Assign dropdown */}
+      {availableActivists.length > 0 && (
+        <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+          <select
+            value={selectedId}
+            onChange={e => setSelectedId(e.target.value)}
+            style={{ flex: 1, border: '1.5px solid #e8e8e8', borderRadius: 8, padding: '7px 10px', fontFamily: 'inherit', fontSize: 12, color: '#333', background: '#fff' }}
+          >
+            <option value="">שבץ פעיל...</option>
+            {availableActivists.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+          <button
+            onClick={doAssign}
+            disabled={!selectedId}
+            style={{ border: 'none', borderRadius: 8, padding: '7px 14px', fontFamily: 'inherit', fontWeight: 700, fontSize: 12, cursor: selectedId ? 'pointer' : 'not-allowed', background: selectedId ? '#6c5ce7' : '#ddd', color: '#fff' }}
+          >
+            שבץ
+          </button>
+        </div>
+      )}
+
+      {/* Actions */}
+      <Link href={`/meeting-houses/${house.id}`} style={{ textDecoration: 'none' }}>
+        <button style={{ width: '100%', border: '1.5px solid #6c5ce7', borderRadius: 10, padding: '9px', fontFamily: 'inherit', fontWeight: 700, fontSize: 13, cursor: 'pointer', background: '#fff', color: '#6c5ce7', transition: 'all 0.15s ease' }}
+          onMouseEnter={e => { e.currentTarget.style.background = '#6c5ce7'; e.currentTarget.style.color = '#fff'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.color = '#6c5ce7'; }}>
+          פרטים מלאים
+        </button>
+      </Link>
+    </div>
   );
 }

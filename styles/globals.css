@@ -24,14 +24,14 @@ html { direction: rtl; font-size: 16px; }
 /* ─── 3. CSS Variables ──────────────────────── */
 :root {
   /* Brand */
-  --color-brand:        #6c5ce7;
-  --color-brand-light:  #a29bfe;
+  --color-brand:        #3a249b;
+  --color-brand-light:  #6d4eca;
   --color-brand-bg:     #f0effe;
-  --color-sidebar-from: #8b6dd1;
-  --color-sidebar-to:   #4a3bc1;
+  --color-sidebar-from: #2a1870;
+  --color-sidebar-to:   #3a249b;
 
   /* Neutrals */
-  --color-bg:        linear-gradient(160deg, #fff8f0 0%, #fff2e6 50%, #ffead8 100%);
+  --color-bg:        linear-gradient(160deg, #fbf7f1 0%, #f8efe5 48%, #f4e8dc 100%);
   --color-card:      #fffaf5;
   --color-border:    rgba(0,0,0,0.07);
   --color-white:     #ffffff;
@@ -75,8 +75,8 @@ html { direction: rtl; font-size: 16px; }
   /* Shadow */
   --shadow-card:    0 1px 3px rgba(0,0,0,0.04), 0 2px 10px rgba(0,0,0,0.03);
   --shadow-hover:   0 6px 20px rgba(0,0,0,0.10);
-  --shadow-btn:     0 2px 8px rgba(108,92,231,0.22);
-  --shadow-btn-hover: 0 5px 18px rgba(108,92,231,0.35);
+  --shadow-btn:     0 2px 8px rgba(58,36,155,0.22);
+  --shadow-btn-hover: 0 5px 18px rgba(58,36,155,0.35);
   --shadow-raised:  0 4px 14px rgba(0,0,0,0.08);
 
   /* Spacing */
@@ -106,7 +106,7 @@ html { direction: rtl; font-size: 16px; }
 /* ─── 4. Base ────────────────────────────────── */
 body {
   font-family: 'Rubik', sans-serif;
-  background: #fff8f0;
+  background: #fbf8f3;
   color: var(--text-primary);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -243,19 +243,19 @@ p  { font-size: 14px; color: var(--text-secondary); font-weight: 400; }
 
 /* Primary */
 .btn-primary {
-  background: linear-gradient(135deg, var(--color-brand) 0%, var(--color-brand-light) 100%);
+  background: linear-gradient(135deg, #3a249b 0%, #6d4eca 100%);
   border: none;
   color: #fff;
   font-weight: 700;
   box-shadow: var(--shadow-btn);
 }
 .btn-primary:hover {
-  background: linear-gradient(135deg, #5a4bd1 0%, #8e83f0 100%);
+  background: linear-gradient(135deg, #2a1870 0%, #5a3dba 100%);
   box-shadow: var(--shadow-btn-hover);
   transform: translateY(-1px);
 }
 .btn-primary:active {
-  background: linear-gradient(135deg, #4f41be 0%, #7b72e0 100%);
+  background: linear-gradient(135deg, #22145c 0%, #4e34a6 100%);
   box-shadow: var(--shadow-btn);
   transform: translateY(0) scale(0.98);
 }
@@ -540,6 +540,13 @@ p  { font-size: 14px; color: var(--text-secondary); font-weight: 400; }
 ::-webkit-scrollbar-thumb { background: #ddd; border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: #bbb; }
 
+/* Sidebar nav — visible vertical scrollbar, no horizontal scrollbar */
+.sidebar-nav { overflow-x: hidden; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.18) transparent; }
+.sidebar-nav::-webkit-scrollbar { width: 8px; height: 0; }
+.sidebar-nav::-webkit-scrollbar-track { background: transparent; }
+.sidebar-nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.18); border-radius: 6px; min-height: 40px; }
+.sidebar-nav::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.35); }
+
 /* ── Focus ring global ───────────────────────── */
 :focus-visible {
   outline: 2px solid var(--color-brand);
@@ -600,7 +607,7 @@ div[style*="cursor: pointer"]:active {
 }
 .premium-sidebar-item:hover {
   transform: translateX(-4px) scale(1.025) !important;
-  box-shadow: inset -3px 0 0 rgba(255,255,255,0.35), 0 10px 24px rgba(20,14,70,0.16) !important;
+  box-shadow: 0 10px 24px rgba(20,14,70,0.16) !important;
 }
 .premium-sidebar-icon { transition: transform var(--premium-fast), filter var(--premium-fast) !important; }
 .premium-sidebar-item:hover .premium-sidebar-icon {

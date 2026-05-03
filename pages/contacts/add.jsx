@@ -1,5 +1,5 @@
 // pages/contacts/add.jsx
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import CONFIG from '../../data/config';
@@ -19,10 +19,16 @@ const EMPTY = {
 
 export default function AddContactPage() {
   const router = useRouter();
-  const { activeProject, currentUser } = useAuth();
+  const { activeProject, currentUser, can } = useAuth();
   const { addContact } = useCrm();
   const [form,   setForm]   = useState(EMPTY);
   const [errors, setErrors] = useState({});
+
+  useEffect(() => {
+    if (currentUser && !can.addContact) router.replace('/contacts');
+  }, [currentUser?.role]);
+
+  if (currentUser && !can.addContact) return null;
 
   const isAchdut  = activeProject?.id === 2;
   const mitzvotList = form.gender === 'male'   ? CONFIG.mitzvotMale
@@ -52,12 +58,18 @@ export default function AddContactPage() {
       if (!form.meeting_place_city.trim())   e.meeting_place_city   = 'יישוב בית המפגש חובה';
       if (!form.meeting_place_number.trim()) e.meeting_place_number = 'מספר בית המפגש חובה';
     }
+    if (form.gender && mitzvotList.length > 0) {
+      const incomplete = mitzvotList.some(mitz => form.mitzvot[mitz] === undefined || form.mitzvot[mitz] === '');
+      if (incomplete) e.mitzvot = 'יש למלא את כל שדות סרגל המצוות';
+    }
     return e;
   }
 
   function handleSubmit() {
     const e = validate();
     if (Object.keys(e).length > 0) { setErrors(e); return; }
+    const houseNumber = form.meeting_place_number.trim();
+    const houseCity   = form.meeting_place_city.trim();
     addContact({
       ...form,
       activist_id: currentUser.id,
@@ -65,6 +77,11 @@ export default function AddContactPage() {
       days_since_last_contact: 0,
       last_interaction_date:   TODAY,
       joined_at:               TODAY,
+      ...(isAchdut ? {
+        meetingHouseNumber: houseNumber,
+        meetingHouseCity:   houseCity,
+        meetingHouseKey:    `${houseNumber}_${houseCity}`,
+      } : {}),
     });
     router.push('/contacts');
   }
@@ -165,13 +182,14 @@ export default function AddContactPage() {
             <div style={{ fontSize: 13, fontWeight: 700, color: '#888', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 6 }}>
               {form.gender === 'male' ? '🧔 סרגל מצוות — איש' : '👩 סרגל מצוות — אשה'}
             </div>
-            <p style={{ fontSize: 12, color: '#bbb', marginBottom: 14, fontWeight: 400 }}>רמה 1–4 לכל מצווה</p>
+            <p style={{ fontSize: 12, color: '#bbb', marginBottom: 14, fontWeight: 400 }}>רמה 0–4 לכל מצווה <span style={{ color: '#e24b4a' }}>*</span></p>
+            {errors.mitzvot && <span className="error-msg" style={{ display: 'block', marginBottom: 10 }}>{errors.mitzvot}</span>}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {mitzvotList.map(mitz => (
                 <div key={mitz} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: 14, fontWeight: 400, color: '#333' }}>{mitz}</span>
-                  <select value={form.mitzvot[mitz] ?? ''} onChange={e => setMitzvah(mitz, e.target.value ? Number(e.target.value) : '')}
-                    style={{ width: 100, padding: '6px 10px', borderRadius: 8, border: '1.5px solid #e8e8e8', fontSize: 13, background: form.mitzvot[mitz] ? '#f0effe' : '#fafafa', color: form.mitzvot[mitz] ? '#6c5ce7' : '#999', fontFamily: 'Rubik, sans-serif' }}>
+                  <select value={form.mitzvot[mitz] ?? ''} onChange={e => { setMitzvah(mitz, e.target.value !== '' ? Number(e.target.value) : ''); setErrors(prev => ({ ...prev, mitzvot: undefined })); }}
+                    style={{ width: 100, padding: '6px 10px', borderRadius: 8, border: `1.5px solid ${form.mitzvot[mitz] === '' || form.mitzvot[mitz] === undefined ? (errors.mitzvot ? '#e24b4a' : '#e8e8e8') : '#6c5ce7'}`, fontSize: 13, background: (form.mitzvot[mitz] !== '' && form.mitzvot[mitz] !== undefined) ? '#f0effe' : '#fafafa', color: (form.mitzvot[mitz] !== '' && form.mitzvot[mitz] !== undefined) ? '#6c5ce7' : '#999', fontFamily: 'Rubik, sans-serif' }}>
                     <option value="">—</option>
                     {CONFIG.mitzvotLevels.map(l => <option key={l} value={l}>רמה {l}</option>)}
                   </select>

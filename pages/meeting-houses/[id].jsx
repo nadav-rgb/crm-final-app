@@ -3,11 +3,11 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import DesktopLayout from '../../components/DesktopLayout';
 import { useAuth } from '../../lib/AuthStore';
-import { getMeetingHouseById, updateMeetingHouseAssignments } from '../../lib/meetingHousesStorage';
+import { getMeetingHouseById, updateMeetingHouseAssignments, updateMeetingCompletion } from '../../lib/meetingHousesStorage';
 import { createDemoNotification } from '../../lib/notificationDemo';
 import activists from '../../data/activists';
 import { useCrm } from '../../lib/CrmStore';
-import { summarizeMeetingHouseSeriesDemo } from '../../lib/aiDemo';
+import { summarizeMeetingHouseSeriesDemo, generateMeetingNotesAiSummaryDemo } from '../../lib/aiDemo';
 import { buildBaseMeetingsFromHouses, getMeetingSeriesReports } from '../../lib/baseMeetingUtils';
 import { advanceReminderStageForReports, getReminderStatus } from '../../lib/reminderSchedulerDemo';
 
@@ -23,15 +23,19 @@ export default function MeetingHouseDetailPage() {
   const { baseMeetings, upsertBaseMeetingReports } = useCrm();
 
   const [house, setHouse] = useState(null);
+  const [loaded, setLoaded] = useState(false);
   const [assignedIds, setAssignedIds] = useState([]);
   const [selectedActivistId, setSelectedActivistId] = useState('');
   const [seriesSummary, setSeriesSummary] = useState('');
+  const [expandedMeeting, setExpandedMeeting] = useState(null);
+  const [draftNotes, setDraftNotes] = useState('');
 
   useEffect(() => {
     if (!id) return;
     const found = getMeetingHouseById(id);
     setHouse(found || null);
     setAssignedIds(found?.assignedActivists ?? []);
+    setLoaded(true);
   }, [id]);
 
   const achdutActivists = activists.filter(a => a.project_id === 2 && a.role === 'activist' && a.status === 'active');
@@ -46,21 +50,42 @@ export default function MeetingHouseDetailPage() {
   const submittedReports = reportsForHouse.filter(report => report.submitted);
   const waitingReports = reportsForHouse.filter(report => !report.submitted);
 
-  if (!can.seeMeetingHouses) {
+  // Wait until useEffect has run (router.query may be empty on first render)
+  if (!loaded) {
     return (
-      <DesktopLayout title="בתי מפגש" subtitle="אחדות עכשיו">
-        <div style={{ textAlign:'center', padding:60, color:'#aaa' }}>
-          <div style={{ fontSize:48, marginBottom:12 }}>🔒</div>
-          <div>אין הרשאה לדף זה</div>
-        </div>
+      <DesktopLayout title="בית מפגש">
+        <div style={{ textAlign:'center', padding:60, color:'#ccc', fontSize:14 }}>טוען...</div>
       </DesktopLayout>
     );
   }
 
+  // House not found — show this before the permission check to avoid false denials
   if (!house) {
     return (
       <DesktopLayout title="בית מפגש לא נמצא" backHref="/meeting-houses" backLabel="חזרה לבתי מפגש">
         <div style={{ textAlign:'center', padding:60, color:'#aaa' }}>לא נמצא בית מפגש תואם.</div>
+      </DesktopLayout>
+    );
+  }
+
+  // Robust string-normalised comparisons — avoids number/string mismatch
+  const uid = String(currentUser?.id ?? '');
+  const isActivistRole = currentUser?.role === 'activist';
+
+  const matchesAssignedId    = String(house.assignedActivistId ?? '') === uid;
+  const matchesAssignedArray = (house.assignedActivists ?? []).some(a => String(a) === uid);
+  const matchesAssignedIds   = assignedIds.some(a => String(a) === uid);
+
+  const isAssignedActivist   = isActivistRole && (matchesAssignedId || matchesAssignedArray || matchesAssignedIds);
+  const hasAccess            = can.seeMeetingHouses || isAssignedActivist;
+
+  if (!hasAccess) {
+    return (
+      <DesktopLayout title="בתי מפגש">
+        <div style={{ textAlign: 'center', padding: 60, color: '#aaa' }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>🔒</div>
+          <div>אין הרשאה לדף זה</div>
+        </div>
       </DesktopLayout>
     );
   }
@@ -84,7 +109,7 @@ export default function MeetingHouseDetailPage() {
       project_id: 2,
       priority: 'high',
       created_at: new Date().toISOString(),
-      link: '/base-meetings',
+      link: `/meeting-houses/${house.id}`,
     });
     if (currentUser) {
       createDemoNotification({
@@ -106,6 +131,19 @@ export default function MeetingHouseDetailPage() {
     persistAssignments(assignedIds.filter(item => item !== activistId));
   }
 
+  function openMeetingEditor(meetingNumber) {
+    const m = house.meetings.find(m => m.meetingNumber === meetingNumber);
+    setDraftNotes(m?.notes || '');
+    setExpandedMeeting(meetingNumber);
+  }
+
+  function handleMarkComplete(meetingNumber) {
+    const updated = updateMeetingCompletion(house.id, meetingNumber, { completed: true, notes: draftNotes });
+    if (updated) { setHouse(updated); }
+    setExpandedMeeting(null);
+    setDraftNotes('');
+  }
+
   function runReminderDemoForHouse() {
     const result = advanceReminderStageForReports(
       reportsForHouse,
@@ -125,8 +163,11 @@ export default function MeetingHouseDetailPage() {
     });
   }
 
+  const backHref  = house.status === 'completed' ? '/meeting-houses/completed' : '/meeting-houses';
+  const backLabel = house.status === 'completed' ? 'חזרה לבתי מפגש שהסתיימו' : 'חזרה לבתי מפגש חדשים';
+
   return (
-    <DesktopLayout title={`בית מפגש ${house.houseNumber}`} subtitle="אחדות עכשיו · פרטים, ארבעת המפגשים ושיבוץ פעיל" backHref="/meeting-houses" backLabel="חזרה לבתי מפגש">
+    <DesktopLayout title={`בית מפגש ${house.houseNumber}`} subtitle="אחדות יהודית · פרטים, התקדמות מפגשים ושיבוץ פעיל" backHref={backHref} backLabel={backLabel}>
       <div style={{ display:'grid', gridTemplateColumns:'minmax(300px, 1fr) minmax(300px, 1fr)', gap:18 }}>
         <div style={{ background:'#fff', border:'0.5px solid rgba(0,0,0,0.08)', borderRadius:16, padding:20 }}>
           <div style={{ fontSize:16, fontWeight:800, color:'#2d1f5e', marginBottom:16 }}>פרטי בית המפגש</div>
@@ -175,52 +216,115 @@ export default function MeetingHouseDetailPage() {
 
           <div style={{ marginTop:22, fontSize:16, fontWeight:800, color:'#2d1f5e', marginBottom:12 }}>ארבעת מפגשי הבסיס</div>
           <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-            {(house.meetings || []).map(meeting => (
-              <div key={meeting.meetingNumber} style={{ display:'grid', gridTemplateColumns:'70px 1fr 90px', gap:10, alignItems:'center', padding:'10px 12px', border:'0.5px solid #eee', borderRadius:12, background:'#fafafa', fontSize:13 }}>
-                <b>מפגש {meeting.meetingNumber}</b>
-                <span>{formatDate(meeting.date)}</span>
-                <span>{meeting.startTime || '—'}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div style={{ background:'#fff', border:'0.5px solid rgba(0,0,0,0.08)', borderRadius:16, padding:20 }}>
-          <div style={{ fontSize:16, fontWeight:800, color:'#2d1f5e', marginBottom:16 }}>שיבוץ פעילים</div>
-
-          <div style={{ display:'flex', gap:8, marginBottom:16 }}>
-            <select value={selectedActivistId} onChange={e => setSelectedActivistId(e.target.value)} style={{ flex:1, border:'1.5px solid #e8e8e8', borderRadius:10, padding:'10px 12px', fontFamily:'inherit', fontSize:13, background:'#fff', color:'#333' }}>
-              <option value="">בחר פעיל לשיבוץ</option>
-              {availableActivists.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-            </select>
-            <button onClick={assignActivist} disabled={!selectedActivistId} style={{ border:'none', borderRadius:10, padding:'10px 16px', fontFamily:'inherit', fontWeight:800, cursor:selectedActivistId?'pointer':'not-allowed', background:selectedActivistId?'#6c5ce7':'#ddd', color:'#fff' }}>
-              שבץ פעיל
-            </button>
-          </div>
-
-          {assignedActivists.length === 0 ? (
-            <div style={{ padding:20, textAlign:'center', color:'#aaa', background:'#fafafa', borderRadius:12 }}>אין פעילים משובצים עדיין</div>
-          ) : (
-            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-              {assignedActivists.map(a => (
-                <div key={a.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, padding:'10px 12px', border:'0.5px solid #eee', borderRadius:12, background:'#fffaf5' }}>
-                  <div>
-                    <div style={{ fontSize:14, fontWeight:800, color:'#333' }}>{a.name}</div>
-                    <div style={{ fontSize:12, color:'#999' }}>{a.phone} · {a.city}</div>
+            {(house.meetings || []).map(meeting => {
+              const isExpanded = expandedMeeting === meeting.meetingNumber;
+              const canComplete = !meeting.completed && (meeting.meetingNumber === 1 || house.meetings[meeting.meetingNumber - 2]?.completed);
+              const report = reportsForHouse.find(r => Number(r.meeting_number) === meeting.meetingNumber && r.submitted);
+              return (
+                <div key={meeting.meetingNumber} style={{ border: `0.5px solid ${meeting.completed ? '#27ae60' : '#eee'}`, borderRadius: 12, background: meeting.completed ? '#f0fdf4' : '#fafafa', overflow: 'hidden' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '72px 1fr 90px auto', gap: 10, alignItems: 'center', padding: '10px 12px', fontSize: 13 }}>
+                    <b style={{ color: meeting.completed ? '#27ae60' : '#333' }}>
+                      {meeting.completed ? '✓ ' : ''}מפגש {meeting.meetingNumber}
+                    </b>
+                    <span style={{ color: '#666' }}>{formatDate(meeting.date)} · {meeting.startTime || '—'}</span>
+                    <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 99, background: meeting.completed ? '#edfaf1' : '#f0effe', color: meeting.completed ? '#27ae60' : '#6c5ce7', fontWeight: 700, textAlign: 'center' }}>
+                      {meeting.completed ? 'הושלם' : 'ממתין'}
+                    </span>
+                    {!meeting.completed && canComplete && (
+                      <button onClick={() => isExpanded ? setExpandedMeeting(null) : openMeetingEditor(meeting.meetingNumber)}
+                        style={{ border: 'none', borderRadius: 8, padding: '5px 10px', fontSize: 11, fontFamily: 'inherit', fontWeight: 700, cursor: 'pointer', background: isExpanded ? '#e8e8e8' : '#6c5ce7', color: isExpanded ? '#555' : '#fff' }}>
+                        {isExpanded ? 'סגור' : 'סמן'}
+                      </button>
+                    )}
                   </div>
-                  <button onClick={() => removeActivist(a.id)} style={{ border:'none', background:'#f7e7e7', color:'#a32d2d', borderRadius:8, padding:'6px 10px', cursor:'pointer', fontFamily:'inherit', fontSize:12 }}>
-                    הסר
-                  </button>
+                  {report?.participant_count !== undefined && (
+                    <div style={{ padding: '0 12px 6px', fontSize: 12, color: '#27ae60', fontWeight: 600 }}>
+                      👥 {report.participant_count} משתתפים
+                    </div>
+                  )}
+                  {meeting.completed && meeting.notes && (
+                    <div style={{ padding: '0 12px 10px', fontSize: 12, color: '#555', lineHeight: 1.6 }}>
+                      <span style={{ color: '#aaa' }}>הערות: </span>{meeting.notes}
+                    </div>
+                  )}
+                  {isExpanded && (
+                    <div style={{ padding: '0 12px 12px', borderTop: '0.5px solid #eee' }}>
+                      <label style={{ display: 'block', fontSize: 12, color: '#888', fontWeight: 700, marginBottom: 6, marginTop: 10 }}>הערות מהמפגש</label>
+                      <textarea
+                        value={draftNotes}
+                        onChange={e => setDraftNotes(e.target.value)}
+                        placeholder="תאר בקצרה את המפגש, נושאים שעלו, תחושת קבוצה..."
+                        rows={3}
+                        style={{ width: '100%', border: '1.5px solid #e8e8e8', borderRadius: 8, padding: '8px 10px', fontFamily: 'inherit', fontSize: 12, resize: 'vertical', boxSizing: 'border-box' }}
+                      />
+                      <button onClick={() => handleMarkComplete(meeting.meetingNumber)}
+                        style={{ marginTop: 8, border: 'none', borderRadius: 8, padding: '8px 16px', fontFamily: 'inherit', fontWeight: 700, fontSize: 12, cursor: 'pointer', background: '#27ae60', color: '#fff' }}>
+                        ✓ סמן כהושלם
+                      </button>
+                    </div>
+                  )}
                 </div>
-              ))}
-            </div>
-          )}
-
-          <div style={{ marginTop:16, fontSize:12, color:'#999', lineHeight:1.6 }}>
-            בשלב זה השיבוץ נשמר בדפדפן המקומי לצורך הדגמה. בעתיד אותו מבנה יישמר במסד נתונים ויחובר להתראות לפעילים.
+              );
+            })}
           </div>
         </div>
+
+        {isAssignedActivist ? (
+          <div style={{ background:'#fff', border:'0.5px solid rgba(0,0,0,0.08)', borderRadius:16, padding:20, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:10 }}>
+            <div style={{ fontSize:32 }}>⭐</div>
+            <div style={{ fontSize:15, fontWeight:800, color:'#2d1f5e' }}>אתה משובץ לבית מפגש זה</div>
+            <div style={{ fontSize:13, color:'#aaa', textAlign:'center', lineHeight:1.6 }}>
+              {house.houseNumber} · {house.settlement || house.city}
+            </div>
+          </div>
+        ) : (
+          <div style={{ background:'#fff', border:'0.5px solid rgba(0,0,0,0.08)', borderRadius:16, padding:20 }}>
+            <div style={{ fontSize:16, fontWeight:800, color:'#2d1f5e', marginBottom:16 }}>שיבוץ פעילים</div>
+
+            <div style={{ display:'flex', gap:8, marginBottom:16 }}>
+              <select value={selectedActivistId} onChange={e => setSelectedActivistId(e.target.value)} style={{ flex:1, border:'1.5px solid #e8e8e8', borderRadius:10, padding:'10px 12px', fontFamily:'inherit', fontSize:13, background:'#fff', color:'#333' }}>
+                <option value="">בחר פעיל לשיבוץ</option>
+                {availableActivists.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+              <button onClick={assignActivist} disabled={!selectedActivistId} style={{ border:'none', borderRadius:10, padding:'10px 16px', fontFamily:'inherit', fontWeight:800, cursor:selectedActivistId?'pointer':'not-allowed', background:selectedActivistId?'#6c5ce7':'#ddd', color:'#fff' }}>
+                שבץ פעיל
+              </button>
+            </div>
+
+            {assignedActivists.length === 0 ? (
+              <div style={{ padding:20, textAlign:'center', color:'#aaa', background:'#fafafa', borderRadius:12 }}>אין פעילים משובצים עדיין</div>
+            ) : (
+              <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                {assignedActivists.map(a => (
+                  <div key={a.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, padding:'10px 12px', border:'0.5px solid #eee', borderRadius:12, background:'#fffaf5' }}>
+                    <div>
+                      <div style={{ fontSize:14, fontWeight:800, color:'#333' }}>{a.name}</div>
+                      <div style={{ fontSize:12, color:'#999' }}>{a.phone} · {a.city}</div>
+                    </div>
+                    <button onClick={() => removeActivist(a.id)} style={{ border:'none', background:'#f7e7e7', color:'#a32d2d', borderRadius:8, padding:'6px 10px', cursor:'pointer', fontFamily:'inherit', fontSize:12 }}>
+                      הסר
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{ marginTop:16, fontSize:12, color:'#999', lineHeight:1.6 }}>
+              בשלב זה השיבוץ נשמר בדפדפן המקומי לצורך הדגמה. בעתיד אותו מבנה יישמר במסד נתונים ויחובר להתראות לפעילים.
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* AI Summary — מוצג אוטומטית כשכל 4 המפגשים הסתיימו */}
+      {house.status === 'completed' && (
+        <div style={{ marginTop: 18, background: '#fff', border: '0.5px solid rgba(108,92,231,0.2)', borderRadius: 16, padding: 20, boxShadow: '0 1px 4px rgba(108,92,231,0.06)' }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: '#6c5ce7', marginBottom: 14 }}>✨ סיכום AI לארבעת המפגשים</div>
+          <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', fontSize: 13, color: '#333', lineHeight: 1.75, margin: 0 }}>
+            {generateMeetingNotesAiSummaryDemo(house) || 'לא הוזנו הערות למפגשים.'}
+          </pre>
+        </div>
+      )}
     </DesktopLayout>
   );
 }
