@@ -261,7 +261,7 @@ export default function BaseMeetingsPage() {
                   )}
                   <button type="button" onClick={e=>{ e.stopPropagation(); openAiSummary(meeting); }}
                     style={{ display:'block', marginTop:8, border:'none', borderRadius:8, padding:'6px 10px', background:'#f0effe', color:'#6c5ce7', fontWeight:800, cursor:'pointer', fontFamily:'inherit', fontSize:12 }}>
-                    סיכום AI דמו חכם
+                    סיכום AI
                   </button>
                 </div>
               )}
@@ -446,7 +446,7 @@ export default function BaseMeetingsPage() {
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}
           onClick={e=>{ if(e.target===e.currentTarget) setAiSummary(null); }}>
           <div style={{ background:'#fff', borderRadius:18, padding:24, maxWidth:560, width:'100%', direction:'rtl' }}>
-            <div style={{ fontSize:18, fontWeight:800, marginBottom:8 }}>סיכום AI דמו חכם</div>
+            <div style={{ fontSize:18, fontWeight:800, marginBottom:8 }}>סיכום AI</div>
             <pre style={{ whiteSpace:'pre-wrap', background:'#fffaf5', border:'0.5px solid #eee', borderRadius:12, padding:14, fontFamily:'inherit', lineHeight:1.7, fontSize:13 }}>{aiSummary.text}</pre>
             <button onClick={()=>setAiSummary(null)} style={{ marginTop:12, border:'none', borderRadius:10, padding:'9px 18px', background:'#6c5ce7', color:'#fff', fontWeight:800, cursor:'pointer', fontFamily:'inherit' }}>סגור</button>
           </div>

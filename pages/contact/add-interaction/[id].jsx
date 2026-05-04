@@ -274,7 +274,7 @@ export default function AddInteractionPage() {
           <VoiceInput onTranscript={handleVoiceTranscript} />
           <button type="button" onClick={handleAiSummary}
             style={{ marginTop: 10, border: 'none', borderRadius: 10, padding: '9px 12px', background: '#f0effe', color: '#6c5ce7', fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>
-            סכם עם AI דמו חכם
+            סכם עם AI
           </button>
           {form.ai_summary && (
             <pre style={{ marginTop: 10, whiteSpace: 'pre-wrap', background: '#fff', border: '0.5px solid #e8e8e8', borderRadius: 12, padding: '12px', fontFamily: 'inherit', fontSize: 13, color: '#333', lineHeight: 1.7 }}>
