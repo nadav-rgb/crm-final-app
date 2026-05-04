@@ -10,6 +10,8 @@ import { getMeetingHouses } from '../lib/meetingHousesStorage';
 import { buildBaseMeetingsFromHouses } from '../lib/baseMeetingUtils';
 import { getReminderStatus } from '../lib/reminderSchedulerDemo';
 import activists from '../data/activists';
+import users from '../data/users';
+import { registerPushSubscription } from '../lib/pushClient';
 
 const MEETING_NUMBER_LABELS = { 1:'מפגש ראשון 🌱', 2:'מפגש שני 🌿', 3:'מפגש שלישי 🌳', 4:'מפגש רביעי 🏆' };
 
@@ -103,6 +105,32 @@ export default function BaseMeetingsPage() {
   const [aiSummary,      setAiSummary]      = useState(null);
   const [voiceAiSummary, setVoiceAiSummary] = useState(null);
 
+  // Register push notifications for this activist
+  useEffect(() => {
+    if (currentUser?.id) registerPushSubscription(String(currentUser.id));
+  }, [currentUser?.id]);
+
+  // Schedule reminders for today's pending meetings
+  useEffect(() => {
+    if (!currentUser?.id || visibleMeetings.length === 0) return;
+    const today = new Date().toISOString().split('T')[0];
+    const pending = visibleMeetings.filter(m => !m.submitted && m.date === today);
+    if (!pending.length) return;
+    const coordinator = users.find(u => u.role === 'coord' && u.project_id === currentUser.project_id);
+    pending.forEach(meeting => {
+      fetch('/api/reminders/schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          meetingId: String(meeting.id),
+          activistId: String(meeting.activist_id || currentUser.id),
+          coordinatorId: coordinator ? String(coordinator.id) : null,
+          meetingDate: today,
+        }),
+      }).catch(() => {});
+    });
+  }, [visibleMeetings, currentUser]);
+
   function setField(key, value) {
     setForm(prev => ({ ...prev, [key]: value }));
   }
@@ -148,6 +176,15 @@ export default function BaseMeetingsPage() {
       structured_answers: sa,
     });
     createBaseMeetingSubmittedNotifications({ meeting: selected, activistName: currentUser?.name });
+    // Cancel pending reminders — report was submitted
+    fetch('/api/reminders/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        meetingId: String(selected.id),
+        activistId: String(selected.activist_id || currentUser?.id),
+      }),
+    }).catch(() => {});
     setSaved(true);
     setSelected(null);
   }
