@@ -343,14 +343,14 @@ export default function LandingPage() {
         </div>
 
         {/* סטטיסטיקות */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px', marginTop: 8, marginBottom: 44 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: isMobile ? '10px' : '20px', marginTop: 8, marginBottom: 44 }}>
           {stats.map(({ num, label, color, rgb }) => (
             <div
               key={label}
               style={{
                 background: '#ffffff',
                 borderRadius: '20px',
-                padding: '28px 22px 24px',
+                padding: isMobile ? '16px 8px 14px' : '28px 22px 24px',
                 boxShadow: `0 0 0 1px rgba(0,0,0,0.07), 0 2px 6px rgba(0,0,0,0.06), 0 16px 32px rgba(0,0,0,0.10), 0 40px 64px rgba(0,0,0,0.06), 0 0 72px 10px rgba(${rgb},0.08)`,
                 display: 'flex',
                 flexDirection: 'column',
@@ -373,8 +373,8 @@ export default function LandingPage() {
               <div style={{ width: 32, height: 32, borderRadius: 10, background: `rgba(${rgb},0.10)`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
                 <div style={{ width: 10, height: 10, borderRadius: '50%', background: color }} />
               </div>
-              <div style={{ fontSize: 64, fontWeight: 800, color: '#0f172a', lineHeight: 1, letterSpacing: '-0.04em', fontVariantNumeric: 'tabular-nums' }}>{num}</div>
-              <div style={{ fontSize: 12, fontWeight: 500, color: '#94a3b8', letterSpacing: '0.02em', marginTop: 10 }}>{label}</div>
+              <div style={{ fontSize: isMobile ? 38 : 64, fontWeight: 800, color: '#0f172a', lineHeight: 1, letterSpacing: '-0.04em', fontVariantNumeric: 'tabular-nums' }}>{num}</div>
+              <div style={{ fontSize: isMobile ? 10 : 12, fontWeight: 500, color: '#94a3b8', letterSpacing: '0.02em', marginTop: isMobile ? 6 : 10, textAlign: 'center' }}>{label}</div>
             </div>
           ))}
         </div>
