@@ -128,14 +128,14 @@ export default function LandingPage() {
       <div aria-hidden="true" style={{ position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none', overflow: 'hidden' }}>
         <img src="/bg-meeting.jpg" alt="" style={{
           width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center',
-          filter: 'blur(28px) saturate(0.72) brightness(1.06)',
-          transform: 'scale(1.09)',
-          opacity: 0.28,
+          filter: 'blur(7px) saturate(0.82) brightness(1.04)',
+          transform: 'scale(1.03)',
+          opacity: 0.45,
           display: 'block',
         }} />
         <div style={{
           position: 'absolute', inset: 0,
-          background: 'radial-gradient(ellipse 90% 70% at 48% 46%, rgba(248,246,255,0.74) 0%, transparent 78%), radial-gradient(ellipse 62% 55% at 102% -4%, rgba(124,58,237,0.38) 0%, transparent 62%), radial-gradient(ellipse 52% 42% at -4% 104%, rgba(245,158,11,0.24) 0%, transparent 58%)',
+          background: 'radial-gradient(ellipse 90% 70% at 48% 46%, rgba(248,246,255,0.52) 0%, transparent 78%), radial-gradient(ellipse 62% 55% at 102% -4%, rgba(124,58,237,0.28) 0%, transparent 62%), radial-gradient(ellipse 52% 42% at -4% 104%, rgba(245,158,11,0.18) 0%, transparent 58%)',
         }} />
       </div>
 
