@@ -8,5 +8,12 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger Vercel Deploy
-        run: curl -X POST "${{ secrets.VERCEL_DEPLOY_HOOK }}"
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy to Vercel Production
+        run: |
+          curl -s -X POST "https://api.vercel.com/v13/deployments?teamId=team_Mtmm2yUnzPKAaaxjK0WcX3OM" \
+            -H "Authorization: Bearer ${{ secrets.VERCEL_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"name\":\"crm-final-app\",\"target\":\"production\",\"gitSource\":{\"type\":\"github\",\"repoId\":\"1225447678\",\"ref\":\"main\",\"sha\":\"${{ github.sha }}\"}}"
