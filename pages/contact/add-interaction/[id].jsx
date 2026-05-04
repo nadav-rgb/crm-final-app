@@ -7,7 +7,7 @@ import { useCrm } from '../../../lib/CrmStore';
 import { useAuth } from '../../../lib/AuthStore';
 import { calcInteractionPayment } from '../../../lib/paymentCalc';
 import DesktopLayout from '../../../components/DesktopLayout';
-import { summarizeInteractionDemo } from '../../../lib/aiDemo';
+import { summarizeInteractionText } from '../../../lib/aiService';
 import { createPaymentInteractionNotifications } from '../../../lib/notificationDemo';
 import VoiceInput from '../../../components/VoiceInput';
 import users from '../../../data/users';
@@ -90,20 +90,16 @@ export default function AddInteractionPage() {
   function handleVoiceTranscript(text) {
     const updated = form.description ? form.description + '\n' + text : text;
     set('description', updated);
-    const summary = summarizeInteractionDemo(updated, {
-      contactName: contact.name, type: form.type, quality: form.quality,
-    });
-    if (summary) set('ai_summary', summary);
   }
 
-  function handleAiSummary() {
-    const summary = summarizeInteractionDemo(form.description, {
-      contactName: contact.name, type: form.type, quality: form.quality,
-    });
-    if (!summary) {
-      setErrors(prev => ({ ...prev, description: 'כדי להפעיל סיכום AI דמו צריך קודם לכתוב תיאור מפגש' }));
+  async function handleAiSummary() {
+    if (!form.description) {
+      setErrors(prev => ({ ...prev, description: 'כדי להפעיל סיכום AI צריך קודם לכתוב תיאור מפגש' }));
       return;
     }
+    const summary = await summarizeInteractionText(form.description, {
+      contactName: contact.name, type: form.type, quality: form.quality,
+    });
     set('ai_summary', summary);
   }
 
