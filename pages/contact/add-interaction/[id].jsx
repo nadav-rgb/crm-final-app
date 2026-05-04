@@ -29,9 +29,10 @@ export default function AddInteractionPage() {
   const { currentUser, activeProject } = useAuth();
   const contact = contacts.find(c => c.id === contactId);
 
-  const [form,    setForm]    = useState(EMPTY);
-  const [errors,  setErrors]  = useState({});
-  const [success, setSuccess] = useState(false);
+  const [form,      setForm]      = useState(EMPTY);
+  const [errors,    setErrors]    = useState({});
+  const [success,   setSuccess]   = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
 
   if (!contact) {
     return <DesktopLayout title="הוסף קשר"><div style={{ padding: 40, color: '#aaa' }}>לקוח לא נמצא</div></DesktopLayout>;
@@ -97,10 +98,17 @@ export default function AddInteractionPage() {
       setErrors(prev => ({ ...prev, description: 'כדי להפעיל סיכום AI צריך קודם לכתוב תיאור מפגש' }));
       return;
     }
-    const summary = await summarizeInteractionText(form.description, {
-      contactName: contact.name, type: form.type, quality: form.quality,
-    });
-    set('ai_summary', summary);
+    setAiLoading(true);
+    try {
+      const summary = await summarizeInteractionText(form.description, {
+        contactName: contact.name, type: form.type, quality: form.quality,
+      });
+      set('ai_summary', summary);
+    } catch (e) {
+      setErrors(prev => ({ ...prev, description: 'שגיאה בסיכום AI — נסה שוב' }));
+    } finally {
+      setAiLoading(false);
+    }
   }
 
   function validate() {
@@ -268,9 +276,9 @@ export default function AddInteractionPage() {
             value={form.description} onChange={e => set('description', e.target.value)} />
           {errors.description && <span className="error-msg">{errors.description}</span>}
           <VoiceInput onTranscript={handleVoiceTranscript} />
-          <button type="button" onClick={handleAiSummary}
-            style={{ marginTop: 10, border: 'none', borderRadius: 10, padding: '9px 12px', background: '#f0effe', color: '#6c5ce7', fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>
-            סכם עם AI
+          <button type="button" onClick={handleAiSummary} disabled={aiLoading}
+            style={{ marginTop: 10, border: 'none', borderRadius: 10, padding: '9px 12px', background: aiLoading ? '#e8e8f8' : '#f0effe', color: '#6c5ce7', fontWeight: 800, cursor: aiLoading ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+            {aiLoading ? 'מסכם...' : 'סכם עם AI'}
           </button>
           {form.ai_summary && (
             <pre style={{ marginTop: 10, whiteSpace: 'pre-wrap', background: '#fff', border: '0.5px solid #e8e8e8', borderRadius: 12, padding: '12px', fontFamily: 'inherit', fontSize: 13, color: '#333', lineHeight: 1.7 }}>
