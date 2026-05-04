@@ -21,7 +21,7 @@ const PROJECTS_LIST = [
   { id: 4, name: 'נפש יהודי' },
 ];
 
-const BG = 'radial-gradient(ellipse 62% 55% at 102% -4%, rgba(124,58,237,0.17) 0%, transparent 62%), radial-gradient(ellipse 52% 42% at -4% 104%, rgba(245,158,11,0.11) 0%, transparent 58%), radial-gradient(ellipse 88% 68% at 48% 46%, rgba(255,255,255,0.88) 0%, transparent 76%), linear-gradient(148deg, #f5f2ff 0%, #fafaf9 44%, #fffdf5 100%)';
+const BG = 'linear-gradient(148deg, #f5f2ff 0%, #fafaf9 50%, #fffdf5 100%)';
 
 const SIDEBAR_COLLAPSED = 64;
 const SIDEBAR_EXPANDED  = 240;
@@ -63,15 +63,20 @@ export default function DesktopLayout({ children, title, subtitle, actions, back
   return (
     <div style={{ display: 'flex', height: '100vh', background: BG, direction: 'rtl', overflow: 'hidden', position: 'relative' }}>
 
-      {/* Grain texture overlay */}
-      <svg aria-hidden="true" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 0, pointerEvents: 'none' }} xmlns="http://www.w3.org/2000/svg">
-        <filter id="grain-filter">
-          <feTurbulence type="fractalNoise" baseFrequency="0.72" numOctaves="4" stitchTiles="stitch" result="noise"/>
-          <feColorMatrix type="saturate" values="0" in="noise" result="gray"/>
-          <feComponentTransfer in="gray"><feFuncA type="linear" slope="0.038"/></feComponentTransfer>
-        </filter>
-        <rect width="100%" height="100%" filter="url(#grain-filter)"/>
-      </svg>
+      {/* Artistic blurred background image */}
+      <div aria-hidden="true" style={{ position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none', overflow: 'hidden' }}>
+        <img src="/bg-meeting.jpg" alt="" style={{
+          width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center',
+          filter: 'blur(28px) saturate(0.72) brightness(1.06)',
+          transform: 'scale(1.09)',
+          opacity: 0.28,
+          display: 'block',
+        }} />
+        <div style={{
+          position: 'absolute', inset: 0,
+          background: 'radial-gradient(ellipse 90% 70% at 48% 46%, rgba(248,246,255,0.74) 0%, transparent 78%), radial-gradient(ellipse 62% 55% at 102% -4%, rgba(124,58,237,0.38) 0%, transparent 62%), radial-gradient(ellipse 52% 42% at -4% 104%, rgba(245,158,11,0.24) 0%, transparent 58%)',
+        }} />
+      </div>
 
       {/* ═══ סיידבר ═══ */}
       <div
