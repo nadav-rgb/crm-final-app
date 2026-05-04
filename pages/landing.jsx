@@ -11,6 +11,7 @@ import {
   ClipboardList, Star, CreditCard, Bell, BellRing,
   MessageSquare, Building2, FolderOpen,
 } from 'lucide-react';
+import MobileBottomNav from '../components/MobileBottomNav';
 
 const TORAH_DEFAULT = 'וְאָהַבְתָּ לְרֵעֲךָ כָּמוֹךָ — זה כלל גדול בתורה. כל מי שמקרב יהודי אחד לאביו שבשמים, כאילו קיים עולם מלא. השבוע נזכור שכל שיחה, כל פגישה, כל חיוך — הם צינור להאיר את עולמם של אחינו.';
 
@@ -45,10 +46,17 @@ export default function LandingPage() {
   const [editingTorah,      setEditingTorah]     = useState(false);
   const [torahDraft,        setTorahDraft]       = useState(TORAH_DEFAULT);
   const [notificationsOpen, setNotificationsOpen]= useState(false);
+  const [isMobile,          setIsMobile]         = useState(false);
   const scrollRef  = useRef(null);
   const sidebarRef = useRef(null);
   const closeTimer = useRef(null);
   useEffect(() => { if (sidebarRef.current?.matches(':hover')) setOpen(true); }, []);
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth <= 768);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
 
   const notifications       = getNotificationsForUser(currentUser, baseMeetings);
   const unreadNotifications = notifications.filter(n => !n.read).length;
@@ -119,6 +127,7 @@ export default function LandingPage() {
       {/* ═══ סיידבר — overlay, not push, matches DesktopLayout ═══ */}
       <div
         style={{
+          display: isMobile ? 'none' : 'flex',
           position: 'fixed', top: 0, right: 0, bottom: 0,
           width: open ? SIDEBAR_EXPANDED : SIDEBAR_COLLAPSED,
           background: SIDEBAR_BG,
@@ -287,7 +296,7 @@ export default function LandingPage() {
       </div>
 
       {/* ═══ תוכן — overlay: always collapsed margin, sidebar overlays on expand ═══ */}
-      <div style={{ flex: 1, marginRight: SIDEBAR_COLLAPSED, overflowY: 'auto', padding: '28px 36px' }}>
+      <div style={{ flex: 1, marginRight: isMobile ? 0 : SIDEBAR_COLLAPSED, overflowY: 'auto', padding: isMobile ? '16px 16px 80px' : '28px 36px' }}>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
           <div>
@@ -459,6 +468,8 @@ export default function LandingPage() {
 
         <div style={{ height: 24 }} />
       </div>
+
+      {isMobile && <MobileBottomNav />}
     </div>
   );
 }

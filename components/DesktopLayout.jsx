@@ -4,6 +4,7 @@ import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { useAuth } from '../lib/AuthStore';
 import { useCrm } from '../lib/CrmStore';
+import MobileBottomNav from './MobileBottomNav';
 import { getNotificationsForUser } from '../lib/notificationDemo';
 import {
   Home, User, Users, Calendar, UserPlus,
@@ -37,8 +38,16 @@ export default function DesktopLayout({ children, title, subtitle, actions, back
   const [projectsOpen,      setProjectsOpen]     = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [logoHover,         setLogoHover]        = useState(false);
+  const [isMobile,          setIsMobile]         = useState(false);
   const sidebarRef = useRef(null);
   const closeTimer = useRef(null);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth <= 768);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
 
   useEffect(() => {
     if (sidebarRef.current?.matches(':hover')) setOpen(true);
@@ -58,6 +67,7 @@ export default function DesktopLayout({ children, title, subtitle, actions, back
       <div
         ref={sidebarRef}
         style={{
+          display: isMobile ? 'none' : 'flex',
           position: 'fixed', top: 0, right: 0, bottom: 0,
           width: open ? SIDEBAR_EXPANDED : SIDEBAR_COLLAPSED,
           background: SIDEBAR_BG,
@@ -213,9 +223,9 @@ export default function DesktopLayout({ children, title, subtitle, actions, back
       </div>
 
       {/* ═══ תוכן ═══ */}
-      <div style={{ flex: 1, marginRight: SIDEBAR_COLLAPSED, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flex: 1, marginRight: isMobile ? 0 : SIDEBAR_COLLAPSED, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {/* כותרת */}
-        <div style={{ background: 'rgba(255,255,255,0.8)', backdropFilter: 'blur(12px)', borderBottom: '0.5px solid rgba(0,0,0,0.06)', padding: '16px 28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, position: 'relative', zIndex: 2000 }}>
+        <div style={{ background: 'rgba(255,255,255,0.8)', backdropFilter: 'blur(12px)', borderBottom: '0.5px solid rgba(0,0,0,0.06)', padding: isMobile ? '12px 16px' : '16px 28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, position: 'relative', zIndex: 2000 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             {backHref && (
               <Link href={backHref} style={{ textDecoration: 'none' }}>
@@ -266,10 +276,12 @@ export default function DesktopLayout({ children, title, subtitle, actions, back
         </div>
 
         {/* תוכן */}
-        <div className="premium-page-enter" style={{ flex: 1, overflowY: 'auto', padding: '22px 28px' }}>
+        <div className="premium-page-enter" style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '16px 16px 80px' : '22px 28px' }}>
           {children}
         </div>
       </div>
+
+      {isMobile && <MobileBottomNav />}
     </div>
   );
 }
