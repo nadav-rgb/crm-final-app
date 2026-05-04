@@ -105,7 +105,7 @@ export default function AddInteractionPage() {
       });
       set('ai_summary', summary);
     } catch (e) {
-      setErrors(prev => ({ ...prev, description: 'שגיאה בסיכום AI — נסה שוב' }));
+      setErrors(prev => ({ ...prev, description: `שגיאה: ${e.message}` }));
     } finally {
       setAiLoading(false);
     }
