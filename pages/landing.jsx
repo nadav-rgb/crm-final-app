@@ -128,12 +128,12 @@ export default function LandingPage() {
       <div
         style={{
           display: isMobile ? 'none' : 'flex',
+          flexDirection: 'column',
           position: 'fixed', top: 0, right: 0, bottom: 0,
           width: open ? SIDEBAR_EXPANDED : SIDEBAR_COLLAPSED,
           background: SIDEBAR_BG,
           backdropFilter: 'blur(22px) saturate(1.4)',
           WebkitBackdropFilter: 'blur(22px) saturate(1.4)',
-          display: 'flex', flexDirection: 'column',
           transition: 'width 0.36s cubic-bezier(0.4, 0, 0.2, 1)',
           overflow: 'hidden', zIndex: 3000,
           boxShadow: open
