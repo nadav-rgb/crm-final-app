@@ -1,5 +1,6 @@
 // pages/_app.jsx
 import '../styles/globals.css';
+import '../styles/components.css';
 import { CrmProvider } from '../lib/CrmStore';
 import { AuthProvider, useAuth } from '../lib/AuthStore';
 import ReminderSchedulerMount from '../components/ReminderSchedulerMount';
