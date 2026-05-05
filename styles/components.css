@@ -200,23 +200,27 @@
 /* ── Chip / Filter ───────────────────────────────────────────*/
 .app-chip {
   padding: 6px 14px;
-  border-radius: var(--radius-full);
+  border-radius: 12px;
   font-size: var(--font-size-sm);
   font-family: var(--font-family);
-  font-weight: var(--font-weight-medium);
-  border: 1.5px solid var(--color-border-input);
-  background: var(--color-bg-white);
-  color: #888;
+  font-weight: 700;
+  border: 1.5px solid #9b2461;
+  background: transparent;
+  color: #9b2461;
   cursor: pointer;
   white-space: nowrap;
   transition: all var(--motion-fast);
 }
-.app-chip:hover { border-color: #bbb; color: #444; }
+.app-chip:hover {
+  background: rgba(155,36,97,0.08);
+  border-color: #cb4d87;
+  color: #cb4d87;
+}
 .app-chip--active {
-  border-color: var(--color-brand-primary);
-  background: var(--color-brand-primary);
+  border: none;
+  background: linear-gradient(135deg, #9b2461 0%, #cb4d87 100%);
   color: #fff;
-  box-shadow: 0 2px 8px rgba(108,92,231,0.3);
+  box-shadow: 0 2px 8px rgba(155,36,97,0.30);
 }
 
 /* ── List Row ────────────────────────────────────────────────*/
