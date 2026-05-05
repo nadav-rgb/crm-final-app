@@ -269,7 +269,7 @@ p  { font-size: 14px; color: var(--text-secondary); font-weight: 400; }
   overflow-x: auto;
   scrollbar-width: none;
   flex-direction: row-reverse;
-  padding-bottom: 2px;
+  padding: 4px 2px 4px;
 }
 .chips::-webkit-scrollbar { display: none; }
 
