@@ -271,15 +271,14 @@ function ListRow({ contact, can, last, viewMode }) {
 }
 
 function StatusPill({ status }) {
-  const map = {
-    'על סף ניתוק':    { bg: '#fff0f0', color: '#c0392b' },
-    'דורש חידוש':     { bg: '#fff8ec', color: '#d68910' },
-    'קשר מתמשך': { bg: '#f0effe', color: '#6c5ce7' },
-    'קשר חי':     { bg: '#edfaf1', color: '#27ae60' },
-  };
-  const s = map[status] ?? { bg: '#f5f5f5', color: '#888' };
   return (
-    <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, fontWeight: 600, background: s.bg, color: s.color, whiteSpace: 'nowrap' }}>
+    <span style={{
+      fontSize: 11, padding: '4px 12px', borderRadius: 12, fontWeight: 700,
+      background: 'linear-gradient(135deg, #9b2461 0%, #cb4d87 100%)',
+      color: '#fff', whiteSpace: 'nowrap',
+      boxShadow: '0 2px 8px rgba(155,36,97,0.30)',
+      display: 'inline-block',
+    }}>
       {status}
     </span>
   );
