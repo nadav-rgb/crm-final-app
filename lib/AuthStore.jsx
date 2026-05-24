@@ -1,5 +1,5 @@
 // lib/AuthStore.jsx
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useState, useEffect } from 'react';
 import projects from '../data/projects';
 import { getSupabaseClient } from './supabaseClient';
 
@@ -29,6 +29,51 @@ export function AuthProvider({ children }) {
   const [activeProject,  setActiveProject]  = useState(null);
   const [filterProject,  setFilterProject]  = useState(null); // null = כל הפרויקטים
   const [loginError,     setLoginError]     = useState('');
+  const [authLoading,    setAuthLoading]    = useState(true);  // אמת בזמן שחזור session ראשוני
+
+  // עזר משותף: שולף profile מ-Auth user ובונה את currentUser (זהה ל-login ולשחזור)
+  async function applyProfile(supabase, authUser) {
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('activist_code, name, role, project_id')
+      .eq('id', authUser.id)
+      .single();
+    if (error || !profile) return false;
+
+    const user = {
+      id:         Number(profile.activist_code), // נשאר int כמו בקוד הישן
+      name:       profile.name,
+      role:       profile.role,
+      project_id: profile.project_id,
+      email:      authUser.email,
+    };
+    setCurrentUser(user);
+    const proj = user.project_id ? projects.find(p => p.id === user.project_id) : projects[0];
+    setActiveProject(proj);
+    // מנכ"ל מתחיל עם כל הפרויקטים, פעיל/רכז עם הפרויקט שלו
+    setFilterProject(user.project_id ?? null);
+    return true;
+  }
+
+  // שחזור session בעת טעינת האפליקציה + סנכרון logout בין טאבים
+  useEffect(() => {
+    const supabase = getSupabaseClient();
+    let active = true;
+
+    supabase.auth.getSession().then(async ({ data }) => {
+      if (active && data?.session?.user) await applyProfile(supabase, data.session.user);
+      if (active) setAuthLoading(false);
+    });
+
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!active) return;
+      if (event === 'SIGNED_OUT' || !session?.user) {
+        setCurrentUser(null); setActiveProject(null); setFilterProject(null);
+      }
+    });
+
+    return () => { active = false; sub?.subscription?.unsubscribe(); };
+  }, []);
 
   async function login(usernameOrEmail, password) {
     const supabase = getSupabaseClient();
@@ -39,27 +84,10 @@ export function AuthProvider({ children }) {
     if (error || !data?.user) { setLoginError('שם משתמש או סיסמה שגויים'); return false; }
 
     // שליפת הפרופיל המקושר ל-Auth (activist_code שומר על תאימות ל-Number(currentUser.id))
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('activist_code, name, role, project_id')
-      .eq('id', data.user.id)
-      .single();
-    if (profileError || !profile) { setLoginError('לא נמצא פרופיל למשתמש'); return false; }
-
-    const user = {
-      id:         Number(profile.activist_code), // נשאר int כמו בקוד הישן
-      name:       profile.name,
-      role:       profile.role,
-      project_id: profile.project_id,
-      email:      data.user.email,
-    };
+    const ok = await applyProfile(supabase, data.user);
+    if (!ok) { setLoginError('לא נמצא פרופיל למשתמש'); return false; }
 
     setLoginError('');
-    setCurrentUser(user);
-    const proj = user.project_id ? projects.find(p => p.id === user.project_id) : projects[0];
-    setActiveProject(proj);
-    // מנכ"ל מתחיל עם כל הפרויקטים, פעיל/רכז עם הפרויקט שלו
-    setFilterProject(user.project_id ?? null);
     return true;
   }
 
@@ -96,7 +124,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ currentUser, activeProject, filterProject, loginError, login, logout, switchProject, can, projects }}>
+    <AuthContext.Provider value={{ currentUser, activeProject, filterProject, loginError, authLoading, login, logout, switchProject, can, projects }}>
       {children}
     </AuthContext.Provider>
   );

@@ -9,9 +9,10 @@ import LandingPage from './landing';
 import { useRouter } from 'next/router';
 
 function AppShell({ Component, pageProps }) {
-  const { currentUser } = useAuth();
+  const { currentUser, authLoading } = useAuth();
   const router = useRouter();
 
+  if (authLoading) return null; // ממתינים לשחזור session — מונע הבהוב של מסך login ברענון
   if (!currentUser) return <LoginPage />;
   if (router.pathname === '/landing') return <LandingPage />;
 
