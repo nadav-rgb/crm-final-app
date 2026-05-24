@@ -48,6 +48,22 @@ const mockMeetingHouses = [
     assignedActivists: [23],
     source: 'mock',
   },
+  {
+    id: 4,
+    houseNumber: 'AJ-104',
+    settlement: 'בני ברק',
+    city: 'בני ברק',
+    hostName: 'משפחת רייטן',
+    facilitatorName: 'הרב מנחם גולד',
+    meetings: [
+      { meetingNumber: 1, date: '2026-05-20', startTime: '20:30', completed: false, notes: '' },
+      { meetingNumber: 2, date: '2026-05-27', startTime: '20:30', completed: false, notes: '' },
+      { meetingNumber: 3, date: '2026-06-03', startTime: '20:30', completed: false, notes: '' },
+      { meetingNumber: 4, date: '2026-06-10', startTime: '20:30', completed: false, notes: '' },
+    ],
+    assignedActivists: [11],
+    source: 'mock',
+  },
 ];
 
 module.exports = mockMeetingHouses;
