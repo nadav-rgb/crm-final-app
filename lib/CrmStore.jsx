@@ -1,6 +1,5 @@
 // lib/CrmStore.jsx
 import { createContext, useContext, useState, useEffect } from 'react';
-import _interactions from '../data/interactions';
 import _messages     from '../data/messages';
 import { MITZVOT_BONUS_PER_LEVEL, NEW_PARTICIPANT_BONUS } from './paymentCalc';
 import { BASE_MEETING_QUESTIONS } from '../data/base-meetings';
@@ -48,11 +47,34 @@ function persistBaseMeetings(nextReports) {
 }
 
 
+// העמודות הקיימות בטבלת interactions ב-Supabase — סינון לפני כתיבה (משמיט mitzvot_level וכו')
+const INTERACTION_COLUMNS = [
+  'id', 'contact_id', 'activist_id', 'project_id', 'contact_name', 'type', 'quality',
+  'duration_minutes', 'outcome', 'date', 'time', 'notes', 'description', 'ai_summary',
+  'next_action', 'next_action_date',
+];
+
+function toInteractionRow(interaction) {
+  const row = {};
+  INTERACTION_COLUMNS.forEach(key => {
+    if (interaction[key] !== undefined) row[key] = interaction[key];
+  });
+  return row;
+}
+
+async function insertInteractionToSupabase(interaction) {
+  const row = toInteractionRow(interaction);
+  if (row.id === undefined || row.id === null) return;
+  const supabase = getSupabaseClient();
+  const { error } = await supabase.from('interactions').insert(row);
+  if (error) console.error('Failed to insert interaction', error);
+}
+
 const PROJECT_NAMES = { 1:'אחדות יהודית', 2:'נעים להכיר', 3:'שבת מכל הסיבות', 4:'נפש יהודי' };
 
 export function CrmProvider({ children }) {
   const [contacts,     setContacts]     = useState([]); // מקור האמת: Supabase (קריאה בלבד)
-  const [interactions, setInteractions] = useState(_interactions);
+  const [interactions, setInteractions] = useState([]); // מקור האמת: Supabase
   const [messages,     setMessages]     = useState(_messages);
   const [mitzvotBonuses, setMitzvotBonuses] = useState([]);
   const [baseMeetings, setBaseMeetings] = useState([]); // דיווחי מפגשי בסיס — מקור האמת: Supabase
@@ -72,6 +94,21 @@ export function CrmProvider({ children }) {
       if (!active) return;
       if (error) { console.error('Failed to load contacts', error); return; }
       if (Array.isArray(data)) setContacts(data);
+    })();
+    return () => { active = false; };
+  }, [currentUser, authLoading]);
+
+  // טעינת דיווחי קשר מ-Supabase — אותה תבנית: רק אחרי auth מוכן ויש משתמש.
+  useEffect(() => {
+    if (authLoading) return;
+    if (!currentUser) { setInteractions([]); return; }
+    let active = true;
+    (async () => {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase.from('interactions').select('*');
+      if (!active) return;
+      if (error) { console.error('Failed to load interactions', error); return; }
+      if (Array.isArray(data)) setInteractions(data);
     })();
     return () => { active = false; };
   }, [currentUser, authLoading]);
@@ -109,9 +146,14 @@ export function CrmProvider({ children }) {
       ai_summary:       ai_summary ?? '',
       contact_name:     contact?.name ?? '',
       project_id:       contact?.project_id ?? null,
+      next_action:      next_action ?? null,
+      next_action_date: next_action_date ?? null,
       ...(mitzvot_level !== undefined && mitzvot_level !== null ? { mitzvot_level } : {}),
     };
     setInteractions(prev => [newInteraction, ...prev]);
+
+    // כתיבה לענן — fire-and-forget (mitzvot_level מסונן ב-toInteractionRow)
+    insertInteractionToSupabase(newInteraction);
 
     const interactionDate = new Date(date);
     const today = new Date(); today.setHours(0,0,0,0);
