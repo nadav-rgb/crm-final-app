@@ -1,28 +1,41 @@
 // lib/CrmStore.jsx
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useState, useEffect } from 'react';
 import _contacts     from '../data/contacts';
 import _interactions from '../data/interactions';
 import _messages     from '../data/messages';
 import { MITZVOT_BONUS_PER_LEVEL, NEW_PARTICIPANT_BONUS } from './paymentCalc';
-import { baseMeetingReports, BASE_MEETING_QUESTIONS } from '../data/base-meetings';
+import { BASE_MEETING_QUESTIONS } from '../data/base-meetings';
 import { advanceReminderStageForReports } from './reminderSchedulerDemo';
+import { getSupabaseClient } from './supabaseClient';
 
 const CrmContext = createContext(null);
 
 const BASE_REPORTS_STORAGE_KEY = 'crm_base_meeting_reports_demo_v1';
 
-function loadInitialBaseMeetings() {
-  if (typeof window === 'undefined') return baseMeetingReports;
-  try {
-    const saved = JSON.parse(window.localStorage.getItem(BASE_REPORTS_STORAGE_KEY) || '[]');
-    if (!Array.isArray(saved) || saved.length === 0) return baseMeetingReports;
-    const byId = new Map(baseMeetingReports.map(report => [String(report.id), report]));
-    saved.forEach(report => byId.set(String(report.id), report));
-    return Array.from(byId.values());
-  } catch (err) {
-    console.warn('Could not read base meeting reports from localStorage', err);
-    return baseMeetingReports;
-  }
+// העמודות הקיימות בטבלת base_meeting_reports ב-Supabase — סינון לפני כתיבה
+const REPORT_COLUMNS = [
+  'id', 'activist_id', 'project_id', 'house_id', 'meeting_number',
+  'meeting_place_number', 'meeting_place_city', 'host_name', 'facilitator_name',
+  'activist_name', 'date', 'start_time', 'structured_answers', 'answers',
+  'participant_count', 'ai_summary', 'submitted', 'submitted_at',
+];
+
+function toReportRow(report) {
+  const row = {};
+  REPORT_COLUMNS.forEach(key => {
+    if (report[key] !== undefined) row[key] = report[key];
+  });
+  return row;
+}
+
+async function upsertReportsToSupabase(reports) {
+  const rows = reports.map(toReportRow).filter(r => r.id !== undefined && r.id !== null);
+  if (rows.length === 0) return;
+  const supabase = getSupabaseClient();
+  const { error } = await supabase
+    .from('base_meeting_reports')
+    .upsert(rows, { onConflict: 'id' });
+  if (error) console.error('Failed to upsert base meeting reports', error);
 }
 
 function persistBaseMeetings(nextReports) {
@@ -42,8 +55,21 @@ export function CrmProvider({ children }) {
   const [interactions, setInteractions] = useState(_interactions);
   const [messages,     setMessages]     = useState(_messages);
   const [mitzvotBonuses, setMitzvotBonuses] = useState([]);
-  const [baseMeetings, setBaseMeetings] = useState(loadInitialBaseMeetings); // דיווחי מפגשי בסיס קיימים/שמורים
+  const [baseMeetings, setBaseMeetings] = useState([]); // דיווחי מפגשי בסיס — מקור האמת: Supabase
   const [newParticipantBonuses, setNewParticipantBonuses] = useState([]); // { activist_id, contact_id, contactName, date, month }
+
+  // טעינת דיווחי מפגשי בסיס מ-Supabase בעת עליית האפליקציה
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase.from('base_meeting_reports').select('*');
+      if (!active) return;
+      if (error) { console.error('Failed to load base meeting reports', error); return; }
+      if (Array.isArray(data)) setBaseMeetings(data);
+    })();
+    return () => { active = false; };
+  }, []);
 
   function addInteraction({ id, contact_id, activist_id, type, quality, duration_minutes, outcome, date, time, notes, description, ai_summary, next_action, next_action_date, mitzvot_level }) {
     const contact = contacts.find(c => c.id === contact_id);
@@ -143,23 +169,22 @@ export function CrmProvider({ children }) {
   }
 
   function submitBaseMeeting(meetingId, answers, meetingData = {}) {
-    setBaseMeetings(prev => {
-      const submittedReport = {
-        ...meetingData,
-        id: meetingId,
-        answers,
-        submitted: true,
-        submitted_at: new Date().toISOString().split('T')[0],
-      };
+    const submittedReport = {
+      ...meetingData,
+      id: meetingId,
+      answers,
+      submitted: true,
+      submitted_at: new Date().toISOString().split('T')[0],
+    };
 
+    setBaseMeetings(prev => {
       const exists = prev.some(m => String(m.id) === String(meetingId));
-      const next = exists
+      return exists
         ? prev.map(m => String(m.id) === String(meetingId) ? { ...m, ...submittedReport } : m)
         : [submittedReport, ...prev];
-
-      persistBaseMeetings(next);
-      return next;
     });
+
+    upsertReportsToSupabase([submittedReport]);
   }
 
 
@@ -169,10 +194,10 @@ export function CrmProvider({ children }) {
       reports.forEach(report => {
         if (report && report.id !== undefined && report.id !== null) byId.set(String(report.id), report);
       });
-      const next = Array.from(byId.values());
-      persistBaseMeetings(next);
-      return next;
+      return Array.from(byId.values());
     });
+
+    upsertReportsToSupabase(reports);
   }
 
   function advanceBaseMeetingReminders(predicate = () => true) {
