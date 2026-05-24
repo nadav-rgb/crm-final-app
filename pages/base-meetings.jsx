@@ -104,6 +104,7 @@ export default function BaseMeetingsPage() {
   const [saved,          setSaved]          = useState(false);
   const [aiSummary,      setAiSummary]      = useState(null);
   const [voiceAiSummary, setVoiceAiSummary] = useState(null);
+  const [fullReport,     setFullReport]     = useState(null); // מודאל צפייה בדיווח המובנה המלא
 
   // Register push notifications for this activist
   useEffect(() => {
@@ -259,10 +260,18 @@ export default function BaseMeetingsPage() {
                   ) : (
                     <>{meeting.answers.slice(0,120)}{meeting.answers.length>120?'...':''}</>
                   )}
-                  <button type="button" onClick={e=>{ e.stopPropagation(); openAiSummary(meeting); }}
-                    style={{ display:'block', marginTop:8, border:'none', borderRadius:8, padding:'6px 10px', background:'#f0effe', color:'#6c5ce7', fontWeight:800, cursor:'pointer', fontFamily:'inherit', fontSize:12 }}>
-                    סיכום AI
-                  </button>
+                  <div style={{ display:'flex', gap:8, marginTop:8, flexWrap:'wrap' }}>
+                    <button type="button" onClick={e=>{ e.stopPropagation(); openAiSummary(meeting); }}
+                      style={{ border:'none', borderRadius:8, padding:'6px 10px', background:'#f0effe', color:'#6c5ce7', fontWeight:800, cursor:'pointer', fontFamily:'inherit', fontSize:12 }}>
+                      סיכום AI
+                    </button>
+                    {sa && (
+                      <button type="button" onClick={e=>{ e.stopPropagation(); setFullReport(meeting); }}
+                        style={{ border:'none', borderRadius:8, padding:'6px 10px', background:'#eef7ff', color:'#2d7ad6', fontWeight:800, cursor:'pointer', fontFamily:'inherit', fontSize:12 }}>
+                        צפה בדיווח מלא
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -449,6 +458,23 @@ export default function BaseMeetingsPage() {
             <div style={{ fontSize:18, fontWeight:800, marginBottom:8 }}>סיכום AI</div>
             <pre style={{ whiteSpace:'pre-wrap', background:'#fffaf5', border:'0.5px solid #eee', borderRadius:12, padding:14, fontFamily:'inherit', lineHeight:1.7, fontSize:13 }}>{aiSummary.text}</pre>
             <button onClick={()=>setAiSummary(null)} style={{ marginTop:12, border:'none', borderRadius:10, padding:'9px 18px', background:'#6c5ce7', color:'#fff', fontWeight:800, cursor:'pointer', fontFamily:'inherit' }}>סגור</button>
+          </div>
+        </div>
+      )}
+
+      {/* Full structured report modal — read only */}
+      {fullReport && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}
+          onClick={e=>{ if(e.target===e.currentTarget) setFullReport(null); }}>
+          <div style={{ background:'#fff', borderRadius:18, padding:24, maxWidth:560, width:'100%', maxHeight:'90vh', overflowY:'auto', direction:'rtl' }}>
+            <div style={{ fontSize:18, fontWeight:800, marginBottom:4 }}>דיווח מלא</div>
+            <div style={{ fontSize:12, color:'#aaa', marginBottom:12 }}>
+              {MEETING_NUMBER_LABELS[fullReport.meeting_number]} · בית מפגש {fullReport.meeting_place_number} — {fullReport.meeting_place_city}
+            </div>
+            <pre style={{ whiteSpace:'pre-wrap', background:'#f8fbff', border:'0.5px solid #e6eef7', borderRadius:12, padding:14, fontFamily:'inherit', lineHeight:1.8, fontSize:13, color:'#333' }}>
+              {fullReport.structured_answers ? structuredToText(fullReport.structured_answers) : (fullReport.answers || 'אין נתונים')}
+            </pre>
+            <button onClick={()=>setFullReport(null)} style={{ marginTop:12, border:'none', borderRadius:10, padding:'9px 18px', background:'#2d7ad6', color:'#fff', fontWeight:800, cursor:'pointer', fontFamily:'inherit' }}>סגור</button>
           </div>
         </div>
       )}
