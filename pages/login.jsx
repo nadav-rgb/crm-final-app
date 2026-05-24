@@ -9,9 +9,9 @@ export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (!username || !password) return;
-    const ok = login(username, password);
+    const ok = await login(username, password);
     if (ok) router.push('/landing');
   }
 

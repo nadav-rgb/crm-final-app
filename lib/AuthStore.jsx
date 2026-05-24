@@ -1,9 +1,28 @@
 // lib/AuthStore.jsx
 import { createContext, useContext, useState } from 'react';
-import users    from '../data/users';
 import projects from '../data/projects';
+import { getSupabaseClient } from './supabaseClient';
 
 const AuthContext = createContext(null);
+
+// מיפוי username → email אמיתי ב-Supabase (חלקם אינם <username>@achdut-crm.test)
+const USERNAME_TO_EMAIL = {
+  greenboim:     'rabbigreenboim@achdut-crm.test',
+  korlansky:     'korlansky@achdut-crm.test',
+  nadav:         'nadav@achdut-crm.test',
+  refael:        'refaelraiton@achdut-crm.test',
+  moti_gilad:    'moti_galed@achdut-crm.test',
+  moti_sterling: 'moti_sterling@achdut-crm.test',
+  chedva:        'chedva@achdut-crm.test',
+};
+
+// קלט יכול להיות email מלא או username — מחזיר תמיד email
+function resolveEmail(input) {
+  const value = (input || '').trim();
+  if (value.includes('@')) return value;                      // הוקלד email מלא
+  const key = value.toLowerCase();
+  return USERNAME_TO_EMAIL[key] || `${key}@achdut-crm.test`;  // username → email
+}
 
 export function AuthProvider({ children }) {
   const [currentUser,    setCurrentUser]    = useState(null);
@@ -11,9 +30,30 @@ export function AuthProvider({ children }) {
   const [filterProject,  setFilterProject]  = useState(null); // null = כל הפרויקטים
   const [loginError,     setLoginError]     = useState('');
 
-  function login(username, password) {
-    const user = users.find(u => u.username === username && u.password === password);
-    if (!user) { setLoginError('שם משתמש או סיסמה שגויים'); return false; }
+  async function login(usernameOrEmail, password) {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: resolveEmail(usernameOrEmail),
+      password,
+    });
+    if (error || !data?.user) { setLoginError('שם משתמש או סיסמה שגויים'); return false; }
+
+    // שליפת הפרופיל המקושר ל-Auth (activist_code שומר על תאימות ל-Number(currentUser.id))
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('activist_code, name, role, project_id')
+      .eq('id', data.user.id)
+      .single();
+    if (profileError || !profile) { setLoginError('לא נמצא פרופיל למשתמש'); return false; }
+
+    const user = {
+      id:         Number(profile.activist_code), // נשאר int כמו בקוד הישן
+      name:       profile.name,
+      role:       profile.role,
+      project_id: profile.project_id,
+      email:      data.user.email,
+    };
+
     setLoginError('');
     setCurrentUser(user);
     const proj = user.project_id ? projects.find(p => p.id === user.project_id) : projects[0];
@@ -23,7 +63,11 @@ export function AuthProvider({ children }) {
     return true;
   }
 
-  function logout() { setCurrentUser(null); setActiveProject(null); setFilterProject(null); }
+  async function logout() {
+    const supabase = getSupabaseClient();
+    await supabase.auth.signOut();
+    setCurrentUser(null); setActiveProject(null); setFilterProject(null);
+  }
 
   function switchProject(projectId) {
     if (projectId === 0) {
