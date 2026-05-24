@@ -50,7 +50,8 @@ export default function AddInteractionPage() {
     );
   }
 
-  const isAchdut = activeProject?.id === 2 || contact.project_id === 2;
+  // אחדות יהודית = project_id 1 ב-Supabase (תיקון מקומי בלבד)
+  const isAchdut = activeProject?.id === 1 || contact.project_id === 1;
 
   // Live payment calculation
   const duration = form.long_enough === 'yes' ? 16 : form.long_enough === 'no' ? 5 : 0;
