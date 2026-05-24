@@ -1,6 +1,5 @@
 // lib/CrmStore.jsx
 import { createContext, useContext, useState, useEffect } from 'react';
-import _contacts     from '../data/contacts';
 import _interactions from '../data/interactions';
 import _messages     from '../data/messages';
 import { MITZVOT_BONUS_PER_LEVEL, NEW_PARTICIPANT_BONUS } from './paymentCalc';
@@ -52,7 +51,7 @@ function persistBaseMeetings(nextReports) {
 const PROJECT_NAMES = { 1:'איילת השחר', 2:'אחדות יהודית', 3:'שבת מכל הסיבות', 4:'נפש יהודי' };
 
 export function CrmProvider({ children }) {
-  const [contacts,     setContacts]     = useState(_contacts);
+  const [contacts,     setContacts]     = useState([]); // מקור האמת: Supabase (קריאה בלבד)
   const [interactions, setInteractions] = useState(_interactions);
   const [messages,     setMessages]     = useState(_messages);
   const [mitzvotBonuses, setMitzvotBonuses] = useState([]);
@@ -60,6 +59,22 @@ export function CrmProvider({ children }) {
   const [newParticipantBonuses, setNewParticipantBonuses] = useState([]); // { activist_id, contact_id, contactName, date, month }
 
   const { currentUser, authLoading } = useAuth();
+
+  // טעינת לקוחות מ-Supabase — רק אחרי שההתחברות מוכנה ויש משתמש,
+  // כדי שה-select לא יצא כאנונימי (קריטי כשיופעל RLS). אותה תבנית כמו base_meeting_reports.
+  useEffect(() => {
+    if (authLoading) return;
+    if (!currentUser) { setContacts([]); return; }
+    let active = true;
+    (async () => {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase.from('contacts').select('*');
+      if (!active) return;
+      if (error) { console.error('Failed to load contacts', error); return; }
+      if (Array.isArray(data)) setContacts(data);
+    })();
+    return () => { active = false; };
+  }, [currentUser, authLoading]);
 
   // טעינת דיווחי מפגשי בסיס מ-Supabase — רק אחרי שההתחברות מוכנה ויש משתמש,
   // כדי שה-select לא יצא כאנונימי (קריטי כשיופעל RLS).
