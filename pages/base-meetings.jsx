@@ -8,12 +8,29 @@ import VoiceInput from '../components/VoiceInput';
 import { createBaseMeetingSubmittedNotifications } from '../lib/notificationDemo';
 import { getMeetingHouses } from '../lib/meetingHousesStorage';
 import { buildBaseMeetingsFromHouses } from '../lib/baseMeetingUtils';
+import { getSupabaseClient } from '../lib/supabaseClient';
 import { getReminderStatus } from '../lib/reminderSchedulerDemo';
 import activists from '../data/activists';
 import users from '../data/users';
 import { registerPushSubscription } from '../lib/pushClient';
 
 const MEETING_NUMBER_LABELS = { 1:'מפגש ראשון 🌱', 2:'מפגש שני 🌿', 3:'מפגש שלישי 🌳', 4:'מפגש רביעי 🏆' };
+
+// מיפוי שורת meeting_houses מ-Supabase (snake_case) ל-shape ש-buildBaseMeetingsFromHouses מצפה לו
+function mapHouseRow(row) {
+  return {
+    id:               row.id,
+    houseNumber:      row.house_number,
+    settlement:       row.settlement,
+    city:             row.city,
+    hostName:         row.host_name,
+    facilitatorName:  row.facilitator_name,
+    project_id:       row.project_id,
+    status:           row.status,
+    assignedActivists: Array.isArray(row.assigned_activists) ? row.assigned_activists : [],
+    meetings:         Array.isArray(row.meetings) ? row.meetings : [],
+  };
+}
 
 const GENDER_OPTIONS     = ['רוב גברים (70%+)', 'רוב נשים (70%+)', 'מאוזן (40–60)'];
 const RELIGION_OPTIONS   = ['רוב חילונים', 'רוב מסורתיים', 'רוב דתיים', 'רוב חרדים', 'מעורב חזק (אין רוב ברור)'];
@@ -79,7 +96,26 @@ export default function BaseMeetingsPage() {
   const [houses, setHouses] = useState([]);
 
   useEffect(() => {
-    setHouses(getMeetingHouses());
+    let active = true;
+    (async () => {
+      const local = getMeetingHouses(); // mock + localStorage (fallback / בסיס למיזוג)
+      try {
+        const supabase = getSupabaseClient();
+        const { data, error } = await supabase.from('meeting_houses').select('*');
+        if (!active) return;
+        if (error || !Array.isArray(data) || data.length === 0) {
+          setHouses(local); // fallback מלא
+          return;
+        }
+        // מיזוג: מתחילים מהמקומי, ובתי הענן גוברים לפי id
+        const byId = new Map(local.map(h => [String(h.id), h]));
+        data.map(mapHouseRow).forEach(h => byId.set(String(h.id), h));
+        setHouses(Array.from(byId.values()));
+      } catch (e) {
+        if (active) setHouses(local); // fallback מלא בכשל
+      }
+    })();
+    return () => { active = false; };
   }, []);
 
   const expandedBaseMeetings = useMemo(() => buildBaseMeetingsFromHouses({
