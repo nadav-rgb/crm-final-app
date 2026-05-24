@@ -22,7 +22,11 @@ export default function ContactDetail() {
 
   const reminders    = getReminders(contact);
   const enriched     = { ...contact, ...reminders };
-  const owner        = activists.find(a => a.id === contact.activist_id);
+  // מפת בטא מקומית מינימלית: activist_code → שם (fallback ל-data/activists)
+  const BETA_ACTIVIST_NAMES = { 11: 'רפאל רייטן', 12: 'מוטי גלעד', 13: 'מוטי שטרלינג', 14: 'חדווה מור יוסף' };
+  const ownerFallback = activists.find(a => a.id === contact.activist_id);
+  const ownerName     = BETA_ACTIVIST_NAMES[contact.activist_id] ?? ownerFallback?.name ?? null;
+  const owner         = ownerName ? { id: contact.activist_id, name: ownerName } : null;
   const contactInter = [...interactions.filter(i => i.contact_id === contact.id)]
     .sort((a, b) => new Date(b.date) - new Date(a.date));
 
@@ -149,15 +153,41 @@ export default function ContactDetail() {
               <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 10, color: '#1a1a1a' }}>היסטוריית קשרים</div>
               {contactInter.length === 0
                 ? <div style={{ background: '#fff', borderRadius: 12, padding: 20, textAlign: 'center', color: '#aaa', border: '0.5px solid #e0e0e0' }}>אין קשרים מתועדים</div>
-                : contactInter.map(i => (
+                : contactInter.map(i => {
+                  const durationLabel = i.duration_minutes == null ? null
+                    : i.duration_minutes >= 15 ? 'מעל 15 דקות' : 'פחות מ-15 דקות';
+                  return (
                   <div key={i.id} style={{ background: '#fff', borderRadius: 12, padding: '12px 14px', marginBottom: 8, border: '0.5px solid #e0e0e0' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                       <strong style={{ fontSize: 14 }}>{i.type}</strong>
                       <span style={{ fontSize: 12, color: '#aaa' }}>{i.date}</span>
                     </div>
-                    {i.notes && <div style={{ fontSize: 13, color: '#555' }}>{i.notes}</div>}
+
+                    {/* תגיות: איכות / משך / תוצאה */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: i.description || i.ai_summary || i.next_action || i.notes ? 8 : 0 }}>
+                      {i.quality && <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: '#f0effe', color: '#6c5ce7', fontWeight: 600 }}>{i.quality}</span>}
+                      {durationLabel && <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: '#eef6ee', color: '#3b6d11', fontWeight: 600 }}>{durationLabel}</span>}
+                      {i.outcome && <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: '#f5f5f5', color: '#777', fontWeight: 600 }}>{i.outcome}</span>}
+                    </div>
+
+                    {i.description && <div style={{ fontSize: 13, color: '#333', lineHeight: 1.6, marginBottom: 6 }}>{i.description}</div>}
+
+                    {i.ai_summary && (
+                      <div style={{ fontSize: 12, color: '#444', background: '#faf9ff', border: '0.5px solid #ece9fb', borderRadius: 10, padding: '8px 10px', marginBottom: 6, whiteSpace: 'pre-wrap' }}>
+                        <span style={{ fontWeight: 700, color: '#6c5ce7' }}>סיכום AI: </span>{i.ai_summary}
+                      </div>
+                    )}
+
+                    {i.notes && <div style={{ fontSize: 12, color: '#777', marginBottom: 6 }}>📝 {i.notes}</div>}
+
+                    {i.next_action && (
+                      <div style={{ fontSize: 12, color: '#3b6d11', borderTop: '0.5px solid #f0f0f0', paddingTop: 6 }}>
+                        <strong>פעולה הבאה:</strong> {i.next_action}{i.next_action_date ? ` · ${i.next_action_date}` : ''}
+                      </div>
+                    )}
                   </div>
-                ))
+                  );
+                })
               }
             </>
           )}
