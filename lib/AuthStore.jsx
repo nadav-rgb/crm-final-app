@@ -7,13 +7,13 @@ const AuthContext = createContext(null);
 
 // מיפוי username → email אמיתי ב-Supabase (חלקם אינם <username>@achdut-crm.test)
 const USERNAME_TO_EMAIL = {
-  greenboim:     'rabbigreenboim@achdut-crm.test',
-  korlansky:     'korlansky@achdut-crm.test',
-  nadav:         'nadav@achdut-crm.test',
-  refael:        'refaelraiton@achdut-crm.test',
-  moti_gilad:    'moti_galed@achdut-crm.test',
-  moti_sterling: 'moti_sterling@achdut-crm.test',
-  chedva:        'chedva@achdut-crm.test',
+  nadav:     'nadav@achdut-crm.test',
+  refael:    'refaelraiton@achdut-crm.test',
+  moti:      'moti_galed@achdut-crm.test',
+  sterling:  'moti_sterling@achdut-crm.test',
+  chedva:    'chedva@achdut-crm.test',
+  korlansky: 'korlansky@achdut-crm.test',
+  ceo:       'rabbigreenboim@achdut-crm.test',
 };
 
 // קלט יכול להיות email מלא או username — מחזיר תמיד email
