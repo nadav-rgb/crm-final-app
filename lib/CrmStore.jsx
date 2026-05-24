@@ -7,6 +7,7 @@ import { MITZVOT_BONUS_PER_LEVEL, NEW_PARTICIPANT_BONUS } from './paymentCalc';
 import { BASE_MEETING_QUESTIONS } from '../data/base-meetings';
 import { advanceReminderStageForReports } from './reminderSchedulerDemo';
 import { getSupabaseClient } from './supabaseClient';
+import { useAuth } from './AuthStore';
 
 const CrmContext = createContext(null);
 
@@ -58,8 +59,13 @@ export function CrmProvider({ children }) {
   const [baseMeetings, setBaseMeetings] = useState([]); // דיווחי מפגשי בסיס — מקור האמת: Supabase
   const [newParticipantBonuses, setNewParticipantBonuses] = useState([]); // { activist_id, contact_id, contactName, date, month }
 
-  // טעינת דיווחי מפגשי בסיס מ-Supabase בעת עליית האפליקציה
+  const { currentUser, authLoading } = useAuth();
+
+  // טעינת דיווחי מפגשי בסיס מ-Supabase — רק אחרי שההתחברות מוכנה ויש משתמש,
+  // כדי שה-select לא יצא כאנונימי (קריטי כשיופעל RLS).
   useEffect(() => {
+    if (authLoading) return;                       // ממתינים לשחזור session
+    if (!currentUser) { setBaseMeetings([]); return; } // אין משתמש — מאפסים
     let active = true;
     (async () => {
       const supabase = getSupabaseClient();
@@ -69,7 +75,7 @@ export function CrmProvider({ children }) {
       if (Array.isArray(data)) setBaseMeetings(data);
     })();
     return () => { active = false; };
-  }, []);
+  }, [currentUser, authLoading]);
 
   function addInteraction({ id, contact_id, activist_id, type, quality, duration_minutes, outcome, date, time, notes, description, ai_summary, next_action, next_action_date, mitzvot_level }) {
     const contact = contacts.find(c => c.id === contact_id);
