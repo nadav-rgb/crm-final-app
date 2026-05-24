@@ -17,8 +17,8 @@ const TORAH_DEFAULT = 'וְאָהַבְתָּ לְרֵעֲךָ כָּמוֹךָ 
 
 const PROJECTS = [
   { id: 0, name: 'כל הפרויקטים' },
-  { id: 1, name: 'איילת השחר' },
-  { id: 2, name: 'אחדות יהודית' },
+  { id: 1, name: 'אחדות יהודית' },
+  { id: 2, name: 'נעים להכיר' },
   { id: 3, name: 'שבת מכל הסיבות' },
   { id: 4, name: 'נפש יהודי' },
 ];
@@ -413,7 +413,7 @@ export default function LandingPage() {
                   onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
                 >
                   <div style={{ fontSize: 11, color: '#c4a882', marginBottom: 8 }}>{item.date}{item.time ? ` · ${item.time}` : ''}</div>
-                  {item.project_id && <div style={{ fontSize: 10, color: '#7c5cbf', marginBottom: 6, fontWeight: 500 }}>📁 {['','איילת השחר','אחדות יהודית','שבת מכל הסיבות','נפש יהודי'][item.project_id] ?? ''}</div>}
+                  {item.project_id && <div style={{ fontSize: 10, color: '#7c5cbf', marginBottom: 6, fontWeight: 500 }}>📁 {['','אחדות יהודית','נעים להכיר','שבת מכל הסיבות','נפש יהודי'][item.project_id] ?? ''}</div>}
                   <div style={{ fontSize: 11, color: '#a08060', marginBottom: 2 }}>פעיל</div>
                   <div style={{ fontSize: 13, fontWeight: 500, color: '#3d2c1e', marginBottom: 6 }}>{item.activistName}</div>
                   <div style={{ fontSize: 11, color: '#a08060', marginBottom: 2 }}>סוג קשר</div>

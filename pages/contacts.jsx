@@ -25,7 +25,7 @@ const filterOptions = [
   { value: 'קשר חי',       label: 'קשר חי' },
 ];
 
-const PROJECT_NAMES = { 1: 'איילת השחר', 2: 'אחדות יהודית', 3: 'שבת מכל הסיבות', 4: 'נפש יהודי' };
+const PROJECT_NAMES = { 1: 'אחדות יהודית', 2: 'נעים להכיר', 3: 'שבת מכל הסיבות', 4: 'נפש יהודי' };
 
 export default function ContactsPage() {
   const router = useRouter();

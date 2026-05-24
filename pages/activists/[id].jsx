@@ -8,7 +8,7 @@ import { useAuth } from '../../lib/AuthStore';
 import getReminders from '../../lib/getReminders';
 import DesktopLayout from '../../components/DesktopLayout';
 
-const PROJECT_NAMES = { 1: 'איילת השחר', 2: 'אחדות יהודית', 3: 'שבת מכל הסיבות', 4: 'נפש יהודי' };
+const PROJECT_NAMES = { 1: 'אחדות יהודית', 2: 'נעים להכיר', 3: 'שבת מכל הסיבות', 4: 'נפש יהודי' };
 
 const perfConfig = {
   high:    { label: 'תפקוד גבוה 🔥', color: '#27ae60', bg: '#edfaf1' },
