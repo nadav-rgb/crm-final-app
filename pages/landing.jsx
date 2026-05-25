@@ -4,7 +4,6 @@ import { useRouter } from 'next/router';
 import { useAuth } from '../lib/AuthStore';
 import { useCrm } from '../lib/CrmStore';
 import { getNotificationsForUser } from '../lib/notificationDemo';
-import activists from '../data/activists';
 import Link from 'next/link';
 import {
   Home, User, Users, Calendar, UserPlus,
@@ -33,7 +32,7 @@ const ICO = { size: 18, strokeWidth: 1.8 };
 
 export default function LandingPage() {
   const { currentUser, activeProject, switchProject, logout, can } = useAuth();
-  const { contacts, interactions, messages, baseMeetings } = useCrm();
+  const { contacts, interactions, activists, messages, baseMeetings } = useCrm();
   const router = useRouter();
 
   const isActivist = currentUser?.role === 'activist';
@@ -117,7 +116,7 @@ export default function LandingPage() {
   const stats = [
     { num: filteredContacts.length, label: 'סה"כ לקוחות', color: '#c47a2e', rgb: '196,122,46' },
     { num: filteredInteractions.length, label: 'סה"כ קשרים', color: '#8b6d3f', rgb: '139,109,63' },
-    { num: activists.filter(a => a.role !== 'manager' && a.status === 'active').length, label: 'פעילים פעילים', color: '#c47a2e', rgb: '196,122,46' },
+    { num: activists.filter(a => a.role === 'activist' && a.status === 'active').length, label: 'פעילים פעילים', color: '#c47a2e', rgb: '196,122,46' },
     { num: filteredContacts.filter(c => c.days_since_last_contact >= 30).length, label: 'על סף ניתוק', color: '#a32d2d', rgb: '163,45,45' },
   ];
 
