@@ -24,7 +24,7 @@ export default function ActivistsPage() {
   }
 
   // סינון לפי פרויקט
-  let displayActivists = activists.filter(a => a.role !== 'manager');
+  let displayActivists = activists.filter(a => a.role === 'activist');
   if (filterProject !== null) {
     displayActivists = displayActivists.filter(a => a.project_id === filterProject);
   }
