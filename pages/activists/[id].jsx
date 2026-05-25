@@ -1,7 +1,6 @@
 // pages/activists/[id].jsx
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import activists from '../../data/activists';
 import { interactionsLast30, getActivistPerformance, timeInSystem } from '../../lib/activistStats';
 import { useCrm } from '../../lib/CrmStore';
 import { useAuth } from '../../lib/AuthStore';
@@ -19,7 +18,7 @@ const perfConfig = {
 export default function ActivistDetail() {
   const router = useRouter();
   const { id, from, contactId } = router.query;
-  const { contacts, interactions } = useCrm();
+  const { contacts, interactions, activists } = useCrm();
   const { can } = useAuth();
 
   const activist = activists.find(a => a.id === Number(id));
@@ -88,7 +87,7 @@ export default function ActivistDetail() {
             {/* פרטים */}
             <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
               {[
-                ['טלפון',        activist.phone],
+                ['טלפון',        activist.phone || '—'],
                 ['עיר',          activist.city || '—'],
                 ['כתובת',        activist.address || '—'],
                 ['גיל',          activist.age ? `${activist.age}` : '—'],
