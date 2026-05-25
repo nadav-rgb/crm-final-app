@@ -7,7 +7,6 @@ import { interactionsLast30, getActivistPerformance } from '../lib/activistStats
 import ActivistCard from '../components/ActivistCard';
 import FilterChips from '../components/FilterChips';
 import DesktopLayout from '../components/DesktopLayout';
-import activists from '../data/activists';
 
 const filterOptions = [
   { value: 'all',      label: 'הכל' },
@@ -17,7 +16,7 @@ const filterOptions = [
 
 export default function ActivistsPage() {
   const [filter, setFilter] = useState('all');
-  const { contacts, interactions } = useCrm();
+  const { contacts, interactions, activists } = useCrm();
   const { can, filterProject } = useAuth();
 
   if (!can.seeActivists) {

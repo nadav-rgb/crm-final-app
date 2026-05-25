@@ -83,6 +83,7 @@ const PROJECT_NAMES = { 1:'אחדות יהודית', 2:'נעים להכיר', 3:
 export function CrmProvider({ children }) {
   const [contacts,     setContacts]     = useState([]); // מקור האמת: Supabase (קריאה בלבד)
   const [interactions, setInteractions] = useState([]); // מקור האמת: Supabase
+  const [activists,    setActivists]    = useState([]); // מקור האמת: Supabase view activist_directory (קריאה בלבד)
   const [messages,     setMessages]     = useState(_messages);
   const [mitzvotBonuses, setMitzvotBonuses] = useState([]);
   const [baseMeetings, setBaseMeetings] = useState([]); // דיווחי מפגשי בסיס — מקור האמת: Supabase
@@ -102,6 +103,33 @@ export function CrmProvider({ children }) {
       if (!active) return;
       if (error) { console.error('Failed to load contacts', error); return; }
       if (Array.isArray(data)) setContacts(data);
+    })();
+    return () => { active = false; };
+  }, [currentUser, authLoading]);
+
+  // טעינת פעילים מ-Supabase view activist_directory — אותה תבנית auth-gated.
+  // ברירות מחדל בטוחות: id מתוך activist_code, status='active' (ה-view לא חושף status).
+  useEffect(() => {
+    if (authLoading) return;
+    if (!currentUser) { setActivists([]); return; }
+    let active = true;
+    (async () => {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase
+        .from('activist_directory')
+        .select('activist_code, name, role, project_id')
+        .order('name');
+      if (!active) return;
+      if (error) { console.error('Failed to load activists', error); return; }
+      if (Array.isArray(data)) {
+        setActivists(data.map(a => ({
+          id:         Number(a.activist_code),
+          name:       a.name,
+          role:       a.role,
+          project_id: a.project_id,
+          status:     'active',
+        })));
+      }
     })();
     return () => { active = false; };
   }, [currentUser, authLoading]);
@@ -298,7 +326,7 @@ export function CrmProvider({ children }) {
 
   return (
     <CrmContext.Provider value={{
-      contacts, interactions, messages, baseMeetings, BASE_MEETING_QUESTIONS,
+      contacts, interactions, activists, messages, baseMeetings, BASE_MEETING_QUESTIONS,
       mitzvotBonuses, newParticipantBonuses,
       addInteraction, addContact, updateNextAction, updateMitzvot, addMessage, submitBaseMeeting, upsertBaseMeetingReports, advanceBaseMeetingReminders,
       PROJECT_NAMES,
