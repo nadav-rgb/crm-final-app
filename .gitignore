@@ -1,5 +1,6 @@
 node_modules
 .next
+.claude/worktrees/
 .env
 .env.local
 .DS_Store

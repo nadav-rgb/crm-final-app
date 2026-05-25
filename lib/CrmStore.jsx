@@ -70,6 +70,14 @@ async function insertInteractionToSupabase(interaction) {
   if (error) console.error('Failed to insert interaction', error);
 }
 
+// כתיבת השדות הנגזרים חזרה לטבלת contacts (אחרת הם נשארים מקומיים ונעלמים ב-reload)
+async function updateContactFieldsInSupabase(contactId, fields) {
+  if (contactId === undefined || contactId === null) return;
+  const supabase = getSupabaseClient();
+  const { error } = await supabase.from('contacts').update(fields).eq('id', contactId);
+  if (error) console.error('Failed to update contact fields', error);
+}
+
 const PROJECT_NAMES = { 1:'אחדות יהודית', 2:'נעים להכיר', 3:'שבת מכל הסיבות', 4:'נפש יהודי' };
 
 export function CrmProvider({ children }) {
@@ -173,6 +181,12 @@ export function CrmProvider({ children }) {
       }
       return updated;
     }));
+
+    // התמדה לענן של השדות הנגזרים (mitzvot_level מושמט — אין עמודה כזו ב-contacts)
+    const contactFields = { days_since_last_contact: diffDays, last_interaction_date: date };
+    if (next_action      !== undefined) contactFields.next_action      = next_action;
+    if (next_action_date !== undefined) contactFields.next_action_date = next_action_date;
+    updateContactFieldsInSupabase(contact_id, contactFields);
   }
 
   function addContact(contactData) {
