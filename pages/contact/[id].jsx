@@ -45,7 +45,7 @@ export default function ContactDetail() {
                   : from === 'former'                  ? '← חזרה ללקוחות לשעבר'
                   : '← חזרה ללקוחות';
 
-  const isAchdut    = activeProject?.id === 2;
+  const isAchdut    = activeProject?.id === 1;
   const sourceLabel = contact.source ? (CONFIG.contactSources?.[contact.source] ?? contact.source) : '—';
   const timeLabel   = timeInSystem(contact.joined_at);
 

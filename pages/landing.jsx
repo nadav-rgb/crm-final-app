@@ -216,7 +216,7 @@ export default function LandingPage() {
           )}
           <SideItem icon={<Users {...ICO} />} label="לקוחות" open={open} onClick={() => router.push('/contacts')} />
 
-          {can.addContact && currentUser?.project_id === 2 && (
+          {can.addContact && currentUser?.project_id === 1 && (
             <SideItem icon={<Calendar     {...ICO} />} label="פעולות היום"    open={open} onClick={() => router.push('/today')} />
           )}
           {can.addContact && (

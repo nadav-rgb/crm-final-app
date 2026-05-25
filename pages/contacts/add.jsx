@@ -30,7 +30,7 @@ export default function AddContactPage() {
 
   if (currentUser && !can.addContact) return null;
 
-  const isAchdut  = activeProject?.id === 2;
+  const isAchdut  = activeProject?.id === 1;
   const mitzvotList = form.gender === 'male'   ? CONFIG.mitzvotMale
                     : form.gender === 'female' ? CONFIG.mitzvotFemale
                     : [];

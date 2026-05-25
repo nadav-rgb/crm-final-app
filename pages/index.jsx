@@ -34,7 +34,7 @@ export default function Dashboard() {
 
   const perfLabel = can.addContact && currentUser
     ? getActivistPerformanceLabel(
-        activeProject?.id === 2 ? payableCount : myInteractionsCount,
+        activeProject?.id === 1 ? payableCount : myInteractionsCount,
         activeProject?.id
       )
     : null;
@@ -57,7 +57,7 @@ return (
     }}>
       {/* קשרים החודש — הבולט */}
       {can.addContact && (
-        <div style={{ display: 'grid', gridTemplateColumns: activeProject?.id === 2 ? '1fr 1fr 1fr' : '1fr 1fr', gap: 14, marginBottom: 24 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: activeProject?.id === 1 ? '1fr 1fr 1fr' : '1fr 1fr', gap: 14, marginBottom: 24 }}>
           {/* קשרים החודש */}
           <div style={{ background: 'linear-gradient(135deg, #6c5ce7, #a29bfe)', borderRadius: 18, padding: '24px 20px', textAlign: 'center', boxShadow: '0 4px 20px rgba(108,92,231,0.3)', color: '#fff' }}>
             <div style={{ fontSize: 52, fontWeight: 700, lineHeight: 1 }}>{myInteractionsCount}</div>
@@ -65,7 +65,7 @@ return (
           </div>
 
           {/* קשרים מזכים — אחדות יהודית בלבד */}
-          {activeProject?.id === 2 && (
+          {activeProject?.id === 1 && (
             <div style={{ background: 'linear-gradient(135deg, #27ae60, #2ecc71)', borderRadius: 18, padding: '24px 20px', textAlign: 'center', boxShadow: '0 4px 20px rgba(39,174,96,0.3)', color: '#fff' }}>
               <div style={{ fontSize: 52, fontWeight: 700, lineHeight: 1 }}>{payableCount}</div>
               <div style={{ fontSize: 13, marginTop: 8, opacity: 0.85 }}>קשרים מזכי תשלום</div>
