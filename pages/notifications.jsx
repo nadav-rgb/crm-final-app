@@ -46,13 +46,7 @@ export default function NotificationsPage() {
                 <div style={{ fontSize:11, color:'#aaa', whiteSpace:'nowrap' }}>{formatDateTime(n.created_at)}</div>
               </div>
               <div style={{ fontSize:13, color:'#555', lineHeight:1.7 }}>{n.body}</div>
-              {n.link && (
-                <div style={{ marginTop:10 }}>
-                  <Link href={n.link} style={{ fontSize:12, fontWeight:800, color:'#6c5ce7', textDecoration:'none' }}>
-                    פתח יעד ←
-                  </Link>
-                </div>
-              )}
+              {/* פתח יעד — מוסתר לבטא; קישורים עדיין לא מחוברים לדפים פעילים */}
             </div>
           ))}
 
