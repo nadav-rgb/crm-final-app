@@ -98,8 +98,6 @@ function toContactRow(contact) {
 
 async function insertContactToSupabase(contact) {
   const row = toContactRow(contact);
-  // לא שולחים id — הDB מייצר אוטומטית (Date.now() גורם overflow ב-integer column)
-  delete row.id;
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
     .from('contacts')
@@ -264,7 +262,8 @@ export function CrmProvider({ children }) {
   }
 
   async function addContact(contactData) {
-    const tempId = 'temp-' + Date.now();
+    // random integer 100M–999M: בטוח ב-int4, רחוק מ-seed data (1001-9999), לא גולש כמו Date.now()
+    const tempId = Math.floor(Math.random() * 900_000_000) + 100_000_000;
     const newContact = { ...contactData, id: tempId, mitzvot: contactData.mitzvot || {}, mitzvot_history: [] };
     setContacts(prev => [newContact, ...prev]);
 
