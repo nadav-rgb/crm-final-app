@@ -14,8 +14,8 @@ export default function PaymentsPage() {
   const [viewMode, setViewMode] = useState('grid');
   const [selectedReport, setSelectedReport] = useState(null);
 
-  // רשאים לצפות: רכז אחדות יהודית + מנכ"ל
-  const canView = can.seePayments && (currentUser?.role === 'ceo' || currentUser?.project_id === 2);
+  // רשאים לצפות: כל מי ש-AuthStore מאשר (רכז, מנכ"ל, כספים, ראש פרויקט)
+  const canView = can.seePayments;
 
   if (!canView) return (
     <DesktopLayout title="דוחות תשלום פעילים">
