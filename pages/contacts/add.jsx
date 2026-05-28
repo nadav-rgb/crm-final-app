@@ -65,12 +65,12 @@ export default function AddContactPage() {
     return e;
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     const e = validate();
     if (Object.keys(e).length > 0) { setErrors(e); return; }
     const houseNumber = form.meeting_place_number.trim();
     const houseCity   = form.meeting_place_city.trim();
-    addContact({
+    const result = await addContact({
       ...form,
       activist_id: currentUser.id,
       project_id:  activeProject?.id,
@@ -83,6 +83,10 @@ export default function AddContactPage() {
         meetingHouseKey:    `${houseNumber}_${houseCity}`,
       } : {}),
     });
+    if (result?.error) {
+      alert('שגיאה בשמירת הלקוח: ' + (result.error.message || 'אנא נסה שוב'));
+      return;
+    }
     router.push('/contacts');
   }
 

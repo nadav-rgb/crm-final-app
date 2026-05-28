@@ -70,6 +70,52 @@ async function insertInteractionToSupabase(interaction) {
   if (error) console.error('Failed to insert interaction', error);
 }
 
+// העמודות הקיימות בטבלת contacts ב-Supabase — סינון לפני כתיבה (משמיט מפתחות זרים מהטופס)
+const CONTACT_COLUMNS = [
+  'id', 'activist_id', 'project_id', 'name', 'phone', 'city', 'area', 'depth',
+  'profession', 'age', 'gender', 'high_potential', 'days_since_last_contact',
+  'last_interaction_date', 'next_action', 'next_action_date', 'source',
+  'joined_at', 'notes', 'how_met', 'mitzvot', 'mitzvot_history', 'is_graduate',
+  'referred_by', 'meeting_place_city', 'meeting_place_number',
+  'meetingHouseCity', 'meetingHouseNumber', 'meetingHouseKey',
+];
+
+function toContactRow(contact) {
+  const row = {};
+  CONTACT_COLUMNS.forEach(key => {
+    if (contact[key] !== undefined) row[key] = contact[key];
+  });
+  // ברירות מחדל בטוחות (מכסה עמודות NOT NULL שהטופס לא ממלא)
+  const ageNum = Number(row.age);
+  row.age            = Number.isFinite(ageNum) && row.age !== '' && row.age !== null ? ageNum : null;
+  row.high_potential = row.high_potential ?? false;
+  row.is_graduate    = row.is_graduate ?? false;
+  row.area           = row.area ?? null;
+  row.depth          = row.depth ?? null;
+  row.source         = row.source ?? null;
+  return row;
+}
+
+async function insertContactToSupabase(contact) {
+  const row = toContactRow(contact);
+  // לא שולחים id — הDB מייצר אוטומטית (Date.now() גורם overflow ב-integer column)
+  delete row.id;
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from('contacts')
+    .insert(row)
+    .select()
+    .single();
+  if (error) {
+    console.error('[A1] INSERT FAILED — full error object:', error);
+    console.error('[A1] error fields → code:', error.code, '| message:', error.message, '| details:', error.details, '| hint:', error.hint);
+    console.error('[A1] error JSON:', JSON.stringify(error, null, 2));
+  } else {
+    console.log('[A1] INSERT OK — row returned from DB:', data);
+  }
+  return { data, error };
+}
+
 // כתיבת השדות הנגזרים חזרה לטבלת contacts (אחרת הם נשארים מקומיים ונעלמים ב-reload)
 async function updateContactFieldsInSupabase(contactId, fields) {
   if (contactId === undefined || contactId === null) return;
@@ -217,9 +263,23 @@ export function CrmProvider({ children }) {
     updateContactFieldsInSupabase(contact_id, contactFields);
   }
 
-  function addContact(contactData) {
-    const newContact = { ...contactData, id: Date.now(), mitzvot: contactData.mitzvot || {}, mitzvot_history: [] };
+  async function addContact(contactData) {
+    const tempId = 'temp-' + Date.now();
+    const newContact = { ...contactData, id: tempId, mitzvot: contactData.mitzvot || {}, mitzvot_history: [] };
     setContacts(prev => [newContact, ...prev]);
+
+    const { data, error } = await insertContactToSupabase(newContact);
+
+    if (error) {
+      // rollback — מסירים את הלקוח האופטימי
+      setContacts(prev => prev.filter(c => c.id !== tempId));
+      return { error };
+    }
+
+    // מחליפים את הלקוח הזמני ב-row האמיתי שחזר מה-DB (עם ה-id האמיתי)
+    if (data) {
+      setContacts(prev => prev.map(c => c.id === tempId ? { ...newContact, ...data } : c));
+    }
 
     // בדיקת הפניה — הבאת משתתף חדש
     if (contactData.referred_by && contactData.activist_id) {
@@ -235,6 +295,8 @@ export function CrmProvider({ children }) {
         amount:       NEW_PARTICIPANT_BONUS,
       }]);
     }
+
+    return { data };
   }
 
   function updateNextAction(contactId, nextAction, nextActionDate) {
