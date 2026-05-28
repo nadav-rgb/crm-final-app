@@ -4,12 +4,12 @@ import DesktopLayout from '../components/DesktopLayout';
 import { useCrm } from '../lib/CrmStore';
 import { useAuth } from '../lib/AuthStore';
 import { calcMonthlyPayment } from '../lib/paymentCalc';
-import activists from '../data/activists';
+// activists מגיע מ-CrmStore (Supabase) — לא מקובץ סטטי, כך ה-IDs תואמים ל-activist_id בקשרים
 
 const MONTH_NAMES = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
 
 export default function PaymentsPage() {
-  const { contacts, interactions, mitzvotBonuses, newParticipantBonuses } = useCrm();
+  const { contacts, interactions, mitzvotBonuses, newParticipantBonuses, activists } = useCrm();
   const { currentUser, can } = useAuth();
   const [viewMode, setViewMode] = useState('grid');
   const [selectedReport, setSelectedReport] = useState(null);
@@ -30,8 +30,8 @@ export default function PaymentsPage() {
   const month = now.getMonth();
   const year  = now.getFullYear();
 
-  // פעילי אחדות יהודית
-  const achdutActivists = activists.filter(a => a.project_id === 2 && a.role !== 'manager');
+  // פעילי אחדות יהודית — project_id=1 ב-Supabase, role מ-activist_directory
+  const achdutActivists = activists.filter(a => a.project_id === 1 && a.role !== 'manager' && a.role !== 'coord' && a.role !== 'head' && a.role !== 'ceo' && a.role !== 'finance');
 
   // [DIAG] לוג אבחון תשלומים
   console.log('[PAY-DIAG] month:', month, 'year:', year);
