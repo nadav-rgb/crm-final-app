@@ -31,6 +31,7 @@ async function upsertReportsToSupabase(reports) {
   const rows = reports.map(toReportRow).filter(r => r.id !== undefined && r.id !== null);
   if (rows.length === 0) return;
   const supabase = getSupabaseClient();
+  const data = null;
   const { error } = await supabase
     .from('base_meeting_reports')
     .upsert(rows, { onConflict: 'id' });
@@ -80,6 +81,12 @@ const CONTACT_COLUMNS = [
   'meetingHouseCity', 'meetingHouseNumber', 'meetingHouseKey',
 ];
 
+// מנרמל ערך תאריך: YYYY-MM-DD → שומר, ריק/לא תקין → null
+function safeDate(val) {
+  if (!val || typeof val !== 'string') return null;
+  return /^\d{4}-\d{2}-\d{2}$/.test(val.trim()) ? val.trim() : null;
+}
+
 function toContactRow(contact) {
   const row = {};
   CONTACT_COLUMNS.forEach(key => {
@@ -93,11 +100,16 @@ function toContactRow(contact) {
   row.area           = row.area ?? null;
   row.depth          = row.depth ?? null;
   row.source         = row.source ?? null;
+  // נרמול שדות תאריך — string ריק גורם ל-"invalid input syntax for type date" ב-Postgres
+  row.last_interaction_date = safeDate(row.last_interaction_date);
+  row.next_action_date      = safeDate(row.next_action_date);
+  row.joined_at             = safeDate(row.joined_at);
   return row;
 }
 
 async function insertContactToSupabase(contact) {
   const row = toContactRow(contact);
+  console.log('[A1] insertContactToSupabase — row to insert:', row);
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
     .from('contacts')
@@ -105,6 +117,7 @@ async function insertContactToSupabase(contact) {
     .select()
     .single();
   if (error) {
+    console.error('Failed to insert customer into Supabase contacts table', { error, row });
     console.error('[A1] INSERT FAILED — full error object:', error);
     console.error('[A1] error fields → code:', error.code, '| message:', error.message, '| details:', error.details, '| hint:', error.hint);
     console.error('[A1] error JSON:', JSON.stringify(error, null, 2));
