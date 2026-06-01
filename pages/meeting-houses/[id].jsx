@@ -4,8 +4,9 @@ import { useRouter } from 'next/router';
 import DesktopLayout from '../../components/DesktopLayout';
 import { useAuth } from '../../lib/AuthStore';
 import { getMeetingHouseById, updateMeetingHouseAssignments, updateMeetingCompletion } from '../../lib/meetingHousesStorage';
+import { fetchMeetingHousesFromSupabase, updateAssignmentsApi } from '../../lib/meetingHousesSupabase';
 import { createDemoNotification } from '../../lib/notificationDemo';
-import activists from '../../data/activists';
+import ActivistSearchSelect from '../../components/ActivistSearchSelect';
 import { useCrm } from '../../lib/CrmStore';
 import { summarizeMeetingHouseSeriesDemo, generateMeetingNotesAiSummaryDemo } from '../../lib/aiDemo';
 import { buildBaseMeetingsFromHouses, getMeetingSeriesReports } from '../../lib/baseMeetingUtils';
@@ -20,7 +21,7 @@ export default function MeetingHouseDetailPage() {
   const router = useRouter();
   const { id } = router.query;
   const { can, currentUser } = useAuth();
-  const { baseMeetings, upsertBaseMeetingReports } = useCrm();
+  const { baseMeetings, upsertBaseMeetingReports, activists } = useCrm();
 
   const [house, setHouse] = useState(null);
   const [loaded, setLoaded] = useState(false);
@@ -32,15 +33,23 @@ export default function MeetingHouseDetailPage() {
 
   useEffect(() => {
     if (!id) return;
-    const found = getMeetingHouseById(id);
-    setHouse(found || null);
-    setAssignedIds(found?.assignedActivists ?? []);
-    setLoaded(true);
+    let active = true;
+    (async () => {
+      // מקור אמת: Supabase. נפילה ל-localStorage רק עבור בתי מפגש דמו ישנים.
+      const houses = await fetchMeetingHousesFromSupabase();
+      let found = houses.find(h => String(h.id) === String(id)) || getMeetingHouseById(id) || null;
+      if (!active) return;
+      setHouse(found);
+      setAssignedIds(found?.assignedActivists ?? []);
+      setLoaded(true);
+    })();
+    return () => { active = false; };
   }, [id]);
 
-  const achdutActivists = activists.filter(a => a.project_id === 2 && a.role === 'activist' && a.status === 'active');
-  const assignedActivists = assignedIds.map(aid => activists.find(a => a.id === aid)).filter(Boolean);
-  const availableActivists = achdutActivists.filter(a => !assignedIds.includes(a.id));
+  // מקור הפעילים האמיתי — activist_directory (דרך useCrm). מסונן לפרויקט בית המפגש כשידוע.
+  const activistOptions = activists.filter(a => a.role === 'activist' && (house?.project_id == null || Number(a.project_id) === Number(house.project_id)));
+  const activistPool = activistOptions.length ? activistOptions : activists.filter(a => a.role === 'activist');
+  const assignedActivists = assignedIds.map(aid => activists.find(a => Number(a.id) === Number(aid))).filter(Boolean);
   const expandedReports = house ? buildBaseMeetingsFromHouses({
     houses: [{ ...house, assignedActivists: assignedIds }],
     activists,
@@ -90,16 +99,20 @@ export default function MeetingHouseDetailPage() {
     );
   }
 
-  function persistAssignments(nextAssignedIds) {
+  async function persistAssignments(nextAssignedIds) {
     setAssignedIds(nextAssignedIds);
-    const updated = updateMeetingHouseAssignments(house.id, nextAssignedIds);
-    if (updated) setHouse(updated);
+    // מקור אמת: Supabase (דרך API מאומת). נפילה ל-localStorage רק לבתי מפגש דמו ישנים.
+    const updated = await updateAssignmentsApi(house.id, nextAssignedIds);
+    if (updated) { setHouse(updated); return; }
+    const local = updateMeetingHouseAssignments(house.id, nextAssignedIds);
+    if (local) setHouse(local);
   }
 
-  function assignActivist() {
+  async function assignActivist() {
     const parsedId = Number(selectedActivistId);
-    if (!parsedId || assignedIds.includes(parsedId)) return;
-    persistAssignments([...assignedIds, parsedId]);
+    if (!parsedId || assignedIds.some(a => Number(a) === parsedId)) return;
+    await persistAssignments([...assignedIds, parsedId]);
+    // התראה בתוך-המערכת (קיימת). TODO (Phase 2): שליחת push אמיתי לטלפון דרך /api/push/send.
     createDemoNotification({
       id: `manual_assignment_${house.id}_${parsedId}_${Date.now()}`,
       type: 'assignment',
@@ -127,8 +140,8 @@ export default function MeetingHouseDetailPage() {
     setSelectedActivistId('');
   }
 
-  function removeActivist(activistId) {
-    persistAssignments(assignedIds.filter(item => item !== activistId));
+  async function removeActivist(activistId) {
+    await persistAssignments(assignedIds.filter(item => Number(item) !== Number(activistId)));
   }
 
   function openMeetingEditor(meetingNumber) {
@@ -279,16 +292,17 @@ export default function MeetingHouseDetailPage() {
           </div>
         ) : (
           <div style={{ background:'#fff', border:'0.5px solid rgba(0,0,0,0.08)', borderRadius:16, padding:20 }}>
-            <div style={{ fontSize:16, fontWeight:800, color:'#2d1f5e', marginBottom:16 }}>שיבוץ פעילים</div>
+            <div style={{ fontSize:16, fontWeight:800, color:'#2d1f5e', marginBottom:16 }}>שיבוץ פעיל אחראי</div>
 
-            <div style={{ display:'flex', gap:8, marginBottom:16 }}>
-              <select value={selectedActivistId} onChange={e => setSelectedActivistId(e.target.value)} style={{ flex:1, border:'1.5px solid #e8e8e8', borderRadius:10, padding:'10px 12px', fontFamily:'inherit', fontSize:13, background:'#fff', color:'#333' }}>
-                <option value="">בחר פעיל לשיבוץ</option>
-                {availableActivists.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
-              <button onClick={assignActivist} disabled={!selectedActivistId} style={{ border:'none', borderRadius:10, padding:'10px 16px', fontFamily:'inherit', fontWeight:800, cursor:selectedActivistId?'pointer':'not-allowed', background:selectedActivistId?'#6c5ce7':'#ddd', color:'#fff' }}>
-                שבץ פעיל
-              </button>
+            <div style={{ marginBottom:16 }}>
+              <ActivistSearchSelect
+                activists={activistPool}
+                selectedId={selectedActivistId ? Number(selectedActivistId) : null}
+                onSelect={(aid) => setSelectedActivistId(String(aid))}
+                onConfirm={assignActivist}
+                confirmLabel="שבץ פעיל אחראי"
+                disabledIds={assignedIds}
+              />
             </div>
 
             {assignedActivists.length === 0 ? (
@@ -299,7 +313,7 @@ export default function MeetingHouseDetailPage() {
                   <div key={a.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, padding:'10px 12px', border:'0.5px solid #eee', borderRadius:12, background:'#fffaf5' }}>
                     <div>
                       <div style={{ fontSize:14, fontWeight:800, color:'#333' }}>{a.name}</div>
-                      <div style={{ fontSize:12, color:'#999' }}>{a.phone} · {a.city}</div>
+                      <div style={{ fontSize:12, color:'#999' }}>פעיל אחראי{a.city ? ` · ${a.city}` : ''}</div>
                     </div>
                     <button onClick={() => removeActivist(a.id)} style={{ border:'none', background:'#f7e7e7', color:'#a32d2d', borderRadius:8, padding:'6px 10px', cursor:'pointer', fontFamily:'inherit', fontSize:12 }}>
                       הסר
@@ -310,7 +324,7 @@ export default function MeetingHouseDetailPage() {
             )}
 
             <div style={{ marginTop:16, fontSize:12, color:'#999', lineHeight:1.6 }}>
-              בשלב זה השיבוץ נשמר בדפדפן המקומי לצורך הדגמה. בעתיד אותו מבנה יישמר במסד נתונים ויחובר להתראות לפעילים.
+              השיבוץ נשמר ב-Supabase והפעיל המשובץ רואה אותו מהחשבון שלו בכל מכשיר. התראת Push לטלפון תתווסף בשלב הבא.
             </div>
           </div>
         )}

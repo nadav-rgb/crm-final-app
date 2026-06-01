@@ -4,12 +4,13 @@ import { useRouter } from 'next/router';
 import DesktopLayout from '../../components/DesktopLayout';
 import { useAuth } from '../../lib/AuthStore';
 import { saveManualMeetingHouse } from '../../lib/meetingHousesStorage';
+import { upsertMeetingHouseApi } from '../../lib/meetingHousesSupabase';
 
 const emptyMeetings = [1, 2, 3, 4].map(num => ({ meetingNumber: num, date: '', startTime: '', completed: false, notes: '', summary: '' }));
 
 export default function NewMeetingHousePage() {
   const router = useRouter();
-  const { can } = useAuth();
+  const { can, currentUser } = useAuth();
   const [form, setForm] = useState({
     settlement: '',
     houseNumber: '',
@@ -52,7 +53,7 @@ export default function NewMeetingHousePage() {
     return '';
   }
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     const validationError = validate();
     if (validationError) {
@@ -60,19 +61,38 @@ export default function NewMeetingHousePage() {
       return;
     }
 
-    const saved = saveManualMeetingHouse({
+    // מקור אמת: Supabase (דרך API מאומת).
+    const saved = await upsertMeetingHouseApi({
+      id: `mh-${Date.now()}`,
+      settlement: form.settlement,
+      city: form.settlement,
+      houseNumber: form.houseNumber,
+      hostName: form.hostName,
+      facilitatorName: form.facilitatorName,
+      status: 'upcoming',
+      meetings: form.meetings,
+      assignedActivists: [],
+      project_id: currentUser?.project_id ?? 1,
+      startDate: form.meetings[0]?.date || '',
+    });
+
+    if (saved) {
+      router.push(`/meeting-houses/${saved.id}`);
+      return;
+    }
+
+    // נפילה ל-localStorage רק אם השרת לא זמין — לא לאבד את העבודה.
+    const local = saveManualMeetingHouse({
       ...form,
       city: form.settlement,
       startDate: form.meetings[0]?.date || '',
       assignedActivists: [],
     });
-
-    if (!saved) {
+    if (!local) {
       setError('לא ניתן לשמור כרגע. נסה לרענן את הדף.');
       return;
     }
-
-    router.push(`/meeting-houses/${saved.id}`);
+    router.push(`/meeting-houses/${local.id}`);
   }
 
   return (

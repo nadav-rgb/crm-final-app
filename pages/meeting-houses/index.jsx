@@ -4,10 +4,9 @@ import Link from 'next/link';
 import DesktopLayout from '../../components/DesktopLayout';
 import { useAuth } from '../../lib/AuthStore';
 import { getMeetingHouses, updateMeetingHouseAssignments, importExternalMeetingHousesDemo } from '../../lib/meetingHousesStorage';
+import { fetchMeetingHousesFromSupabase, updateAssignmentsApi } from '../../lib/meetingHousesSupabase';
 import { createDemoNotification } from '../../lib/notificationDemo';
-import activists from '../../data/activists';
-
-const achdutActivists = activists.filter(a => a.project_id === 2 && a.role === 'activist' && a.status === 'active');
+import { useCrm } from '../../lib/CrmStore';
 
 function formatDate(dateString) {
   if (!dateString) return '—';
@@ -22,12 +21,29 @@ const STATUS_LABELS = {
 
 export default function MeetingHousesPage() {
   const { can, currentUser } = useAuth();
+  const { activists } = useCrm();
   const [houses, setHouses] = useState([]);
   const [importMessage, setImportMessage] = useState('');
 
+  // מקור הפעילים האמיתי — activist_directory (דרך useCrm).
+  const activistPool = activists.filter(a => a.role === 'activist');
+
+  // מקור אמת: Supabase. בתי מפגש דמו ישנים מ-localStorage מתווספים כ-fallback בלבד.
+  async function loadHouses() {
+    const remote = await fetchMeetingHousesFromSupabase();
+    const local = getMeetingHouses();
+    const remoteIds = new Set(remote.map(h => String(h.id)));
+    return [...remote, ...local.filter(h => !remoteIds.has(String(h.id)))];
+  }
+
   useEffect(() => {
-    setHouses(getMeetingHouses());
-  }, []);
+    let active = true;
+    (async () => {
+      const merged = await loadHouses();
+      if (active) setHouses(merged);
+    })();
+    return () => { active = false; };
+  }, [currentUser]);
 
   const activeHouses = houses.filter(h => {
     if (h.status === 'completed') return false;
@@ -39,17 +55,19 @@ export default function MeetingHousesPage() {
     return true;
   });
 
-  function handleExternalImport() {
+  async function handleExternalImport() {
     const imported = importExternalMeetingHousesDemo();
-    setHouses(getMeetingHouses());
+    setHouses(await loadHouses());
     setImportMessage('יובאו ' + imported.length + ' בתי מפגש מדמו חיצוני.');
   }
 
-  function handleAssign(houseId, activistId, houseNumber, houseCity) {
-    const updated = updateMeetingHouseAssignments(houseId, [activistId]);
+  async function handleAssign(houseId, activistId, houseNumber, houseCity) {
+    // מקור אמת: Supabase. נפילה ל-localStorage רק לבתי מפגש דמו ישנים.
+    let updated = await updateAssignmentsApi(houseId, [activistId]);
+    if (!updated) updated = updateMeetingHouseAssignments(houseId, [activistId]);
     if (!updated) return;
-    setHouses(getMeetingHouses());
-    const activist = achdutActivists.find(a => a.id === activistId);
+    setHouses(await loadHouses());
+    const activist = activistPool.find(a => Number(a.id) === Number(activistId));
     if (!activist) return;
 
     const firstMeeting = updated.meetings?.[0];
@@ -123,6 +141,7 @@ export default function MeetingHousesPage() {
           <HouseCard
             key={house.id}
             house={house}
+            activists={activistPool}
             onAssign={(activistId) => handleAssign(house.id, activistId, house.houseNumber, house.settlement || house.city)}
           />
         ))}
@@ -131,12 +150,13 @@ export default function MeetingHousesPage() {
   );
 }
 
-function HouseCard({ house, onAssign }) {
+function HouseCard({ house, activists = [], onAssign }) {
   const [selectedId, setSelectedId] = useState('');
   const completedCount = house.meetings.filter(m => m.completed).length;
   const statusInfo = STATUS_LABELS[house.status] || STATUS_LABELS.upcoming;
-  const assignedActivist = achdutActivists.find(a => a.id === house.assignedActivistId || house.assignedActivists?.[0] === a.id);
-  const availableActivists = achdutActivists.filter(a => !house.assignedActivists?.includes(a.id));
+  const assignedId = house.assignedActivistId ?? house.assignedActivists?.[0];
+  const assignedActivist = activists.find(a => Number(a.id) === Number(assignedId));
+  const availableActivists = activists.filter(a => !(house.assignedActivists || []).some(x => Number(x) === Number(a.id)));
   const firstMeeting = house.meetings?.[0];
 
   function doAssign() {
