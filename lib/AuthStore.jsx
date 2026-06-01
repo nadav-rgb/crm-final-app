@@ -15,6 +15,10 @@ const USERNAME_TO_EMAIL = {
   'חדווה':         'chedva@achdut-crm.test',
   'קורלנסקי':      'korlansky@achdut-crm.test',
   'מנכ״ל':         'rabbigreenboim@achdut-crm.test',
+  // טסטרים עם אימייל gmail אמיתי
+  'נחמיה גרטש':    'aa2304900@gmail.com',
+  'ניר קובי':      'Nirkoobi26@gmail.com',
+  'דוד':           'David7654372@gmail.com',
   // alias באנגלית — כדי לא לשבור כניסה קיימת
   nadav:     'nadav@achdut-crm.test',
   refael:    'refaelraiton@achdut-crm.test',
