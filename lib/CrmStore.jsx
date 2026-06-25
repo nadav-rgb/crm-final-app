@@ -122,7 +122,8 @@ async function insertContactToSupabase(contact) {
 // כתיבת השדות הנגזרים חזרה לטבלת contacts (אחרת הם נשארים מקומיים ונעלמים ב-reload)
 async function loadContactsFromSupabase() {
   const supabase = getSupabaseClient();
-  const { data, error } = await supabase.from('contacts').select('*');
+  // is_active=false = לקוח שנמחק (soft-delete) — לא נטען. השדה NOT NULL default true.
+  const { data, error } = await supabase.from('contacts').select('*').eq('is_active', true);
   if (error) {
     console.error('Failed to load customers from Supabase contacts table', error);
     return { data: null, error };
@@ -309,6 +310,25 @@ export function CrmProvider({ children }) {
     return { data: syncResult.data };
   }
 
+  // F1 — עריכת פרטי לקוח קיים. שומר ל-Supabase + עדכון optimistic.
+  async function updateContact(contactId, fields) {
+    if (!fields || Object.keys(fields).length === 0) return { error: null };
+    const supabase = getSupabaseClient();
+    const { error } = await supabase.from('contacts').update(fields).eq('id', contactId);
+    if (error) { console.error('Failed to update contact', error); return { error }; }
+    setContacts(prev => prev.map(c => c.id === contactId ? { ...c, ...fields } : c));
+    return { error: null };
+  }
+
+  // F1 — מחיקת לקוח (soft-delete: is_active=false). לא נמחק פיזית, מונע אובדן נתונים.
+  async function deleteContact(contactId) {
+    const supabase = getSupabaseClient();
+    const { error } = await supabase.from('contacts').update({ is_active: false }).eq('id', contactId);
+    if (error) { console.error('Failed to delete contact', error); return { error }; }
+    setContacts(prev => prev.filter(c => c.id !== contactId));
+    return { error: null };
+  }
+
   function updateNextAction(contactId, nextAction, nextActionDate) {
     setContacts(prev => prev.map(c => {
       if (c.id !== contactId) return c;
@@ -400,7 +420,7 @@ export function CrmProvider({ children }) {
     <CrmContext.Provider value={{
       contacts, interactions, activists, messages, baseMeetings, BASE_MEETING_QUESTIONS,
       mitzvotBonuses, newParticipantBonuses,
-      addInteraction, addContact, updateNextAction, updateMitzvot, addMessage, submitBaseMeeting, upsertBaseMeetingReports, advanceBaseMeetingReminders,
+      addInteraction, addContact, updateContact, deleteContact, updateNextAction, updateMitzvot, addMessage, submitBaseMeeting, upsertBaseMeetingReports, advanceBaseMeetingReminders,
       PROJECT_NAMES,
     }}>
       {children}

@@ -14,11 +14,44 @@ import { useAuth } from '../../lib/AuthStore';
 export default function ContactDetail() {
   const router = useRouter();
   const { id, from, activistId, view, contactId: fromContactId } = router.query;
-  const { contacts, interactions } = useCrm();
+  const { contacts, interactions, updateContact, deleteContact } = useCrm();
   const { can, activeProject } = useAuth();
+
+  // F1 — state לעריכה/מחיקה. חייב להיות לפני כל early return (כללי hooks).
+  const [editing, setEditing]     = useState(false);
+  const [editForm, setEditForm]   = useState(null);
+  const [confirmDel, setConfirmDel] = useState(false);
+  const [busy, setBusy]           = useState(false);
 
   const contact = contacts.find(c => c.id === Number(id));
   if (!contact) return <DesktopLayout title="לקוח"><div>לקוח לא נמצא</div></DesktopLayout>;
+
+  function openEdit() {
+    setEditForm({
+      name:  contact.name || '',
+      phone: contact.phone || '',
+      notes: contact.notes || '',
+    });
+    setEditing(true);
+  }
+
+  async function saveEdit() {
+    setBusy(true);
+    await updateContact(contact.id, {
+      name:  editForm.name?.trim() || contact.name,
+      phone: editForm.phone?.trim() || null,
+      notes: editForm.notes?.trim() || null,
+    });
+    setBusy(false);
+    setEditing(false);
+  }
+
+  async function doDelete() {
+    setBusy(true);
+    await deleteContact(contact.id);
+    setBusy(false);
+    router.push('/contacts');
+  }
 
   const reminders    = getReminders(contact);
   const enriched     = { ...contact, ...reminders };
@@ -146,6 +179,20 @@ export default function ContactDetail() {
               ✡️ עדכון התקדמות רוחנית
             </Link>
           )}
+
+          {/* F1 — עריכה / מחיקת לקוח */}
+          {can.addContact && isOwnProject && (
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <button onClick={openEdit} className="btn"
+                style={{ flex: 1, cursor: 'pointer', fontFamily: 'inherit' }}>
+                ✏️ עריכת פרטים
+              </button>
+              <button onClick={() => setConfirmDel(true)} className="btn"
+                style={{ flex: 1, cursor: 'pointer', fontFamily: 'inherit', color: '#a32d2d', borderColor: '#d98a8a' }}>
+                🗑️ מחיקה
+              </button>
+            </div>
+          )}
         </div>
 
         {/* עמודה ימין — היסטוריה */}
@@ -202,6 +249,55 @@ export default function ContactDetail() {
           )}
         </div>
       </div>
+
+      {/* F1 — מודאל עריכת פרטי לקוח */}
+      {editing && editForm && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.42)', zIndex: 9000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+          onClick={() => !busy && setEditing(false)}>
+          <div style={{ background: '#fff', borderRadius: 18, padding: 24, maxWidth: 420, width: '100%', boxShadow: '0 24px 80px rgba(0,0,0,0.25)' }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 17, fontWeight: 800, color: '#2d1f5e', marginBottom: 16 }}>עריכת פרטי לקוח</div>
+            <label style={{ fontSize: 12, color: '#777' }}>שם</label>
+            <input className="input" value={editForm.name}
+              onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
+              style={{ width: '100%', marginBottom: 12, marginTop: 4 }} />
+            <label style={{ fontSize: 12, color: '#777' }}>טלפון</label>
+            <input className="input" value={editForm.phone} inputMode="tel"
+              onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))}
+              style={{ width: '100%', marginBottom: 12, marginTop: 4 }} />
+            <label style={{ fontSize: 12, color: '#777' }}>הערות</label>
+            <textarea className="input" value={editForm.notes} rows={3}
+              onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
+              style={{ width: '100%', marginBottom: 16, marginTop: 4, fontFamily: 'inherit', resize: 'vertical' }} />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn" style={{ flex: 1, cursor: 'pointer', fontFamily: 'inherit' }}
+                onClick={() => setEditing(false)} disabled={busy}>ביטול</button>
+              <button className="btn btn-primary" style={{ flex: 2, cursor: 'pointer', fontFamily: 'inherit' }}
+                onClick={saveEdit} disabled={busy || !editForm.name.trim()}>{busy ? 'שומר…' : 'שמור'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* F1 — אישור מחיקה */}
+      {confirmDel && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.42)', zIndex: 9000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+          onClick={() => !busy && setConfirmDel(false)}>
+          <div style={{ background: '#fff', borderRadius: 18, padding: 24, maxWidth: 380, width: '100%', boxShadow: '0 24px 80px rgba(0,0,0,0.25)' }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 17, fontWeight: 800, color: '#a32d2d', marginBottom: 10 }}>מחיקת לקוח</div>
+            <div style={{ fontSize: 14, color: '#555', lineHeight: 1.7, marginBottom: 18 }}>
+              למחוק את <strong>{contact.name}</strong> מהרשימה? הלקוח יוסר מהתצוגה (ניתן לשחזור בבסיס הנתונים).
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn" style={{ flex: 1, cursor: 'pointer', fontFamily: 'inherit' }}
+                onClick={() => setConfirmDel(false)} disabled={busy}>ביטול</button>
+              <button className="btn" style={{ flex: 1, cursor: 'pointer', fontFamily: 'inherit', color: '#fff', background: '#a32d2d', borderColor: '#a32d2d' }}
+                onClick={doDelete} disabled={busy}>{busy ? 'מוחק…' : 'מחק'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </DesktopLayout>
   );
 }
