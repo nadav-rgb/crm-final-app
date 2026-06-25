@@ -4,6 +4,7 @@ import _messages     from '../data/messages';
 import { MITZVOT_BONUS_PER_LEVEL, NEW_PARTICIPANT_BONUS } from './paymentCalc';
 import { BASE_MEETING_QUESTIONS } from '../data/base-meetings';
 import { advanceReminderStageForReports } from './reminderSchedulerDemo';
+import { hydrateNotificationsFromSupabase } from './notificationDemo';
 import { getSupabaseClient } from './supabaseClient';
 import { useAuth } from './AuthStore';
 
@@ -164,6 +165,12 @@ export function CrmProvider({ children }) {
       setContacts(data);
     })();
     return () => { active = false; };
+  }, [currentUser, authLoading]);
+
+  // סנכרון התראות מ-Supabase ל-localStorage בכניסה (cross-device). fire-and-forget.
+  useEffect(() => {
+    if (authLoading || !currentUser) return;
+    hydrateNotificationsFromSupabase(currentUser);
   }, [currentUser, authLoading]);
 
   // טעינת פעילים מ-Supabase view activist_directory — אותה תבנית auth-gated.
