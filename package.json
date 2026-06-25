@@ -9,14 +9,20 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.92.0",
+    "@capacitor-community/speech-recognition": "^7.0.1",
     "@capacitor/android": "^8.4.1",
     "@capacitor/cli": "^8.4.1",
     "@capacitor/core": "^8.4.1",
+    "@capacitor/push-notifications": "^8.1.1",
     "@supabase/supabase-js": "^2.105.1",
+    "google-auth-library": "^10.9.0",
     "lucide-react": "^1.14.0",
     "next": "14.2.3",
     "react": "^18",
     "react-dom": "^18",
     "web-push": "^3.6.7"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5"
   }
 }

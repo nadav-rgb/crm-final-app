@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "424631015535",
+    "project_id": "crm-mekarvim",
+    "storage_bucket": "crm-mekarvim.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:424631015535:android:dea06a15d2cf795d73559a",
+        "android_client_info": {
+          "package_name": "com.achdutyehudit.crm"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA_a_dJcb0Bx6CTX_TyK6OKN4JSSqc_L1Y"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

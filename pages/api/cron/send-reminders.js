@@ -1,5 +1,6 @@
 // pages/api/cron/send-reminders.js — Vercel Cron: runs every minute, sends due push notifications
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
+import { sendFcmToActivist } from '../../../lib/fcmAdmin';
 import webpush from 'web-push';
 
 webpush.setVapidDetails(
@@ -51,13 +52,14 @@ export default async function handler(req, res) {
       ? reminder.coordinator_id
       : reminder.activist_id;
 
+    const msg = MESSAGES[reminder.type];
+
     const { data: subs } = await supabase
       .from('push_subscriptions')
       .select('subscription')
       .eq('activist_id', targetId);
 
     if (subs?.length) {
-      const msg = MESSAGES[reminder.type];
       for (const { subscription } of subs) {
         try {
           await webpush.sendNotification(
@@ -73,6 +75,10 @@ export default async function handler(req, res) {
         }
       }
     }
+
+    // FCM נייטיב לאפליקציה (no-op אם לא מוגדר FCM_SERVICE_ACCOUNT)
+    const fcm = await sendFcmToActivist(supabase, targetId, { ...msg, url: '/base-meetings' });
+    sent += fcm.sent || 0;
 
     await supabase
       .from('meeting_reminders')

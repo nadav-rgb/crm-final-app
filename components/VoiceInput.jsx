@@ -1,9 +1,11 @@
 // components/VoiceInput.jsx
 // Round press-and-hold mic button — hold to record, release to stop.
-// Uses Web Speech API (he-IL). Works on Chrome Android, Safari iOS 14.5+.
+// בדפדפן: Web Speech API (he-IL). באפליקציית Capacitor: STT נייטיב
+// (@capacitor-community/speech-recognition), כי Web Speech API לא נתמך ב-WebView.
 
 import { useState, useRef, useEffect } from 'react';
 import { Mic } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
 
 const PULSE_KEYFRAMES = `
 @keyframes mic-pulse {
@@ -16,12 +18,18 @@ export default function VoiceInput({ onTranscript, disabled = false }) {
   const [phase, setPhase] = useState('idle'); // idle | recording | done | error
   const [errorMsg, setErrorMsg] = useState('');
   const [isSupported, setIsSupported] = useState(null);
+  const [isNative, setIsNative] = useState(false);
   const recognitionRef = useRef(null);
   const hasErrorRef = useRef(false);
   const transcriptRef = useRef('');
 
   useEffect(() => {
-    setIsSupported('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
+    if (Capacitor?.isNativePlatform?.()) {
+      setIsNative(true);
+      setIsSupported(true); // STT נייטיב זמין באפליקציה
+    } else {
+      setIsSupported('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
+    }
   }, []);
 
   useEffect(() => () => recognitionRef.current?.abort(), []);
@@ -83,13 +91,73 @@ export default function VoiceInput({ onTranscript, disabled = false }) {
     recognitionRef.current?.stop();
   }
 
+  // ---- מסלול נייטיב (אפליקציית Capacitor) ----
+  async function startNative() {
+    if (disabled || phase === 'recording') return;
+    hasErrorRef.current = false;
+    transcriptRef.current = '';
+    setErrorMsg('');
+    try {
+      const { SpeechRecognition } = await import('@capacitor-community/speech-recognition');
+      let perm = await SpeechRecognition.checkPermissions();
+      if (perm.speechRecognition !== 'granted') {
+        perm = await SpeechRecognition.requestPermissions();
+      }
+      if (perm.speechRecognition !== 'granted') {
+        hasErrorRef.current = true;
+        setErrorMsg('אין הרשאה למיקרופון');
+        setPhase('error');
+        setTimeout(() => { setPhase('idle'); setErrorMsg(''); }, 3000);
+        return;
+      }
+      await SpeechRecognition.removeAllListeners();
+      await SpeechRecognition.addListener('partialResults', (data) => {
+        if (data?.matches?.length) transcriptRef.current = data.matches[0];
+      });
+      setPhase('recording');
+      await SpeechRecognition.start({
+        language: 'he-IL',
+        maxResults: 1,
+        partialResults: true,
+        popup: false,
+      });
+    } catch (e) {
+      hasErrorRef.current = true;
+      setErrorMsg('שגיאה בהקלטה');
+      setPhase('error');
+      setTimeout(() => { setPhase('idle'); setErrorMsg(''); }, 3000);
+    }
+  }
+
+  async function stopNative() {
+    try {
+      const { SpeechRecognition } = await import('@capacitor-community/speech-recognition');
+      try { await SpeechRecognition.stop(); } catch (e) { /* ignore */ }
+      await SpeechRecognition.removeAllListeners();
+    } catch (e) { /* ignore */ }
+
+    if (hasErrorRef.current) return;
+    const text = transcriptRef.current.trim();
+    if (text) {
+      setPhase('done');
+      onTranscript?.(text);
+      setTimeout(() => setPhase('idle'), 1500);
+    } else {
+      setPhase('idle');
+    }
+  }
+
   function handlePointerDown(e) {
     e.preventDefault();
-    startRecording();
+    if (isNative) startNative();
+    else startRecording();
   }
 
   function handlePointerUp() {
-    if (phase === 'recording') stopRecording();
+    if (phase === 'recording') {
+      if (isNative) stopNative();
+      else stopRecording();
+    }
   }
 
   if (isSupported === null) return null;

@@ -5,6 +5,16 @@ node_modules
 .env.local
 .DS_Store
 
-# Capacitor — הפלטפורמה הנייטיב נוצרת מחדש דרך `npx cap add android` (ראה CAPACITOR.md)
-android/
+# Capacitor — android/ נשמר בגיט כדי לשמר התאמות נייטיב (אייקון/splash/הרשאות/חתימה/FCM).
+# רק הסודות והתוצרים מוחרגים (ראה CAPACITOR.md).
 .gradle/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/keystore.properties
+*.jks
+*.keystore
+# Firebase service account (סוד שרת — לעולם לא בגיט)
+*service-account*.json
+serviceAccount*.json

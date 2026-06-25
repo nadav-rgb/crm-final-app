@@ -3,6 +3,7 @@
 // (web-push + VAPID + טבלת push_subscriptions). מאומת coord/head/ceo.
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { requireWriteRole } from '../meeting-houses/_auth';
+import { sendFcmToActivist } from '../../../lib/fcmAdmin';
 import webpush from 'web-push';
 
 webpush.setVapidDetails(
@@ -30,12 +31,10 @@ export default async function handler(req, res) {
 
   if (error) return res.status(500).json({ error: error.message });
 
-  // הפעיל עדיין לא נרשם להתראות (לא נכנס לאפליקציה / לא אישר) — no-op בטוח.
-  if (!subs?.length) return res.status(200).json({ sent: 0, reason: 'no_subscription' });
-
+  // web-push לדפדפן
   let sent = 0;
   const payload = JSON.stringify({ title, body, url: url || '/' });
-  for (const { subscription } of subs) {
+  for (const { subscription } of subs || []) {
     try {
       await webpush.sendNotification(subscription, payload);
       sent++;
@@ -46,5 +45,8 @@ export default async function handler(req, res) {
     }
   }
 
-  return res.status(200).json({ sent });
+  // FCM נייטיב לאפליקציית Capacitor (no-op אם FCM_SERVICE_ACCOUNT לא מוגדר)
+  const fcm = await sendFcmToActivist(supabase, activistId, { title, body, url });
+
+  return res.status(200).json({ sent: sent + (fcm.sent || 0), web: sent, fcm: fcm.sent || 0 });
 }
