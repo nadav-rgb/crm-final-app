@@ -1,5 +1,11 @@
+import { requireAuth } from './meeting-houses/_auth';
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
+
+  // הגנה על קרדיט Anthropic — רק משתמש מחובר.
+  const auth = await requireAuth(req);
+  if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
 
   const { text, type, meta = {} } = req.body;
   if (!text) return res.status(400).json({ error: 'missing text' });

@@ -6,6 +6,7 @@
 //   coordinator → next day  12:00 IST (only if report not filled)
 
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
+import { requireAuth } from '../meeting-houses/_auth';
 
 function israelTime(year, month, day, hour, minute) {
   // Israel is UTC+3 (summer) — subtract 3 hours to get UTC
@@ -14,6 +15,9 @@ function israelTime(year, month, day, hour, minute) {
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
+
+  const auth = await requireAuth(req);
+  if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
 
   const { meetingId, activistId, coordinatorId, meetingDate } = req.body;
   if (!meetingId || !activistId || !meetingDate) {
