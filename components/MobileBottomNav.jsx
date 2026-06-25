@@ -6,7 +6,7 @@ import {
   Home, Users, ClipboardList, Bell,
   MoreHorizontal, User, Calendar, UserPlus,
   Star, CreditCard, BellRing, MessageSquare,
-  Building2, CheckCircle, BarChart2,
+  Building2, CheckCircle, BarChart2, LogOut,
 } from 'lucide-react';
 
 const BG = 'linear-gradient(180deg, rgba(42,24,112,0.97) 0%, rgba(58,36,155,0.94) 52%, rgba(35,20,100,0.97) 100%)';
@@ -14,7 +14,7 @@ const ICO = { size: 20, strokeWidth: 1.8 };
 
 export default function MobileBottomNav() {
   const router = useRouter();
-  const { can, currentUser } = useAuth();
+  const { can, currentUser, logout } = useAuth();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const mainItems = [
@@ -120,6 +120,26 @@ export default function MobileBottomNav() {
               </Link>
             );
           })}
+
+          {/* יציאה — תמיד אחרון */}
+          <button
+            onClick={() => { setDrawerOpen(false); logout(); }}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 14,
+              padding: '13px 22px', width: '100%',
+              background: 'transparent', border: 'none',
+              borderRight: '3px solid transparent', cursor: 'pointer',
+              fontFamily: 'Rubik, sans-serif', textAlign: 'right',
+              borderTop: '1px solid rgba(255,255,255,0.07)', marginTop: 4,
+            }}
+          >
+            <span style={{ color: 'rgba(255,255,255,0.60)', display: 'flex' }}>
+              <LogOut {...ICO} />
+            </span>
+            <span style={{ fontSize: 15, color: 'rgba(255,255,255,0.82)', fontWeight: 500 }}>
+              יציאה
+            </span>
+          </button>
         </div>
       </div>
 

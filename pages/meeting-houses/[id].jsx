@@ -4,7 +4,7 @@ import { useRouter } from 'next/router';
 import DesktopLayout from '../../components/DesktopLayout';
 import { useAuth } from '../../lib/AuthStore';
 import { getMeetingHouseById, updateMeetingHouseAssignments, updateMeetingCompletion } from '../../lib/meetingHousesStorage';
-import { fetchMeetingHousesFromSupabase, updateAssignmentsApi } from '../../lib/meetingHousesSupabase';
+import { fetchMeetingHousesFromSupabase, updateAssignmentsApi, sendAssignmentPushApi } from '../../lib/meetingHousesSupabase';
 import { createDemoNotification } from '../../lib/notificationDemo';
 import ActivistSearchSelect from '../../components/ActivistSearchSelect';
 import { useCrm } from '../../lib/CrmStore';
@@ -112,7 +112,14 @@ export default function MeetingHouseDetailPage() {
     const parsedId = Number(selectedActivistId);
     if (!parsedId || assignedIds.some(a => Number(a) === parsedId)) return;
     await persistAssignments([...assignedIds, parsedId]);
-    // התראה בתוך-המערכת (קיימת). TODO (Phase 2): שליחת push אמיתי לטלפון דרך /api/push/send.
+    // Push אמיתי לטלפון של הפעיל (no-op בטוח אם לא נרשם להתראות).
+    sendAssignmentPushApi({
+      activistId: parsedId,
+      title: 'שובצת לבית מפגש',
+      body: `שובצת לבית מפגש ${house.houseNumber} ב${house.settlement || house.city}.`,
+      url: `/meeting-houses/${house.id}`,
+    });
+    // התראה בתוך-המערכת (קיימת — נשארת לתצוגה בתוך ה-CRM).
     createDemoNotification({
       id: `manual_assignment_${house.id}_${parsedId}_${Date.now()}`,
       type: 'assignment',

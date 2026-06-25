@@ -4,7 +4,7 @@ import Link from 'next/link';
 import DesktopLayout from '../../components/DesktopLayout';
 import { useAuth } from '../../lib/AuthStore';
 import { getMeetingHouses, updateMeetingHouseAssignments, importExternalMeetingHousesDemo } from '../../lib/meetingHousesStorage';
-import { fetchMeetingHousesFromSupabase, updateAssignmentsApi } from '../../lib/meetingHousesSupabase';
+import { fetchMeetingHousesFromSupabase, updateAssignmentsApi, sendAssignmentPushApi } from '../../lib/meetingHousesSupabase';
 import { createDemoNotification } from '../../lib/notificationDemo';
 import { useCrm } from '../../lib/CrmStore';
 
@@ -69,6 +69,14 @@ export default function MeetingHousesPage() {
     setHouses(await loadHouses());
     const activist = activistPool.find(a => Number(a.id) === Number(activistId));
     if (!activist) return;
+
+    // Push אמיתי לטלפון של הפעיל (no-op בטוח אם לא נרשם להתראות).
+    sendAssignmentPushApi({
+      activistId,
+      title: 'שובצת לבית מפגש',
+      body: `שובצת לבית מפגש ${houseNumber} ב${houseCity}.`,
+      url: `/meeting-houses/${houseId}`,
+    });
 
     const firstMeeting = updated.meetings?.[0];
     const dateStr = firstMeeting?.date ? formatDate(firstMeeting.date) : 'טרם נקבע';

@@ -109,25 +109,27 @@ function toContactRow(contact) {
 
 async function insertContactToSupabase(contact) {
   const row = toContactRow(contact);
-  console.log('[A1] insertContactToSupabase — row to insert:', row);
   const supabase = getSupabaseClient();
-  const { data, error } = await supabase
+  const { error } = await supabase
     .from('contacts')
-    .insert(row)
-    .select()
-    .single();
+    .insert(row);
   if (error) {
     console.error('Failed to insert customer into Supabase contacts table', { error, row });
-    console.error('[A1] INSERT FAILED — full error object:', error);
-    console.error('[A1] error fields → code:', error.code, '| message:', error.message, '| details:', error.details, '| hint:', error.hint);
-    console.error('[A1] error JSON:', JSON.stringify(error, null, 2));
-  } else {
-    console.log('[A1] INSERT OK — row returned from DB:', data);
   }
-  return { data, error };
+  return { error };
 }
 
 // כתיבת השדות הנגזרים חזרה לטבלת contacts (אחרת הם נשארים מקומיים ונעלמים ב-reload)
+async function loadContactsFromSupabase() {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase.from('contacts').select('*');
+  if (error) {
+    console.error('Failed to load customers from Supabase contacts table', error);
+    return { data: null, error };
+  }
+  return { data: Array.isArray(data) ? data : [], error: null };
+}
+
 async function updateContactFieldsInSupabase(contactId, fields) {
   if (contactId === undefined || contactId === null) return;
   const supabase = getSupabaseClient();
@@ -155,11 +157,10 @@ export function CrmProvider({ children }) {
     if (!currentUser) { setContacts([]); return; }
     let active = true;
     (async () => {
-      const supabase = getSupabaseClient();
-      const { data, error } = await supabase.from('contacts').select('*');
+      const { data, error } = await loadContactsFromSupabase();
       if (!active) return;
-      if (error) { console.error('Failed to load contacts', error); return; }
-      if (Array.isArray(data)) setContacts(data);
+      if (error) return;
+      setContacts(data);
     })();
     return () => { active = false; };
   }, [currentUser, authLoading]);
@@ -278,20 +279,17 @@ export function CrmProvider({ children }) {
     // random integer 100M–999M: בטוח ב-int4, רחוק מ-seed data (1001-9999), לא גולש כמו Date.now()
     const tempId = Math.floor(Math.random() * 900_000_000) + 100_000_000;
     const newContact = { ...contactData, id: tempId, mitzvot: contactData.mitzvot || {}, mitzvot_history: [] };
-    setContacts(prev => [newContact, ...prev]);
-
-    const { data, error } = await insertContactToSupabase(newContact);
+    const { error } = await insertContactToSupabase(newContact);
 
     if (error) {
-      // rollback — מסירים את הלקוח האופטימי
-      setContacts(prev => prev.filter(c => c.id !== tempId));
       return { error };
     }
 
-    // מחליפים את הלקוח הזמני ב-row האמיתי שחזר מה-DB (עם ה-id האמיתי)
-    if (data) {
-      setContacts(prev => prev.map(c => c.id === tempId ? { ...newContact, ...data } : c));
+    const syncResult = await loadContactsFromSupabase();
+    if (syncResult.error) {
+      return { error: syncResult.error };
     }
+    setContacts(syncResult.data);
 
     // בדיקת הפניה — הבאת משתתף חדש
     if (contactData.referred_by && contactData.activist_id) {
@@ -308,7 +306,7 @@ export function CrmProvider({ children }) {
       }]);
     }
 
-    return { data };
+    return { data: syncResult.data };
   }
 
   function updateNextAction(contactId, nextAction, nextActionDate) {
