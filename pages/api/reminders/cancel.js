@@ -1,8 +1,12 @@
 // pages/api/reminders/cancel.js — cancels pending reminders when report is submitted
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
+import { requireAuth } from '../meeting-houses/_auth';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
+
+  const auth = await requireAuth(req);
+  if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
 
   const { meetingId, activistId } = req.body;
   if (!meetingId || !activistId) {
