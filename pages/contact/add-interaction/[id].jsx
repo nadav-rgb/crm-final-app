@@ -175,7 +175,7 @@ export default function AddInteractionPage() {
           <div style={{ fontSize: 14, color: payableCheck.payable ? '#27ae60' : '#888', marginBottom: 8, fontWeight: 700 }}>
             {payableCheck.payable
               ? `✓ קשר מזכה בתשלום — ${payableCheck.amount} ₪`
-              : '✗ קשר זה אינו מזכה בתשלום'}
+              : `✗ ${payableCheck.reason || 'קשר זה אינו מזכה בתשלום'}`}
           </div>
         )}
         <p style={{ fontSize: 14, color: '#aaa', marginBottom: 28 }}>הקשר עם {contact.name} נשמר.</p>

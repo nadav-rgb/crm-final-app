@@ -68,11 +68,11 @@ export default function PaymentsPage() {
       {/* תצוגת ריבועים */}
       {viewMode === 'grid' && (
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(220px,1fr))', gap:12, marginBottom:24 }}>
-          {paymentData.map(({ activist, total, breakdown }) => (
+          {paymentData.map(({ activist, total, breakdown, unpaid }) => (
             <div key={activist.id} style={{ background:'#fffaf5', borderRadius:14, padding:'16px', border:'0.5px solid rgba(0,0,0,0.07)', boxShadow:'0 1px 4px rgba(0,0,0,0.04)', cursor:'pointer', transition:'all 0.18s' }}
               onMouseEnter={e=>{ e.currentTarget.style.transform='translateY(-2px)'; e.currentTarget.style.boxShadow='0 4px 16px rgba(0,0,0,0.09)'; }}
               onMouseLeave={e=>{ e.currentTarget.style.transform='translateY(0)'; e.currentTarget.style.boxShadow='0 1px 4px rgba(0,0,0,0.04)'; }}
-              onClick={()=>setSelectedReport(selectedReport?.activist.id===activist.id?null:{activist,total,breakdown})}
+              onClick={()=>setSelectedReport(selectedReport?.activist.id===activist.id?null:{activist,total,breakdown,unpaid})}
             >
               <div style={{ fontSize:15, fontWeight:700, marginBottom:4 }}>{activist.name}</div>
               <div style={{ fontSize:12, color:'#aaa', marginBottom:12 }}>{breakdown.filter(b=>b.type==='קשר').length} קשרים מזכים</div>
@@ -85,12 +85,12 @@ export default function PaymentsPage() {
       {/* תצוגת רשימה */}
       {viewMode === 'list' && (
         <div style={{ background:'#fff', borderRadius:16, border:'0.5px solid rgba(0,0,0,0.07)', overflow:'hidden', marginBottom:24 }}>
-          {paymentData.map(({ activist, total, breakdown }, idx) => (
+          {paymentData.map(({ activist, total, breakdown, unpaid }, idx) => (
             <div key={activist.id}
               style={{ display:'flex', alignItems:'center', padding:'13px 18px', borderBottom:idx===paymentData.length-1?'none':'0.5px solid #f5f5f5', cursor:'pointer', transition:'background 0.15s' }}
               onMouseEnter={e=>e.currentTarget.style.background='#fafafa'}
               onMouseLeave={e=>e.currentTarget.style.background='transparent'}
-              onClick={()=>setSelectedReport(selectedReport?.activist.id===activist.id?null:{activist,total,breakdown})}
+              onClick={()=>setSelectedReport(selectedReport?.activist.id===activist.id?null:{activist,total,breakdown,unpaid})}
             >
               <div style={{ flex:1 }}>
                 <div style={{ fontSize:14, fontWeight:700 }}>{activist.name}</div>
@@ -124,6 +124,25 @@ export default function PaymentsPage() {
             <span>סה"כ</span>
             <span style={{ color:'#6c5ce7' }}>{selectedReport.total.toLocaleString()} ₪</span>
           </div>
+
+          {/* קשרים שלא זוכו + הסיבה — שקיפות (לא משפיע על הסכום) */}
+          {selectedReport.unpaid?.length > 0 && (
+            <div style={{ marginTop:18 }}>
+              <div style={{ fontSize:13, fontWeight:700, color:'#c0392b', marginBottom:8 }}>
+                קשרים שלא זוכו בתשלום ({selectedReport.unpaid.length})
+              </div>
+              {selectedReport.unpaid.map((item, i) => (
+                <div key={i} style={{ display:'flex', justifyContent:'space-between', gap:12, padding:'7px 0', borderBottom:'0.5px solid #f0f0f0', fontSize:12.5 }}>
+                  <div>
+                    <span style={{ fontWeight:700 }}>{item.contactName || 'לקוח'}</span>
+                    <span style={{ color:'#aaa', marginRight:6 }}>— {item.desc}</span>
+                    <span style={{ color:'#bbb', marginRight:6 }}>({item.date})</span>
+                  </div>
+                  <div style={{ color:'#c0392b', whiteSpace:'nowrap' }}>{item.reason || 'לא מזכה'}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -132,9 +151,13 @@ export default function PaymentsPage() {
         <button
           onClick={() => {
             const lines = [`דוח פעילות לתשלום — ${currentMonthName} ${year}`, '='.repeat(40), ''];
-            paymentData.forEach(({ activist, total, breakdown }) => {
+            paymentData.forEach(({ activist, total, breakdown, unpaid }) => {
               lines.push(`${activist.name}: ${total.toLocaleString()} ₪`);
               breakdown.forEach(b => lines.push(`  • ${b.contactName} — ${b.desc}: ${b.amount} ₪`));
+              if (unpaid?.length) {
+                lines.push(`  קשרים שלא זוכו:`);
+                unpaid.forEach(u => lines.push(`    ✗ ${u.contactName} — ${u.desc} (${u.date}): ${u.reason}`));
+              }
               lines.push('');
             });
             lines.push('='.repeat(40));
