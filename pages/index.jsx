@@ -1,5 +1,6 @@
 // pages/index.jsx — אזור אישי לפעיל/רכז
 import Link from 'next/link';
+import { useRouter } from 'next/router';
 import getReminders from '../lib/getReminders';
 import DesktopLayout from '../components/DesktopLayout';
 import { useCrm } from '../lib/CrmStore';
@@ -7,6 +8,7 @@ import { useAuth } from '../lib/AuthStore';
 import { interactionsLast30, payableInteractionsLast30, getActivistPerformanceLabel } from '../lib/activistStats';
 
 export default function Dashboard() {
+  const router = useRouter();
   const { contacts, interactions } = useCrm();
   const { can, activeProject, currentUser, filterProject } = useAuth();
 
@@ -93,12 +95,13 @@ return (
   marginBottom: 44
 }}>
   {[
-    { num: visibleContacts.length, label: 'לקוחות', color: '#6c5ce7', rgb: '108,92,231' },
-    { num: withActions.length, label: 'פעולות ממתינות', color: '#f59e0b', rgb: '245,158,11' },
-    { num: needsRenew.length, label: 'דורשים חידוש', color: '#ef4444', rgb: '239,68,68' },
-  ].map(({ num, label, color, rgb }) => (
+    { num: visibleContacts.length, label: 'לקוחות', color: '#6c5ce7', rgb: '108,92,231', href: '/contacts' },
+    { num: withActions.length, label: 'פעולות ממתינות', color: '#f59e0b', rgb: '245,158,11', href: '/reminders' },
+    { num: needsRenew.length, label: 'דורשים חידוש', color: '#ef4444', rgb: '239,68,68', href: '/contacts' },
+  ].map(({ num, label, color, rgb, href }) => (
     <div
       key={label}
+      onClick={() => router.push(href)}
       style={{
         background: '#ffffff',
         borderRadius: '20px',
