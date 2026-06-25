@@ -49,7 +49,11 @@ export default function MyDashboardPage() {
 
   const data = useMemo(() => {
     if (!currentUser) return null;
-    return calcConsultantDashboard(currentUser.id, interactions, contacts, mitzvotBonuses, newParticipantBonuses, paymentConfig);
+    // סינון בונוסים ליועץ הנוכחי ולחודש הנוכחי — זהה לעמוד התשלומים של הרכז (כדי שהמספרים יתאימו).
+    const monthKey = `${now.getFullYear()}-${now.getMonth()}`;
+    const myMitzvot = mitzvotBonuses.filter(b => b.activist_id === currentUser.id && b.month === monthKey);
+    const myNew     = newParticipantBonuses.filter(b => b.activist_id === currentUser.id && b.month === monthKey);
+    return calcConsultantDashboard(currentUser.id, interactions, contacts, myMitzvot, myNew, paymentConfig);
   }, [currentUser, interactions, contacts, mitzvotBonuses, newParticipantBonuses, paymentConfig]);
 
   if (!data) return <DesktopLayout title="הדשבורד שלי"><div style={{ padding: 40, color: '#aaa' }}>טוען…</div></DesktopLayout>;

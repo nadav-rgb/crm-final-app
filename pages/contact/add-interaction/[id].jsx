@@ -54,8 +54,12 @@ export default function AddInteractionPage() {
   // אחדות יהודית = project_id 1 ב-Supabase (תיקון מקומי בלבד)
   const isAchdut = activeProject?.id === 1 || contact.project_id === 1;
 
+  // משך מזכה — נגזר מהקונפיג (MIN_DURATION+1) ולא מספר קבוע, כדי שיתאים תמיד לסף שהמנוע אוכף.
+  const MIN_DUR = paymentConfig.MIN_DURATION ?? 15;
+  const QUALIFYING_DUR = MIN_DUR + 1;
+
   // Live payment calculation
-  const duration = form.long_enough === 'yes' ? 16 : form.long_enough === 'no' ? 5 : 0;
+  const duration = form.long_enough === 'yes' ? QUALIFYING_DUR : form.long_enough === 'no' ? 5 : 0;
   const currentMonthKey = form.date?.slice(0, 7);
   const previousContactMonthly = interactions.filter(i =>
     i.contact_id === contactId &&
@@ -76,20 +80,10 @@ export default function AddInteractionPage() {
       )
     : null;
 
-  // מצב תקרת-ערוץ חודשית (15/25/6) — לצורך התראת חריגה.
-  function channelCapInfo() {
-    if (!form.type) return null;
-    const caps = paymentConfig.MONTHLY_CAPS;
-    if (form.type === 'פרונטלי' && form.quality === 'רב משתתפים')
-      return { done: previousActivistMonthly.filter(i => i.type === 'פרונטלי' && i.quality === 'רב משתתפים').length, cap: caps.multi,   label: 'מפגשים רבי-משתתפים' };
-    if (form.type === 'פרונטלי')
-      return { done: previousActivistMonthly.filter(i => i.type === 'פרונטלי' && i.quality !== 'רב משתתפים').length, cap: caps.frontal, label: 'פגישות פרונטליות' };
-    if (form.type === 'טלפוני' || form.type === 'וידאו')
-      return { done: previousActivistMonthly.filter(i => i.type === 'טלפוני' || i.type === 'וידאו').length, cap: caps.phone, label: 'שיחות טלפון' };
-    return null;
-  }
-  const capInfo = channelCapInfo();
-  const wouldExceedCap = isAchdut && capInfo && capInfo.done >= capInfo.cap;
+  // חריגה מתקרת-ערוץ חודשית — נגזרת ישירות מהחלטת המנוע (payableCheck), כך שתמיד עקבית איתו.
+  // המנוע מחזיר reason עם המילה "חודשית" / "רב-משתתפים" כשהקשר נדחה בגלל תקרת ערוץ.
+  const monthlyCapExceeded = isAchdut && payableCheck && !payableCheck.payable &&
+    /חודשית|רב-משתתפים/.test(payableCheck.reason || '');
 
   function set(field, value) {
     setForm(prev => ({ ...prev, [field]: value }));
@@ -146,13 +140,16 @@ export default function AddInteractionPage() {
     const e = validate();
     if (Object.keys(e).length > 0) { setErrors(e); return; }
 
-    // התראת חריגה מתקרת הערוץ החודשית
-    if (wouldExceedCap) {
+    // צבירת הודעות התראה — כדי שחריגת-תקרה ובונוס באותו דיווח לא ידרסו זה את זה.
+    const messages = [];
+
+    // חריגה מתקרת הערוץ החודשית (נגזר מהמנוע)
+    if (monthlyCapExceeded) {
       if (paymentConfig.CAP_EXCEED_BLOCKS) {
-        setToast({ kind: 'block', text: `חריגה: עברת את גג ה${capInfo.label} המאושר לחודש (${capInfo.cap}). הדיווח נחסם.` });
+        setToast({ kind: 'block', text: `שים לב: עברת את גג המפגשים המאושר לחודש זה עבור סוג פעילות זה. הדיווח נחסם.` });
         return; // חסימה — לפי דגל הקונפיג
       }
-      setToast({ kind: 'warn', text: `שים לב: עברת את גג ה${capInfo.label} המאושר לחודש זה (${capInfo.cap}). הקשר יישמר אך לא יזכה בתשלום.` });
+      messages.push({ kind: 'warn', text: `שים לב: עברת את גג המפגשים המאושר לחודש זה עבור סוג פעילות זה. הקשר יישמר אך לא יזכה בתשלום.` });
     }
 
     const interactionPayload = {
@@ -161,7 +158,7 @@ export default function AddInteractionPage() {
       activist_id:      currentUser.id,
       type:             form.type,
       quality:          form.quality,
-      duration_minutes: form.long_enough === 'yes' ? 16 : 5,
+      duration_minutes: duration,
       outcome:          form.outcome,
       date:             form.date,
       time:             new Date().toTimeString().slice(0, 5),
@@ -186,7 +183,6 @@ export default function AddInteractionPage() {
 
     // התראת בונוס עומק-לקוח — 4 / 6 מפגשי לימוד מצטברים מול אותו לקוח (תואם למנוע התשלום).
     if (isAchdut) {
-      const MIN_DUR = paymentConfig.MIN_DURATION ?? 15;
       const isLearning = form.quality === 'תורני' && (form.type === 'פרונטלי' || form.type === 'וידאו') && duration >= MIN_DUR;
       if (isLearning) {
         const priorLearning = previousContactMonthly.filter(i =>
@@ -196,9 +192,10 @@ export default function AddInteractionPage() {
         if (count === 6)      { msg = `מצוין! הגעת ל-6 מפגשים עם ${contact.name}. הנך זכאי לבונוס משופר!`; amount = paymentConfig.LEARNING_BONUS[6]; }
         else if (count === 4) { msg = `כל הכבוד! הגעת ל-4 מפגשים עם ${contact.name}. הנך זכאי לבונוס!`;      amount = paymentConfig.LEARNING_BONUS[4]; }
         if (msg) {
-          setToast({ kind: 'bonus', text: msg });
+          messages.push({ kind: 'bonus', text: msg });
+          // מפתח-חודש ב-id כדי שכל אבן-דרך חודשית תישמר כהתראה נפרדת (לא תידרס בין חודשים).
           createDemoNotification({
-            id: `loyalty-bonus-${count}-${contactId}-${currentUser.id}`,
+            id: `loyalty-bonus-${count}-${contactId}-${currentUser.id}-${currentMonthKey}`,
             type: 'paid_interaction',
             title: count === 6 ? '🏆 בונוס משופר!' : '🎁 בונוס!',
             body: `${msg} (${amount.toLocaleString()} ₪)`,
@@ -209,6 +206,14 @@ export default function AddInteractionPage() {
           });
         }
       }
+    }
+
+    // הצגת התראה משולבת (בונוס גובר ויזואלית; חריגת-תקרה מצורפת אם קיימת).
+    if (messages.length > 0) {
+      const bonusMsg = messages.find(m => m.kind === 'bonus');
+      const warnMsg  = messages.find(m => m.kind === 'warn');
+      if (bonusMsg && warnMsg) setToast({ kind: 'bonus', text: `${bonusMsg.text}\n${warnMsg.text}` });
+      else setToast(messages[0]);
     }
 
     setSuccess(true);
@@ -232,7 +237,7 @@ export default function AddInteractionPage() {
                   borderRadius: 14, padding: '12px 18px', maxWidth: 440, width: 'calc(100% - 32px)',
                   boxShadow: '0 8px 30px rgba(0,0,0,0.15)', display: 'flex', gap: 12, alignItems: 'center',
                   fontSize: 14, fontWeight: 600, fontFamily: 'inherit' }}>
-      <span style={{ flex: 1, lineHeight: 1.5 }}>{toast.text}</span>
+      <span style={{ flex: 1, lineHeight: 1.5, whiteSpace: 'pre-line' }}>{toast.text}</span>
       <button onClick={() => setToast(null)} style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', color: 'inherit', lineHeight: 1 }}>✕</button>
     </div>
   ) : null;
@@ -309,7 +314,7 @@ export default function AddInteractionPage() {
           <div style={card}>
             <label className="form-label">משך זמן הקשר <span style={{ color: '#e24b4a' }}>*</span></label>
             <div style={{ display: 'flex', gap: 10 }}>
-              {[{ v: 'yes', l: 'מעל 15 דקות ✓' }, { v: 'no', l: 'פחות מ-15 דקות' }].map(({ v, l }) => (
+              {[{ v: 'yes', l: `מעל ${MIN_DUR} דקות ✓` }, { v: 'no', l: `פחות מ-${MIN_DUR} דקות` }].map(({ v, l }) => (
                 <button key={v} type="button" onClick={() => set('long_enough', v)}
                   style={{
                     flex: 1, padding: '10px', borderRadius: 12, cursor: 'pointer',
