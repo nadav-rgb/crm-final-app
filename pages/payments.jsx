@@ -9,7 +9,7 @@ import { calcMonthlyPayment } from '../lib/paymentCalc';
 const MONTH_NAMES = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
 
 export default function PaymentsPage() {
-  const { contacts, interactions, mitzvotBonuses, newParticipantBonuses, activists } = useCrm();
+  const { contacts, interactions, mitzvotBonuses, newParticipantBonuses, activists, paymentConfig } = useCrm();
   const { currentUser, can } = useAuth();
   const [viewMode, setViewMode] = useState('grid');
   const [selectedReport, setSelectedReport] = useState(null);
@@ -37,9 +37,9 @@ export default function PaymentsPage() {
   const paymentData = useMemo(() => achdutActivists.map(activist => {
     const myMitzvotBonuses = mitzvotBonuses.filter(b => b.activist_id === activist.id && b.month === `${year}-${month}`);
     const myNewBonuses     = newParticipantBonuses.filter(b => b.activist_id === activist.id && b.month === `${year}-${month}`);
-    const result = calcMonthlyPayment(activist.id, interactions, contacts, myMitzvotBonuses, myNewBonuses);
+    const result = calcMonthlyPayment(activist.id, interactions, contacts, myMitzvotBonuses, myNewBonuses, paymentConfig);
     return { activist, ...result };
-  }), [achdutActivists, interactions, contacts, mitzvotBonuses, newParticipantBonuses]);
+  }), [achdutActivists, interactions, contacts, mitzvotBonuses, newParticipantBonuses, paymentConfig]);
 
   const totalAll = paymentData.reduce((s, d) => s + d.total, 0);
   const currentMonthName = MONTH_NAMES[month];

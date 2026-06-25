@@ -8,7 +8,7 @@ import { useAuth } from '../../../lib/AuthStore';
 import { calcInteractionPayment } from '../../../lib/paymentCalc';
 import DesktopLayout from '../../../components/DesktopLayout';
 import { summarizeInteractionText } from '../../../lib/aiService';
-import { createPaymentInteractionNotifications } from '../../../lib/notificationDemo';
+import { createPaymentInteractionNotifications, createDemoNotification } from '../../../lib/notificationDemo';
 import VoiceInput from '../../../components/VoiceInput';
 import users from '../../../data/users';
 
@@ -25,7 +25,7 @@ export default function AddInteractionPage() {
   const router    = useRouter();
   const { id }    = router.query;
   const contactId = Number(id);
-  const { contacts, interactions, addInteraction } = useCrm();
+  const { contacts, interactions, addInteraction, paymentConfig } = useCrm();
   const { currentUser, activeProject } = useAuth();
   const contact = contacts.find(c => c.id === contactId);
 
@@ -33,6 +33,7 @@ export default function AddInteractionPage() {
   const [errors,    setErrors]    = useState({});
   const [success,   setSuccess]   = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
+  const [toast,     setToast]     = useState(null); // התראת תקרה/בונוס
 
   if (!contact) {
     return <DesktopLayout title="הוסף קשר"><div style={{ padding: 40, color: '#aaa' }}>לקוח לא נמצא</div></DesktopLayout>;
@@ -70,9 +71,25 @@ export default function AddInteractionPage() {
         { type: form.type, quality: form.quality, duration_minutes: duration },
         previousContactMonthly,
         contact.high_potential,
-        previousActivistMonthly
+        previousActivistMonthly,
+        paymentConfig
       )
     : null;
+
+  // מצב תקרת-ערוץ חודשית (15/25/6) — לצורך התראת חריגה.
+  function channelCapInfo() {
+    if (!form.type) return null;
+    const caps = paymentConfig.MONTHLY_CAPS;
+    if (form.type === 'פרונטלי' && form.quality === 'רב משתתפים')
+      return { done: previousActivistMonthly.filter(i => i.type === 'פרונטלי' && i.quality === 'רב משתתפים').length, cap: caps.multi,   label: 'מפגשים רבי-משתתפים' };
+    if (form.type === 'פרונטלי')
+      return { done: previousActivistMonthly.filter(i => i.type === 'פרונטלי' && i.quality !== 'רב משתתפים').length, cap: caps.frontal, label: 'פגישות פרונטליות' };
+    if (form.type === 'טלפוני' || form.type === 'וידאו')
+      return { done: previousActivistMonthly.filter(i => i.type === 'טלפוני' || i.type === 'וידאו').length, cap: caps.phone, label: 'שיחות טלפון' };
+    return null;
+  }
+  const capInfo = channelCapInfo();
+  const wouldExceedCap = isAchdut && capInfo && capInfo.done >= capInfo.cap;
 
   function set(field, value) {
     setForm(prev => ({ ...prev, [field]: value }));
@@ -129,6 +146,15 @@ export default function AddInteractionPage() {
     const e = validate();
     if (Object.keys(e).length > 0) { setErrors(e); return; }
 
+    // התראת חריגה מתקרת הערוץ החודשית
+    if (wouldExceedCap) {
+      if (paymentConfig.CAP_EXCEED_BLOCKS) {
+        setToast({ kind: 'block', text: `חריגה: עברת את גג ה${capInfo.label} המאושר לחודש (${capInfo.cap}). הדיווח נחסם.` });
+        return; // חסימה — לפי דגל הקונפיג
+      }
+      setToast({ kind: 'warn', text: `שים לב: עברת את גג ה${capInfo.label} המאושר לחודש זה (${capInfo.cap}). הקשר יישמר אך לא יזכה בתשלום.` });
+    }
+
     const interactionPayload = {
       id:               Date.now(),
       contact_id:       contactId,
@@ -158,6 +184,33 @@ export default function AddInteractionPage() {
       });
     }
 
+    // התראת בונוס עומק-לקוח — 4 / 6 מפגשי לימוד מצטברים מול אותו לקוח (תואם למנוע התשלום).
+    if (isAchdut) {
+      const MIN_DUR = paymentConfig.MIN_DURATION ?? 15;
+      const isLearning = form.quality === 'תורני' && (form.type === 'פרונטלי' || form.type === 'וידאו') && duration >= MIN_DUR;
+      if (isLearning) {
+        const priorLearning = previousContactMonthly.filter(i =>
+          i.quality === 'תורני' && (i.type === 'פרונטלי' || i.type === 'וידאו') && (i.duration_minutes ?? 0) >= MIN_DUR).length;
+        const count = priorLearning + 1;
+        let msg = null, amount = 0;
+        if (count === 6)      { msg = `מצוין! הגעת ל-6 מפגשים עם ${contact.name}. הנך זכאי לבונוס משופר!`; amount = paymentConfig.LEARNING_BONUS[6]; }
+        else if (count === 4) { msg = `כל הכבוד! הגעת ל-4 מפגשים עם ${contact.name}. הנך זכאי לבונוס!`;      amount = paymentConfig.LEARNING_BONUS[4]; }
+        if (msg) {
+          setToast({ kind: 'bonus', text: msg });
+          createDemoNotification({
+            id: `loyalty-bonus-${count}-${contactId}-${currentUser.id}`,
+            type: 'paid_interaction',
+            title: count === 6 ? '🏆 בונוס משופר!' : '🎁 בונוס!',
+            body: `${msg} (${amount.toLocaleString()} ₪)`,
+            user_id: currentUser.id,
+            project_id: 1,
+            priority: 'high',
+            link: '/my-dashboard',
+          });
+        }
+      }
+    }
+
     setSuccess(true);
   }
 
@@ -166,8 +219,27 @@ export default function AddInteractionPage() {
     border: '0.5px solid rgba(0,0,0,0.06)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
   };
 
+  const TOAST_STYLES = {
+    bonus: { bg: '#fffaf0', border: '#f0d98a', color: '#b06b00' },
+    warn:  { bg: '#fff8ec', border: '#f3c77a', color: '#d68910' },
+    block: { bg: '#fff0f0', border: '#e0a0a0', color: '#c0392b' },
+  };
+  const toastEl = toast ? (
+    <div style={{ position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 9999,
+                  background: (TOAST_STYLES[toast.kind] || TOAST_STYLES.warn).bg,
+                  border: `1px solid ${(TOAST_STYLES[toast.kind] || TOAST_STYLES.warn).border}`,
+                  color: (TOAST_STYLES[toast.kind] || TOAST_STYLES.warn).color,
+                  borderRadius: 14, padding: '12px 18px', maxWidth: 440, width: 'calc(100% - 32px)',
+                  boxShadow: '0 8px 30px rgba(0,0,0,0.15)', display: 'flex', gap: 12, alignItems: 'center',
+                  fontSize: 14, fontWeight: 600, fontFamily: 'inherit' }}>
+      <span style={{ flex: 1, lineHeight: 1.5 }}>{toast.text}</span>
+      <button onClick={() => setToast(null)} style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', color: 'inherit', lineHeight: 1 }}>✕</button>
+    </div>
+  ) : null;
+
   if (success) return (
     <DesktopLayout title="קשר נוסף בהצלחה">
+      {toastEl}
       <div style={{ textAlign: 'center', padding: '60px 20px' }}>
         <div style={{ fontSize: 56, marginBottom: 16 }}>✅</div>
         <h2 style={{ marginBottom: 8 }}>הקשר תועד!</h2>
@@ -188,6 +260,7 @@ export default function AddInteractionPage() {
 
   return (
     <DesktopLayout title={`קשר חדש — ${contact.name}`} backHref={`/contact/${contactId}`} backLabel="← חזרה">
+      {toastEl}
       <div style={{ maxWidth: 560 }}>
 
         {/* סוג קשר */}

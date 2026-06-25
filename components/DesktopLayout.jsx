@@ -10,7 +10,7 @@ import {
   Home, User, Users, Calendar, UserPlus,
   ClipboardList, Star, CreditCard, Bell, BellRing,
   MessageSquare, Building2, CheckCircle,
-  BarChart2, FolderOpen,
+  BarChart2, FolderOpen, LayoutDashboard,
 } from 'lucide-react';
 
 const PROJECTS_LIST = [
@@ -132,6 +132,9 @@ export default function DesktopLayout({ children, title, subtitle, actions, back
             <NavItem href="/"             icon={<User          {...ICO} />} label="אזור אישי"           open={open} active={router.pathname === '/'}               highlight onActivate={() => setOpen(true)} />
           )}
           <NavItem href="/contacts"       icon={<Users         {...ICO} />} label="לקוחות"              open={open} active={router.pathname === '/contacts'}        onActivate={() => setOpen(true)} />
+          {can.addContact && currentUser?.project_id === 1 && (
+            <NavItem href="/my-dashboard" icon={<LayoutDashboard {...ICO} />} label="הדשבורד שלי"        open={open} active={router.pathname === '/my-dashboard'}     onActivate={() => setOpen(true)} />
+          )}
           {can.addContact && currentUser?.project_id === 1 && (
             <NavItem href="/today"        icon={<Calendar      {...ICO} />} label="פעולות היום"         open={open} active={router.pathname === '/today'}           onActivate={() => setOpen(true)} />
           )}

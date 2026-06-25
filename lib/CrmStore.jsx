@@ -5,6 +5,7 @@ import { MITZVOT_BONUS_PER_LEVEL, NEW_PARTICIPANT_BONUS } from './paymentCalc';
 import { BASE_MEETING_QUESTIONS } from '../data/base-meetings';
 import { advanceReminderStageForReports } from './reminderSchedulerDemo';
 import { hydrateNotificationsFromSupabase } from './notificationDemo';
+import { loadPaymentConfig, DEFAULT_CONFIG } from './paymentConfig';
 import { getSupabaseClient } from './supabaseClient';
 import { useAuth } from './AuthStore';
 
@@ -149,8 +150,17 @@ export function CrmProvider({ children }) {
   const [mitzvotBonuses, setMitzvotBonuses] = useState([]);
   const [baseMeetings, setBaseMeetings] = useState([]); // דיווחי מפגשי בסיס — מקור האמת: Supabase
   const [newParticipantBonuses, setNewParticipantBonuses] = useState([]); // { activist_id, contact_id, contactName, date, month }
+  const [paymentConfig, setPaymentConfig] = useState(DEFAULT_CONFIG); // תעריפים/יעדים/בונוסים מ-payment_config (DB)
 
   const { currentUser, authLoading } = useAuth();
+
+  // טעינת קונפיג השכר מ-Supabase (No-Hard-Coding). fallback ל-DEFAULT_CONFIG בכשל.
+  useEffect(() => {
+    if (authLoading || !currentUser) return;
+    let active = true;
+    loadPaymentConfig().then(cfg => { if (active) setPaymentConfig(cfg); });
+    return () => { active = false; };
+  }, [currentUser, authLoading]);
 
   // טעינת לקוחות מ-Supabase — רק אחרי שההתחברות מוכנה ויש משתמש,
   // כדי שה-select לא יצא כאנונימי (קריטי כשיופעל RLS). אותה תבנית כמו base_meeting_reports.
@@ -426,7 +436,7 @@ export function CrmProvider({ children }) {
   return (
     <CrmContext.Provider value={{
       contacts, interactions, activists, messages, baseMeetings, BASE_MEETING_QUESTIONS,
-      mitzvotBonuses, newParticipantBonuses,
+      mitzvotBonuses, newParticipantBonuses, paymentConfig,
       addInteraction, addContact, updateContact, deleteContact, updateNextAction, updateMitzvot, addMessage, submitBaseMeeting, upsertBaseMeetingReports, advanceBaseMeetingReminders,
       PROJECT_NAMES,
     }}>
