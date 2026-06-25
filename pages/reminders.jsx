@@ -6,8 +6,13 @@ import { useCrm } from '../lib/CrmStore';
 import { useAuth } from '../lib/AuthStore';
 
 export default function RemindersPage() {
-  const { contacts } = useCrm();
+  const { contacts, updateContact } = useCrm();
   const { can, currentUser, filterProject } = useAuth();
+
+  // B2 — סימון משימה כבוצעה: מנקה את next_action ושומר ל-Supabase. הכרטיס נעלם מהרשימה.
+  function markDone(contactId) {
+    updateContact(contactId, { next_action: null, next_action_date: null });
+  }
 
   let visible = contacts;
   if (can.addContact) {
@@ -64,10 +69,16 @@ export default function RemindersPage() {
                 <div style={{ fontSize: 12, color: c.actionOverdue ? '#c0392b' : '#27ae60', fontWeight: 500, marginBottom: 10 }}>
                   {c.actionOverdue ? '⚠ באיחור —' : '📅'} {c.next_action_date}
                 </div>
-                <Link href={`/contact/${c.id}?from=reminders`} className="btn btn-primary"
-                  style={{ display: 'block', textAlign: 'center', textDecoration: 'none', fontSize: 13 }}>
-                  פתח פרופיל
-                </Link>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={() => markDone(c.id)} className="btn"
+                    style={{ flex: 1, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: '#27ae60', borderColor: '#7cc47c' }}>
+                    ✓ בוצע
+                  </button>
+                  <Link href={`/contact/${c.id}?from=reminders`} className="btn btn-primary"
+                    style={{ flex: 1, textAlign: 'center', textDecoration: 'none', fontSize: 13 }}>
+                    פתח פרופיל
+                  </Link>
+                </div>
               </div>
             );
           })}
