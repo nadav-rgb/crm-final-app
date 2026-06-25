@@ -114,10 +114,10 @@ export default function LandingPage() {
   const outcomeBg    = { 'חיובי': '#eaf3de', 'שלילי': '#fcebeb', 'ניטרלי': '#fdf6ef', 'ממתין למענה': '#faeeda' };
 
   const stats = [
-    { num: filteredContacts.length, label: 'סה"כ לקוחות', color: '#c47a2e', rgb: '196,122,46' },
-    { num: filteredInteractions.length, label: 'סה"כ קשרים', color: '#8b6d3f', rgb: '139,109,63' },
-    { num: activists.filter(a => a.role === 'activist' && a.status === 'active').length, label: 'פעילים פעילים', color: '#c47a2e', rgb: '196,122,46' },
-    { num: filteredContacts.filter(c => c.days_since_last_contact >= 30).length, label: 'על סף ניתוק', color: '#a32d2d', rgb: '163,45,45' },
+    { num: filteredContacts.length, label: 'סה"כ לקוחות', color: '#c47a2e', rgb: '196,122,46', href: '/contacts' },
+    { num: filteredInteractions.length, label: 'סה"כ קשרים', color: '#8b6d3f', rgb: '139,109,63', href: '/contacts' },
+    { num: activists.filter(a => a.role === 'activist' && a.status === 'active').length, label: 'פעילים פעילים', color: '#c47a2e', rgb: '196,122,46', href: can.seeActivists ? '/activists' : null },
+    { num: filteredContacts.filter(c => c.days_since_last_contact >= 30).length, label: 'על סף ניתוק', color: '#a32d2d', rgb: '163,45,45', href: '/contacts' },
   ];
 
   return (
@@ -358,9 +358,10 @@ export default function LandingPage() {
 
         {/* סטטיסטיקות */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: isMobile ? '10px' : '20px', marginTop: 8, marginBottom: 44 }}>
-          {stats.map(({ num, label, color, rgb }) => (
+          {stats.map(({ num, label, color, rgb, href }) => (
             <div
               key={label}
+              onClick={href ? () => router.push(href) : undefined}
               style={{
                 background: '#ffffff',
                 borderRadius: '20px',
@@ -370,7 +371,7 @@ export default function LandingPage() {
                 flexDirection: 'column',
                 gap: '6px',
                 transition: 'transform 0.28s cubic-bezier(0.34,1.2,0.64,1), box-shadow 0.28s ease',
-                cursor: 'pointer',
+                cursor: href ? 'pointer' : 'default',
                 position: 'relative',
                 overflow: 'hidden'
               }}

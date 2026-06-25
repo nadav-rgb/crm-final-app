@@ -137,6 +137,15 @@ export default function ContactDetail() {
               </a>
             </div>
           )}
+
+          {/* עדכון התקדמות רוחנית (סרגל מצוות) — כניסה בולטת; הדף קיים אך לא היה נגיש */}
+          {can.addContact && isOwnProject && (
+            <Link href={`/contact/update-mitzvot/${contact.id}`} className="btn"
+              style={{ display: 'block', marginTop: 8, textAlign: 'center', textDecoration: 'none',
+                       color: '#3a249b', borderColor: '#6d4eca', fontWeight: 600 }}>
+              ✡️ עדכון התקדמות רוחנית
+            </Link>
+          )}
         </div>
 
         {/* עמודה ימין — היסטוריה */}
