@@ -33,12 +33,6 @@ export default function PaymentsPage() {
   // פעילי אחדות יהודית — project_id=1 ב-Supabase, role מ-activist_directory
   const achdutActivists = activists.filter(a => a.project_id === 1 && a.role !== 'manager' && a.role !== 'coord' && a.role !== 'head' && a.role !== 'ceo' && a.role !== 'finance');
 
-  // [DIAG] לוג אבחון תשלומים
-  console.log('[PAY-DIAG] month:', month, 'year:', year);
-  console.log('[PAY-DIAG] achdutActivists:', achdutActivists.map(a => ({ id: a.id, name: a.name, project_id: a.project_id })));
-  console.log('[PAY-DIAG] total interactions loaded:', interactions.length);
-  console.log('[PAY-DIAG] latest 5 interactions:', [...interactions].sort((a,b) => (b.id||0)-(a.id||0)).slice(0,5).map(i => ({ id:i.id, activist_id:i.activist_id, project_id:i.project_id, type:i.type, quality:i.quality, duration_minutes:i.duration_minutes, date:i.date })));
-
   // חישוב תשלומים לכל פעיל
   const paymentData = useMemo(() => achdutActivists.map(activist => {
     const myMitzvotBonuses = mitzvotBonuses.filter(b => b.activist_id === activist.id && b.month === `${year}-${month}`);

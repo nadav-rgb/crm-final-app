@@ -5,14 +5,8 @@ import DesktopLayout from '../../components/DesktopLayout';
 import { useAuth } from '../../lib/AuthStore';
 import { useCrm } from '../../lib/CrmStore';
 import { getMeetingHouses } from '../../lib/meetingHousesStorage';
+import { fetchMeetingHousesFromSupabase } from '../../lib/meetingHousesSupabase';
 import { generateMeetingNotesAiSummaryDemo, summarizeBaseMeetingDemo } from '../../lib/aiDemo';
-import activists from '../../data/activists';
-
-const achdutActivists = activists.filter(a => a.project_id === 2);
-
-function getActivistName(id) {
-  return achdutActivists.find(a => a.id === id)?.name || `פעיל ${id}`;
-}
 
 function formatDate(d) {
   if (!d) return '—';
@@ -21,13 +15,25 @@ function formatDate(d) {
 
 export default function CompletedMeetingHousesPage() {
   const { can } = useAuth();
-  const { baseMeetings } = useCrm();
+  const { baseMeetings, activists } = useCrm();
   const [houses, setHouses] = useState([]);
   const [selectedHouse, setSelectedHouse] = useState(null);
 
+  // שם פעיל מתוך הרשימה החיה (activist_directory) — לא מנתונים סטטיים.
+  const activistName = (id) => activists.find(a => Number(a.id) === Number(id))?.name || `פעיל ${id}`;
+
+  // מקור אמת: Supabase. בתי מפגש דמו ישנים מ-localStorage כ-fallback בלבד (זהה ל-index.jsx).
   useEffect(() => {
-    setHouses(getMeetingHouses().filter(h => h.status === 'completed'));
-  }, []);
+    let active = true;
+    (async () => {
+      const remote = await fetchMeetingHousesFromSupabase();
+      const local = getMeetingHouses();
+      const remoteIds = new Set(remote.map(h => String(h.id)));
+      const merged = [...remote, ...local.filter(h => !remoteIds.has(String(h.id)))];
+      if (active) setHouses(merged.filter(h => h.status === 'completed'));
+    })();
+    return () => { active = false; };
+  }, [activists]);
 
   if (!can.seeMeetingHouses) {
     return (
@@ -51,7 +57,7 @@ export default function CompletedMeetingHousesPage() {
             אין בתי מפגש שהסתיימו · <Link href="/meeting-houses" style={{ color: '#6c5ce7' }}>לבתי מפגש חדשים</Link>
           </div>
         ) : houses.map(house => (
-          <CompletedCard key={house.id} house={house} onView={() => setSelectedHouse(house)} />
+          <CompletedCard key={house.id} house={house} onView={() => setSelectedHouse(house)} activistName={activistName} />
         ))}
       </div>
 
@@ -59,6 +65,7 @@ export default function CompletedMeetingHousesPage() {
         <CompletedDetailModal
           house={selectedHouse}
           baseMeetings={baseMeetings}
+          activistName={activistName}
           onClose={() => setSelectedHouse(null)}
         />
       )}
@@ -66,8 +73,8 @@ export default function CompletedMeetingHousesPage() {
   );
 }
 
-function CompletedCard({ house, onView }) {
-  const assignedNames = (house.assignedActivists || []).map(getActivistName).join(', ');
+function CompletedCard({ house, onView, activistName }) {
+  const assignedNames = (house.assignedActivists || []).map(activistName).join(', ');
   const firstDate = house.meetings?.[0]?.date;
   const lastDate  = house.meetings?.[3]?.date;
 
@@ -149,9 +156,9 @@ function MeetingRow({ meeting, report }) {
   );
 }
 
-function CompletedDetailModal({ house, baseMeetings, onClose }) {
+function CompletedDetailModal({ house, baseMeetings, onClose, activistName }) {
   const aiSummary = generateMeetingNotesAiSummaryDemo(house);
-  const assignedNames = (house.assignedActivists || []).map(getActivistName).join(', ');
+  const assignedNames = (house.assignedActivists || []).map(activistName).join(', ');
 
   function getReportForMeeting(meetingNumber) {
     return baseMeetings.find(r =>
