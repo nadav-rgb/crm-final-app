@@ -27,6 +27,17 @@ export default function VoiceInput({ onTranscript, disabled = false }) {
     if (Capacitor?.isNativePlatform?.()) {
       setIsNative(true);
       setIsSupported(true); // STT נייטיב זמין באפליקציה
+      // בקשת הרשאת מיקרופון מראש (מנותקת מהלחיצה) — כדי שדיאלוג ההרשאה לא יקפוץ
+      // תוך כדי ההקלטה ויגנוב פוקוס מה-WebView (מה ששובר את ה-press-and-hold).
+      (async () => {
+        try {
+          const { SpeechRecognition } = await import('@capacitor-community/speech-recognition');
+          const perm = await SpeechRecognition.checkPermissions();
+          if (perm.speechRecognition !== 'granted') {
+            await SpeechRecognition.requestPermissions();
+          }
+        } catch (e) { /* ignore */ }
+      })();
     } else {
       setIsSupported('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
     }
@@ -99,15 +110,15 @@ export default function VoiceInput({ onTranscript, disabled = false }) {
     setErrorMsg('');
     try {
       const { SpeechRecognition } = await import('@capacitor-community/speech-recognition');
-      let perm = await SpeechRecognition.checkPermissions();
+      const perm = await SpeechRecognition.checkPermissions();
       if (perm.speechRecognition !== 'granted') {
-        perm = await SpeechRecognition.requestPermissions();
-      }
-      if (perm.speechRecognition !== 'granted') {
+        // לא מבקשים הרשאה כאן (זה היה קופץ דיאלוג ושובר את הלחיצה) —
+        // מבקשים מראש בטעינת המסך. כאן רק מודיעים ומבקשים לפעם הבאה.
         hasErrorRef.current = true;
-        setErrorMsg('אין הרשאה למיקרופון');
+        setErrorMsg('אשר הרשאת מיקרופון ונסה שוב');
         setPhase('error');
         setTimeout(() => { setPhase('idle'); setErrorMsg(''); }, 3000);
+        try { await SpeechRecognition.requestPermissions(); } catch (e) { /* ignore */ }
         return;
       }
       await SpeechRecognition.removeAllListeners();
