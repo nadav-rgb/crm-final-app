@@ -4,3 +4,7 @@ node_modules
 .env
 .env.local
 .DS_Store
+
+# Capacitor — הפלטפורמה הנייטיב נוצרת מחדש דרך `npx cap add android` (ראה CAPACITOR.md)
+android/
+.gradle/

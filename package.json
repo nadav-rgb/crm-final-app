@@ -9,6 +9,9 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.92.0",
+    "@capacitor/android": "^8.4.1",
+    "@capacitor/cli": "^8.4.1",
+    "@capacitor/core": "^8.4.1",
     "@supabase/supabase-js": "^2.105.1",
     "lucide-react": "^1.14.0",
     "next": "14.2.3",

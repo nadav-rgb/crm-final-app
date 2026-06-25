@@ -1,0 +1,9 @@
+{
+  "appId": "com.achdutyehudit.crm",
+  "appName": "מקרבים",
+  "webDir": "public",
+  "server": {
+    "url": "https://crm-final-app.vercel.app/",
+    "cleartext": false
+  }
+}
