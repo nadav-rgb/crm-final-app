@@ -106,19 +106,8 @@ export default function AddInteractionPage() {
     }
     setAiLoading(true);
     try {
-      // מפגשים קודמים עם הלקוח (לנקודת "התקדמות") — 2 האחרונים, מהחדש לישן
-      const previous = interactions
-        .filter(i => i.contact_id === contactId)
-        .sort((a, b) => new Date(b.date) - new Date(a.date))
-        .slice(0, 2)
-        .map(i => ({
-          date: i.date,
-          type: i.type,
-          quality: i.quality,
-          summary: (i.ai_summary || i.description || '').slice(0, 280),
-        }));
       const summary = await summarizeInteractionText(form.description, {
-        contactName: contact.name, type: form.type, quality: form.quality, previous,
+        contactName: contact.name, type: form.type, quality: form.quality,
       });
       set('ai_summary', summary);
     } catch (e) {
