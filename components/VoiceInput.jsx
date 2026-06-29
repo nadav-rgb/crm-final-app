@@ -49,6 +49,7 @@ export default function VoiceInput({ onTranscript, disabled = false }) {
   const transcriptRef   = useRef('');
   const hasErrorRef     = useRef(false);
   const finalResolveRef = useRef(null);  // משתחרר כשהתוצאה הסופית מגיעה אחרי stop()
+  const committedRef    = useRef(false); // ה-commit רץ פעם אחת לכל סשן (מונע מצב 'מעבד' תקוע / כפילות)
   const startSndRef     = useRef(null);
   const stopSndRef      = useRef(null);
 
@@ -105,6 +106,7 @@ export default function VoiceInput({ onTranscript, disabled = false }) {
     recordingRef.current = true;
     startedRef.current   = false;
     finishingRef.current = false;
+    committedRef.current = false;
     hasErrorRef.current  = false;
     transcriptRef.current = '';
     setLiveText('');
@@ -179,17 +181,20 @@ export default function VoiceInput({ onTranscript, disabled = false }) {
     finishingRef.current = true;
     recordingRef.current = false;
     setPhase('processing');
+    // שעון-בטיחות: גם אם import/stop/removeAllListeners נתקעים — לא נשארים ב'מעבד' לנצח.
+    const watchdog = setTimeout(() => { console.warn('[VoiceInput] finish watchdog fired'); finishingRef.current = false; commit(); }, 2500);
     try {
       const { SpeechRecognition } = await import('@capacitor-community/speech-recognition');
       if (startedRef.current) {
         console.log('[VoiceInput] stop() — awaiting final onResults');
         try { await SpeechRecognition.stop(); } catch (e) { console.warn('[VoiceInput] stop() threw', e); }
       }
-      await waitForFinalResult();        // לא להסיר listeners לפני onResults הסופי
-      await SpeechRecognition.removeAllListeners();
+      await waitForFinalResult();                              // לא להסיר listeners לפני onResults הסופי
+      SpeechRecognition.removeAllListeners().catch(() => {});  // fire-and-forget — לא לחסום את הסיום (מקור ההיתקעות)
     } catch (e) {
       console.warn('[VoiceInput] finishNative threw', e);
     }
+    clearTimeout(watchdog);
     startedRef.current   = false;
     finishingRef.current = false;
     playSound(stopSndRef);
@@ -200,6 +205,7 @@ export default function VoiceInput({ onTranscript, disabled = false }) {
   function startWeb() {
     if (recordingRef.current) return;
     recordingRef.current = true;
+    committedRef.current = false;
     hasErrorRef.current  = false;
     transcriptRef.current = '';
     setLiveText('');
@@ -262,11 +268,13 @@ export default function VoiceInput({ onTranscript, disabled = false }) {
     try { recognitionRef.current?.stop(); } catch (_) {} // → onend → commit
   }
 
-  // מסירת התמלול לשדה
+  // מסירת התמלול לשדה — אידמפוטנטי (פעם אחת לסשן) ותמיד מסיים את מצב 'מעבד'.
   function commit() {
+    if (committedRef.current) return;
+    committedRef.current = true;
     setLiveText('');
-    if (hasErrorRef.current) return;
     const text = transcriptRef.current.trim();
+    transcriptRef.current = '';
     if (text) {
       console.log('[VoiceInput] commit=', text);
       onTranscript?.(text);
@@ -274,9 +282,9 @@ export default function VoiceInput({ onTranscript, disabled = false }) {
       setTimeout(() => setPhase('idle'), 900);
     } else {
       console.log('[VoiceInput] commit — empty');
-      hasErrorRef.current = true;
       setErrorMsg('לא זוהה דיבור — נסה שוב');
       setPhase('error');
+      setTimeout(() => setPhase('idle'), 2000); // אוטו-ניקוי — לא נשארים תקועים
     }
   }
 
