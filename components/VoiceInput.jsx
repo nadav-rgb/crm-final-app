@@ -48,6 +48,7 @@ export default function VoiceInput({ onTranscript, disabled = false }) {
   const transcriptRef = useRef('');
   const recordingRef = useRef(false); // כוונת המשתמש להקליט (מקור אמת לעצירה — לא תלוי ב-state אסינכרוני)
   const startedRef = useRef(false);   // האם ה-recognizer הנייטיב אכן התחיל (כדי לא לקרוא stop לפני start)
+  const finalResolveRef = useRef(null); // resolver שמשתחרר כשהתוצאה הסופית (onResults) מגיעה אחרי stop()
 
   useEffect(() => {
     if (Capacitor?.isNativePlatform?.()) {
@@ -182,13 +183,19 @@ export default function VoiceInput({ onTranscript, disabled = false }) {
         return;
       }
 
-      // 3) האזנה לתוצאות חלקיות
+      // 3) האזנה לתוצאות. ב-partialResults=true, גם התוצאה הסופית (onResults) מגיעה דרך אירוע זה,
+      //    אך *רק אחרי* stopListening — לכן אסור להסיר את ה-listener בעת השחרור (ר' stopNative).
       await SpeechRecognition.removeAllListeners();
       await SpeechRecognition.addListener('partialResults', (data) => {
         if (data?.matches?.length) {
           transcriptRef.current = data.matches[0];
-          console.log('[VoiceInput] partial=', data.matches[0]);
+          console.log('[VoiceInput] partial/result=', data.matches[0]);
+          // התוצאה הסופית הגיעה — שחרר את ההמתנה ב-stopNative
+          if (finalResolveRef.current) { const r = finalResolveRef.current; finalResolveRef.current = null; r(); }
         }
+      });
+      await SpeechRecognition.addListener('listeningState', (data) => {
+        console.log('[VoiceInput] listeningState=', data?.status);
       });
 
       // המשתמש אולי כבר שחרר בזמן ה-awaits — אל תתחיל הקלטה יתומה
@@ -211,23 +218,38 @@ export default function VoiceInput({ onTranscript, disabled = false }) {
     }
   }
 
+  // ממתין לתוצאה הסופית: Android שולח onResults רק *אחרי* stopListening (כמה מאות ms).
+  // משתחרר כשמגיע אירוע partialResults הסופי, או אחרי גג-זמן בטיחות (אם המכשיר לא שלח כלום, למשל NO_MATCH).
+  function waitForFinalResult() {
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = () => { if (done) return; done = true; finalResolveRef.current = null; resolve(); };
+      finalResolveRef.current = finish;
+      setTimeout(finish, 1600);
+    });
+  }
+
   async function stopNative() {
+    if (!recordingRef.current && !startedRef.current) return;
     recordingRef.current = false;
+    setPhase('processing'); // מעבד — לא מסירים listeners עד שהתוצאה הסופית מגיעה
     try {
       const { SpeechRecognition } = await import('@capacitor-community/speech-recognition');
       if (startedRef.current) {
+        console.log('[VoiceInput] stop() — waiting for final onResults');
         try { await SpeechRecognition.stop(); } catch (e) { console.warn('[VoiceInput] stop() threw', e); }
       }
+      await waitForFinalResult();        // ← קריטי: לא להסיר listeners לפני onResults הסופי
       await SpeechRecognition.removeAllListeners();
     } catch (e) {
-      console.warn('[VoiceInput] stopNative cleanup threw', e);
+      console.warn('[VoiceInput] stopNative threw', e);
     }
     startedRef.current = false;
-    finalize();
+    finalize({ reportEmpty: true });
   }
 
-  // מסירת התמלול לשדה (משותף לשני המסלולים)
-  function finalize() {
+  // מסירת התמלול לשדה (משותף לשני המסלולים). reportEmpty=true → מציג "לא זוהה דיבור" כשאין תמלול.
+  function finalize({ reportEmpty = false } = {}) {
     if (hasErrorRef.current) return;
     const text = transcriptRef.current.trim();
     if (text) {
@@ -235,6 +257,11 @@ export default function VoiceInput({ onTranscript, disabled = false }) {
       setPhase('done');
       onTranscript?.(text);
       setTimeout(() => setPhase('idle'), 1200);
+    } else if (reportEmpty) {
+      console.log('[VoiceInput] finalize — no transcript (reportEmpty)');
+      hasErrorRef.current = true;
+      setErrorMsg('לא זוהה דיבור — נסה שוב');
+      setPhase('error');
     } else {
       console.log('[VoiceInput] finalize — no transcript');
       setPhase('idle');
@@ -268,21 +295,24 @@ export default function VoiceInput({ onTranscript, disabled = false }) {
     );
   }
 
-  const isRecording = phase === 'recording';
-  const isDone      = phase === 'done';
-  const isError     = phase === 'error';
+  const isRecording  = phase === 'recording';
+  const isProcessing = phase === 'processing';
+  const isDone       = phase === 'done';
+  const isError      = phase === 'error';
 
   const bgColor =
-    isRecording ? '#e74c3c' :
-    isDone      ? '#27ae60' :
-    isError     ? '#e74c3c' :
-                  '#3a249b';
+    isRecording  ? '#e74c3c' :
+    isProcessing ? '#6d4eca' :
+    isDone       ? '#27ae60' :
+    isError      ? '#e74c3c' :
+                   '#3a249b';
 
   const sublabel =
-    isRecording ? 'מקליט... שחרר לסיום' :
-    isError     ? errorMsg :
-    isDone      ? 'הושלם ✓' :
-                  'לחץ והחזק להקלטה';
+    isRecording  ? 'מקליט... שחרר לסיום' :
+    isProcessing ? 'מעבד...' :
+    isError      ? errorMsg :
+    isDone       ? 'הושלם ✓' :
+                   'לחץ והחזק להקלטה';
 
   return (
     <>
@@ -296,7 +326,7 @@ export default function VoiceInput({ onTranscript, disabled = false }) {
           onPointerDown={handlePointerDown}
           onPointerUp={handlePointerUp}
           onPointerLeave={handlePointerUp}
-          disabled={disabled || isDone}
+          disabled={disabled || isDone || isProcessing}
           aria-label={isRecording ? 'מקליט — שחרר לסיום' : 'לחץ והחזק להקלטה'}
           style={{
             width: 64, height: 64,
@@ -305,7 +335,7 @@ export default function VoiceInput({ onTranscript, disabled = false }) {
             background: bgColor,
             color: '#fff',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            cursor: disabled || isDone ? 'default' : 'pointer',
+            cursor: disabled || isDone || isProcessing ? 'default' : 'pointer',
             animation: isRecording ? 'mic-pulse 0.85s ease-in-out infinite' : 'none',
             boxShadow: isRecording
               ? '0 0 0 0 rgba(231,76,60,0.45)'
@@ -322,7 +352,7 @@ export default function VoiceInput({ onTranscript, disabled = false }) {
         </button>
         <span style={{
           fontSize: isError ? 12 : 11, fontFamily: 'Rubik, sans-serif',
-          color: isRecording || isError ? '#e74c3c' : isDone ? '#27ae60' : '#aaa',
+          color: isRecording || isError ? '#e74c3c' : isDone ? '#27ae60' : isProcessing ? '#6d4eca' : '#aaa',
           direction: 'rtl', textAlign: 'center', maxWidth: 260,
           fontWeight: isError ? 700 : 400, lineHeight: 1.5,
         }}>
