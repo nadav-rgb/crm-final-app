@@ -2,6 +2,9 @@
 // Round press-and-hold mic button — hold to record, release to stop.
 // בדפדפן: Web Speech API (he-IL). באפליקציית Capacitor: STT נייטיב
 // (@capacitor-community/speech-recognition), כי Web Speech API לא נתמך ב-WebView.
+//
+// אבחון: כל גבול מתועד ב-console.log עם הקידומת [VoiceInput] (נראה ב-logcat / chrome://inspect).
+// שגיאות מוצגות במלואן ונשארות עד הלחיצה הבאה (לא נעלמות אוטומטית) — כדי לראות את סיבת הכשל.
 
 import { useState, useRef, useEffect } from 'react';
 import { Mic } from 'lucide-react';
@@ -14,6 +17,27 @@ const PULSE_KEYFRAMES = `
 }
 `;
 
+// הודעת שגיאה קריאה — כולל code אם קיים, כדי שאפשר יהיה לאבחן על המכשיר.
+function describeErr(e, fallback = 'שגיאה בהקלטה') {
+  if (!e) return fallback;
+  const msg  = e.message || (typeof e === 'string' ? e : '') || fallback;
+  const code = e.code != null ? ` [${e.code}]` : '';
+  return `${msg}${code}`;
+}
+
+// מיפוי קודי Web Speech API לעברית (משמר את הקוד הגולמי לאבחון).
+function webSpeechError(code) {
+  const map = {
+    'not-allowed':         'אין הרשאת מיקרופון',
+    'service-not-allowed': 'שירות הזיהוי חסום',
+    'no-speech':           'לא זוהה דיבור',
+    'audio-capture':       'לא נמצא מיקרופון',
+    'network':             'שגיאת רשת בזיהוי',
+    'aborted':             'ההקלטה בוטלה',
+  };
+  return `${map[code] || 'שגיאת זיהוי'} [${code}]`;
+}
+
 export default function VoiceInput({ onTranscript, disabled = false }) {
   const [phase, setPhase] = useState('idle'); // idle | recording | done | error
   const [errorMsg, setErrorMsg] = useState('');
@@ -22,45 +46,71 @@ export default function VoiceInput({ onTranscript, disabled = false }) {
   const recognitionRef = useRef(null);
   const hasErrorRef = useRef(false);
   const transcriptRef = useRef('');
+  const recordingRef = useRef(false); // כוונת המשתמש להקליט (מקור אמת לעצירה — לא תלוי ב-state אסינכרוני)
+  const startedRef = useRef(false);   // האם ה-recognizer הנייטיב אכן התחיל (כדי לא לקרוא stop לפני start)
 
   useEffect(() => {
     if (Capacitor?.isNativePlatform?.()) {
       setIsNative(true);
-      setIsSupported(true); // STT נייטיב זמין באפליקציה
+      setIsSupported(true); // STT נייטיב — זמינות בפועל נבדקת ב-available() בעת הלחיצה
+      console.log('[VoiceInput] native platform=', Capacitor.getPlatform());
       // בקשת הרשאת מיקרופון מראש (מנותקת מהלחיצה) — כדי שדיאלוג ההרשאה לא יקפוץ
       // תוך כדי ההקלטה ויגנוב פוקוס מה-WebView (מה ששובר את ה-press-and-hold).
       (async () => {
         try {
           const { SpeechRecognition } = await import('@capacitor-community/speech-recognition');
           const perm = await SpeechRecognition.checkPermissions();
+          console.log('[VoiceInput] preflight permission=', perm?.speechRecognition);
           if (perm.speechRecognition !== 'granted') {
-            await SpeechRecognition.requestPermissions();
+            const req = await SpeechRecognition.requestPermissions();
+            console.log('[VoiceInput] preflight permission after request=', req?.speechRecognition);
           }
-        } catch (e) { /* ignore */ }
+        } catch (e) {
+          console.warn('[VoiceInput] preflight permission failed', e);
+        }
       })();
     } else {
-      setIsSupported('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
+      const supported = 'SpeechRecognition' in window || 'webkitSpeechRecognition' in window;
+      setIsSupported(supported);
+      console.log('[VoiceInput] web platform; SpeechRecognition supported=', supported);
     }
   }, []);
 
-  useEffect(() => () => recognitionRef.current?.abort(), []);
+  // ניקוי בעת unmount
+  useEffect(() => () => {
+    recognitionRef.current?.abort?.();
+    if (startedRef.current) {
+      import('@capacitor-community/speech-recognition')
+        .then(({ SpeechRecognition }) => { SpeechRecognition.stop().catch(() => {}); SpeechRecognition.removeAllListeners(); })
+        .catch(() => {});
+    }
+  }, []);
 
+  // ───────── מסלול דפדפן (Web Speech API) ─────────
   function startRecording() {
-    if (disabled || phase === 'recording') return;
+    if (disabled || recordingRef.current) return;
 
+    recordingRef.current = true;
     hasErrorRef.current = false;
     transcriptRef.current = '';
     setErrorMsg('');
 
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const rec = new SR();
+    if (!SR) {
+      recordingRef.current = false;
+      hasErrorRef.current = true;
+      setErrorMsg('דפדפן זה אינו תומך בהקלטה');
+      setPhase('error');
+      return;
+    }
 
+    const rec = new SR();
     rec.lang = 'he-IL';
     rec.continuous = true;
     rec.interimResults = false;
     rec.maxAlternatives = 1;
 
-    rec.onstart = () => setPhase('recording');
+    rec.onstart = () => { console.log('[VoiceInput] web onstart'); setPhase('recording'); };
 
     rec.onresult = (e) => {
       for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -72,88 +122,121 @@ export default function VoiceInput({ onTranscript, disabled = false }) {
     };
 
     rec.onerror = (e) => {
+      console.error('[VoiceInput] web onerror', e.error, e);
       hasErrorRef.current = true;
-      const msg =
-        e.error === 'not-allowed' ? 'אין הרשאה למיקרופון' :
-        e.error === 'no-speech'   ? 'לא זוהה דיבור' :
-                                    'שגיאה בהקלטה';
-      setErrorMsg(msg);
-      setPhase('error');
-      setTimeout(() => { setPhase('idle'); setErrorMsg(''); }, 3000);
+      recordingRef.current = false;
+      setErrorMsg(webSpeechError(e.error));
+      setPhase('error'); // נשאר עד הלחיצה הבאה — לא נעלם אוטומטית
     };
 
-    rec.onend = () => {
-      if (hasErrorRef.current) return;
-      const text = transcriptRef.current.trim();
-      if (text) {
-        setPhase('done');
-        onTranscript?.(text);
-        setTimeout(() => setPhase('idle'), 1500);
-      } else {
-        setPhase('idle');
-      }
-    };
+    rec.onend = () => { console.log('[VoiceInput] web onend'); if (!hasErrorRef.current) finalize(); };
 
     recognitionRef.current = rec;
-    rec.start();
+    setPhase('recording'); // אופטימי — הג'סטה מיידית
+    try {
+      rec.start();
+    } catch (e) {
+      console.error('[VoiceInput] web start threw', e);
+      hasErrorRef.current = true;
+      recordingRef.current = false;
+      setErrorMsg(describeErr(e));
+      setPhase('error');
+    }
   }
 
   function stopRecording() {
+    recordingRef.current = false;
     recognitionRef.current?.stop();
   }
 
-  // ---- מסלול נייטיב (אפליקציית Capacitor) ----
+  // ───────── מסלול נייטיב (Capacitor) ─────────
   async function startNative() {
-    if (disabled || phase === 'recording') return;
+    if (disabled || recordingRef.current) return;
+
+    recordingRef.current = true;
+    startedRef.current = false;
     hasErrorRef.current = false;
     transcriptRef.current = '';
     setErrorMsg('');
+    setPhase('recording'); // אופטימי — pointerUp מסתמך על recordingRef, לא על ה-state
+
     try {
       const { SpeechRecognition } = await import('@capacitor-community/speech-recognition');
+
+      // 1) זמינות הזיהוי במכשיר — סיבת כשל נפוצה (אין שירות זיהוי / נחסם)
+      let avail = { available: false };
+      try { avail = await SpeechRecognition.available(); }
+      catch (err) { console.warn('[VoiceInput] available() threw', err); }
+      console.log('[VoiceInput] available=', avail?.available);
+      if (!avail?.available) throw new Error('זיהוי דיבור אינו זמין במכשיר זה');
+
+      // 2) הרשאה — לא מבקשים כאן בחסימה (זה היה שובר את הג'סטה). אם אין — הודעה + בקשה לפעם הבאה.
       const perm = await SpeechRecognition.checkPermissions();
+      console.log('[VoiceInput] permission=', perm?.speechRecognition);
       if (perm.speechRecognition !== 'granted') {
-        // לא מבקשים הרשאה כאן (זה היה קופץ דיאלוג ושובר את הלחיצה) —
-        // מבקשים מראש בטעינת המסך. כאן רק מודיעים ומבקשים לפעם הבאה.
+        recordingRef.current = false;
         hasErrorRef.current = true;
-        setErrorMsg('אשר הרשאת מיקרופון ונסה שוב');
+        setErrorMsg('יש לאשר הרשאת מיקרופון ואז ללחוץ שוב');
         setPhase('error');
-        setTimeout(() => { setPhase('idle'); setErrorMsg(''); }, 3000);
-        try { await SpeechRecognition.requestPermissions(); } catch (e) { /* ignore */ }
+        SpeechRecognition.requestPermissions().catch(err => console.warn('[VoiceInput] requestPermissions', err));
         return;
       }
+
+      // 3) האזנה לתוצאות חלקיות
       await SpeechRecognition.removeAllListeners();
       await SpeechRecognition.addListener('partialResults', (data) => {
-        if (data?.matches?.length) transcriptRef.current = data.matches[0];
+        if (data?.matches?.length) {
+          transcriptRef.current = data.matches[0];
+          console.log('[VoiceInput] partial=', data.matches[0]);
+        }
       });
-      setPhase('recording');
-      await SpeechRecognition.start({
-        language: 'he-IL',
-        maxResults: 1,
-        partialResults: true,
-        popup: false,
-      });
+
+      // המשתמש אולי כבר שחרר בזמן ה-awaits — אל תתחיל הקלטה יתומה
+      if (!recordingRef.current) { console.log('[VoiceInput] released before start — aborting'); finalize(); return; }
+
+      // 4) התחלה
+      startedRef.current = true;
+      console.log('[VoiceInput] starting recognizer (he-IL)');
+      await SpeechRecognition.start({ language: 'he-IL', maxResults: 1, partialResults: true, popup: false });
+
+      // אם המשתמש שחרר בדיוק בזמן ש-start נפתר — עצור עכשיו
+      if (!recordingRef.current) stopNative();
     } catch (e) {
+      console.error('[VoiceInput] native error', e);
       hasErrorRef.current = true;
-      setErrorMsg('שגיאה בהקלטה');
-      setPhase('error');
-      setTimeout(() => { setPhase('idle'); setErrorMsg(''); }, 3000);
+      recordingRef.current = false;
+      startedRef.current = false;
+      setErrorMsg(describeErr(e));
+      setPhase('error'); // נשאר עד הלחיצה הבאה
     }
   }
 
   async function stopNative() {
+    recordingRef.current = false;
     try {
       const { SpeechRecognition } = await import('@capacitor-community/speech-recognition');
-      try { await SpeechRecognition.stop(); } catch (e) { /* ignore */ }
+      if (startedRef.current) {
+        try { await SpeechRecognition.stop(); } catch (e) { console.warn('[VoiceInput] stop() threw', e); }
+      }
       await SpeechRecognition.removeAllListeners();
-    } catch (e) { /* ignore */ }
+    } catch (e) {
+      console.warn('[VoiceInput] stopNative cleanup threw', e);
+    }
+    startedRef.current = false;
+    finalize();
+  }
 
+  // מסירת התמלול לשדה (משותף לשני המסלולים)
+  function finalize() {
     if (hasErrorRef.current) return;
     const text = transcriptRef.current.trim();
     if (text) {
+      console.log('[VoiceInput] finalize transcript=', text);
       setPhase('done');
       onTranscript?.(text);
-      setTimeout(() => setPhase('idle'), 1500);
+      setTimeout(() => setPhase('idle'), 1200);
     } else {
+      console.log('[VoiceInput] finalize — no transcript');
       setPhase('idle');
     }
   }
@@ -165,10 +248,10 @@ export default function VoiceInput({ onTranscript, disabled = false }) {
   }
 
   function handlePointerUp() {
-    if (phase === 'recording') {
-      if (isNative) stopNative();
-      else stopRecording();
-    }
+    // מקור האמת לעצירה = recordingRef (סינכרוני), לא ה-state האסינכרוני
+    if (!recordingRef.current && !startedRef.current) return;
+    if (isNative) stopNative();
+    else stopRecording();
   }
 
   if (isSupported === null) return null;
@@ -238,9 +321,10 @@ export default function VoiceInput({ onTranscript, disabled = false }) {
           }
         </button>
         <span style={{
-          fontSize: 11, fontFamily: 'Rubik, sans-serif',
+          fontSize: isError ? 12 : 11, fontFamily: 'Rubik, sans-serif',
           color: isRecording || isError ? '#e74c3c' : isDone ? '#27ae60' : '#aaa',
-          direction: 'rtl',
+          direction: 'rtl', textAlign: 'center', maxWidth: 260,
+          fontWeight: isError ? 700 : 400, lineHeight: 1.5,
         }}>
           {sublabel}
         </span>
