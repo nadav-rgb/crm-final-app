@@ -1,11 +1,11 @@
 // components/DesktopLayout.jsx
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { useAuth } from '../lib/AuthStore';
 import { useCrm } from '../lib/CrmStore';
 import MobileBottomNav from './MobileBottomNav';
-import { getNotificationsForUser } from '../lib/notificationDemo';
+import { getNotificationsForUser, markNotificationAsRead, markAllNotificationsAsRead } from '../lib/notificationDemo';
 import {
   Home, User, Users, Calendar, UserPlus,
   ClipboardList, Star, CreditCard, Bell, BellRing,
@@ -31,9 +31,14 @@ const ICO = { size: 18, strokeWidth: 1.8 };
 export default function DesktopLayout({ children, title, subtitle, actions, backHref, backLabel }) {
   const { currentUser, activeProject, filterProject, logout, switchProject, can } = useAuth();
   const { baseMeetings } = useCrm();
-  const notifications = getNotificationsForUser(currentUser, baseMeetings);
-  const unreadNotifications = notifications.filter(n => !n.read).length;
   const router = useRouter();
+  // readTick — מאלץ חישוב מחדש של ההתראות (והבאדג') אחרי סימון "נקרא", גם בלי ניווט.
+  const [readTick, setReadTick] = useState(0);
+  const notifications = useMemo(
+    () => getNotificationsForUser(currentUser, baseMeetings),
+    [currentUser, baseMeetings, readTick]
+  );
+  const unreadNotifications = notifications.filter(n => !n.read).length;
   const [open,              setOpen]             = useState(false);
   const [projectsOpen,      setProjectsOpen]     = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -59,6 +64,17 @@ export default function DesktopLayout({ children, title, subtitle, actions, back
   const currentProjName = isActivist
     ? activeProject?.name
     : filterProject === null ? 'כל הפרויקטים' : PROJECTS_LIST.find(p => p.id === filterProject)?.name;
+
+  function handleNotificationClick(n) {
+    markNotificationAsRead(n.id, currentUser);
+    setReadTick(t => t + 1);
+    setNotificationsOpen(false);
+  }
+
+  function handleMarkAllRead() {
+    markAllNotificationsAsRead(notifications, currentUser);
+    setReadTick(t => t + 1);
+  }
 
   return (
     <div style={{ display: 'flex', height: '100vh', background: BG, direction: 'rtl', overflow: 'hidden', position: 'relative' }}>
@@ -276,12 +292,23 @@ export default function DesktopLayout({ children, title, subtitle, actions, back
               <div style={{ position: 'fixed', top: 74, left: 28, width: 340, maxHeight: 430, overflowY: 'auto', background: '#fff', border: '0.5px solid rgba(0,0,0,0.09)', borderRadius: 16, boxShadow: '0 22px 70px rgba(0,0,0,0.22)', zIndex: 100000, padding: 10 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px 10px', borderBottom: '0.5px solid #eee', marginBottom: 8 }}>
                   <b style={{ fontSize: 14, color: '#2d1f5e' }}>התראות מערכת</b>
-                  <Link href="/notifications" style={{ fontSize: 12, color: '#6c5ce7', textDecoration: 'none', fontWeight: 800 }} onClick={() => setNotificationsOpen(false)}>לכל ההתראות</Link>
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                    {unreadNotifications > 0 && (
+                      <button onClick={handleMarkAllRead}
+                        style={{ background: 'none', border: 'none', fontSize: 12, color: '#6c5ce7', fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}>
+                        סמן הכל כנקרא
+                      </button>
+                    )}
+                    <Link href="/notifications" style={{ fontSize: 12, color: '#6c5ce7', textDecoration: 'none', fontWeight: 800 }} onClick={() => setNotificationsOpen(false)}>לכל ההתראות</Link>
+                  </div>
                 </div>
                 {notifications.slice(0, 5).map(n => (
-                  <Link key={n.id} href={n.link || '/notifications'} style={{ textDecoration: 'none' }} onClick={() => setNotificationsOpen(false)}>
-                    <div style={{ padding: '10px 8px', borderRadius: 10, background: n.priority === 'high' ? '#fff7ec' : '#fff', borderBottom: '0.5px solid #f1f1f1' }}>
-                      <div style={{ fontSize: 13, fontWeight: 800, color: '#2d1f5e', marginBottom: 3 }}>{n.title}</div>
+                  <Link key={n.id} href={n.link || '/notifications'} style={{ textDecoration: 'none' }} onClick={() => handleNotificationClick(n)}>
+                    <div style={{ padding: '10px 8px', borderRadius: 10, background: n.read ? '#fff' : (n.priority === 'high' ? '#fff7ec' : '#f7f5ff'), borderBottom: '0.5px solid #f1f1f1', opacity: n.read ? 0.62 : 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                        {!n.read && <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#e24b4a', flexShrink: 0 }} />}
+                        <div style={{ fontSize: 13, fontWeight: 800, color: '#2d1f5e' }}>{n.title}</div>
+                      </div>
                       <div style={{ fontSize: 12, color: '#666', lineHeight: 1.45 }}>{n.body.length > 96 ? n.body.slice(0, 96) + '...' : n.body}</div>
                     </div>
                   </Link>
