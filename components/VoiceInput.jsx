@@ -1,23 +1,21 @@
 // components/VoiceInput.jsx
-// Round press-and-hold mic button — hold to record, release to stop.
-// בדפדפן: Web Speech API (he-IL). באפליקציית Capacitor: STT נייטיב
-// (@capacitor-community/speech-recognition), כי Web Speech API לא נתמך ב-WebView.
-//
-// אבחון: כל גבול מתועד ב-console.log עם הקידומת [VoiceInput] (נראה ב-logcat / chrome://inspect).
-// שגיאות מוצגות במלואן ונשארות עד הלחיצה הבאה (לא נעלמות אוטומטית) — כדי לראות את סיבת הכשל.
+// הקלטה קולית בסגנון Family: לחיצה קצרה להפעלה/כיבוי (toggle), תמלול חי על המסך,
+// צלילי start/stop (sounds/rec-*.mp3), ואקולייזר.
+//   • דפדפן: Web Speech API (he-IL) — interimResults לתמלול חי.
+//   • אפליקציית Capacitor: STT נייטיב (@capacitor-community/speech-recognition).
+// אבחון: כל גבול מתועד ב-console.log עם הקידומת [VoiceInput] (logcat / chrome://inspect),
+// והתמלול החי מוצג על המסך — אם הוא מופיע, המנוע עובד.
 
 import { useState, useRef, useEffect } from 'react';
 import { Mic } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 
-const PULSE_KEYFRAMES = `
-@keyframes mic-pulse {
-  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(231,76,60,0.45); }
-  50%       { transform: scale(1.15); box-shadow: 0 0 0 10px rgba(231,76,60,0); }
-}
+const KEYFRAMES = `
+@keyframes vi-eq    { 0%,100%{transform:scaleY(0.25)} 50%{transform:scaleY(1)} }
+@keyframes vi-pulse { 0%,100%{box-shadow:0 0 0 0 rgba(231,76,60,0.40)} 50%{box-shadow:0 0 0 14px rgba(231,76,60,0)} }
+@keyframes vi-spin  { to{transform:rotate(360deg)} }
 `;
 
-// הודעת שגיאה קריאה — כולל code אם קיים, כדי שאפשר יהיה לאבחן על המכשיר.
 function describeErr(e, fallback = 'שגיאה בהקלטה') {
   if (!e) return fallback;
   const msg  = e.message || (typeof e === 'string' ? e : '') || fallback;
@@ -25,7 +23,6 @@ function describeErr(e, fallback = 'שגיאה בהקלטה') {
   return `${msg}${code}`;
 }
 
-// מיפוי קודי Web Speech API לעברית (משמר את הקוד הגולמי לאבחון).
 function webSpeechError(code) {
   const map = {
     'not-allowed':         'אין הרשאת מיקרופון',
@@ -39,24 +36,41 @@ function webSpeechError(code) {
 }
 
 export default function VoiceInput({ onTranscript, disabled = false }) {
-  const [phase, setPhase] = useState('idle'); // idle | recording | done | error
+  const [phase, setPhase] = useState('idle'); // idle | recording | processing | done | error
+  const [liveText, setLiveText] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [isSupported, setIsSupported] = useState(null);
   const [isNative, setIsNative] = useState(false);
-  const recognitionRef = useRef(null);
-  const hasErrorRef = useRef(false);
-  const transcriptRef = useRef('');
-  const recordingRef = useRef(false); // כוונת המשתמש להקליט (מקור אמת לעצירה — לא תלוי ב-state אסינכרוני)
-  const startedRef = useRef(false);   // האם ה-recognizer הנייטיב אכן התחיל (כדי לא לקרוא stop לפני start)
-  const finalResolveRef = useRef(null); // resolver שמשתחרר כשהתוצאה הסופית (onResults) מגיעה אחרי stop()
 
+  const recognitionRef  = useRef(null);
+  const recordingRef    = useRef(false); // המשתמש במצב הקלטה (מקור אמת — לא תלוי ב-state אסינכרוני)
+  const startedRef      = useRef(false); // ה-recognizer הנייטיב אכן התחיל
+  const finishingRef    = useRef(false); // נעילת re-entry ל-finishNative (tap + auto-stop)
+  const transcriptRef   = useRef('');
+  const hasErrorRef     = useRef(false);
+  const finalResolveRef = useRef(null);  // משתחרר כשהתוצאה הסופית מגיעה אחרי stop()
+  const startSndRef     = useRef(null);
+  const stopSndRef      = useRef(null);
+
+  // טעינת צלילים מראש
+  useEffect(() => {
+    try {
+      startSndRef.current = new Audio('/sounds/rec-start.mp3');
+      stopSndRef.current  = new Audio('/sounds/rec-stop.mp3');
+      startSndRef.current.preload = 'auto';
+      stopSndRef.current.preload  = 'auto';
+    } catch (_) {}
+  }, []);
+  function playSound(ref) {
+    try { const a = ref.current; if (a) { a.currentTime = 0; a.play().catch(() => {}); } } catch (_) {}
+  }
+
+  // זיהוי פלטפורמה + בקשת הרשאת מיקרופון מראש בנייטיב (מנותקת מהלחיצה)
   useEffect(() => {
     if (Capacitor?.isNativePlatform?.()) {
       setIsNative(true);
-      setIsSupported(true); // STT נייטיב — זמינות בפועל נבדקת ב-available() בעת הלחיצה
+      setIsSupported(true);
       console.log('[VoiceInput] native platform=', Capacitor.getPlatform());
-      // בקשת הרשאת מיקרופון מראש (מנותקת מהלחיצה) — כדי שדיאלוג ההרשאה לא יקפוץ
-      // תוך כדי ההקלטה ויגנוב פוקוס מה-WebView (מה ששובר את ה-press-and-hold).
       (async () => {
         try {
           const { SpeechRecognition } = await import('@capacitor-community/speech-recognition');
@@ -66,9 +80,7 @@ export default function VoiceInput({ onTranscript, disabled = false }) {
             const req = await SpeechRecognition.requestPermissions();
             console.log('[VoiceInput] preflight permission after request=', req?.speechRecognition);
           }
-        } catch (e) {
-          console.warn('[VoiceInput] preflight permission failed', e);
-        }
+        } catch (e) { console.warn('[VoiceInput] preflight permission failed', e); }
       })();
     } else {
       const supported = 'SpeechRecognition' in window || 'webkitSpeechRecognition' in window;
@@ -79,7 +91,7 @@ export default function VoiceInput({ onTranscript, disabled = false }) {
 
   // ניקוי בעת unmount
   useEffect(() => () => {
-    recognitionRef.current?.abort?.();
+    try { recognitionRef.current?.abort?.(); } catch (_) {}
     if (startedRef.current) {
       import('@capacitor-community/speech-recognition')
         .then(({ SpeechRecognition }) => { SpeechRecognition.stop().catch(() => {}); SpeechRecognition.removeAllListeners(); })
@@ -87,19 +99,117 @@ export default function VoiceInput({ onTranscript, disabled = false }) {
     }
   }, []);
 
-  // ───────── מסלול דפדפן (Web Speech API) ─────────
-  function startRecording() {
-    if (disabled || recordingRef.current) return;
-
+  // ───────── מסלול נייטיב (Capacitor) ─────────
+  async function startNative() {
+    if (recordingRef.current) return;
     recordingRef.current = true;
-    hasErrorRef.current = false;
+    startedRef.current   = false;
+    finishingRef.current = false;
+    hasErrorRef.current  = false;
     transcriptRef.current = '';
+    setLiveText('');
     setErrorMsg('');
+    setPhase('recording');
+    playSound(startSndRef);
+
+    try {
+      const { SpeechRecognition } = await import('@capacitor-community/speech-recognition');
+
+      let avail = { available: false };
+      try { avail = await SpeechRecognition.available(); }
+      catch (err) { console.warn('[VoiceInput] available() threw', err); }
+      console.log('[VoiceInput] available=', avail?.available);
+      if (!avail?.available) throw new Error('זיהוי דיבור אינו זמין במכשיר זה');
+
+      const perm = await SpeechRecognition.checkPermissions();
+      console.log('[VoiceInput] permission=', perm?.speechRecognition);
+      if (perm.speechRecognition !== 'granted') {
+        recordingRef.current = false;
+        hasErrorRef.current  = true;
+        setErrorMsg('יש לאשר הרשאת מיקרופון ואז להקיש שוב');
+        setPhase('error');
+        SpeechRecognition.requestPermissions().catch(err => console.warn('[VoiceInput] requestPermissions', err));
+        return;
+      }
+
+      await SpeechRecognition.removeAllListeners();
+      await SpeechRecognition.addListener('partialResults', (data) => {
+        if (data?.matches?.length) {
+          transcriptRef.current = data.matches[0];
+          setLiveText(data.matches[0]);
+          console.log('[VoiceInput] partial/result=', data.matches[0]);
+          if (finalResolveRef.current) { const r = finalResolveRef.current; finalResolveRef.current = null; r(); }
+        }
+      });
+      await SpeechRecognition.addListener('listeningState', (data) => {
+        console.log('[VoiceInput] listeningState=', data?.status);
+        // ה-recognizer סיים מעצמו (שקט) — סיים וקבע את התמלול
+        if (data?.status === 'stopped' && recordingRef.current) finishNative();
+      });
+
+      if (!recordingRef.current) { console.log('[VoiceInput] stopped before start'); finishNative(); return; }
+
+      startedRef.current = true;
+      console.log('[VoiceInput] starting recognizer (he-IL)');
+      await SpeechRecognition.start({ language: 'he-IL', maxResults: 1, partialResults: true, popup: false });
+    } catch (e) {
+      console.error('[VoiceInput] native start error', e);
+      hasErrorRef.current = true;
+      recordingRef.current = false;
+      startedRef.current = false;
+      setErrorMsg(describeErr(e));
+      setPhase('error');
+      setLiveText('');
+    }
+  }
+
+  // ממתין לתוצאה הסופית: Android שולח onResults רק *אחרי* stopListening (מאות ms).
+  function waitForFinalResult() {
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = () => { if (done) return; done = true; finalResolveRef.current = null; resolve(); };
+      finalResolveRef.current = finish;
+      setTimeout(finish, 1500);
+    });
+  }
+
+  async function finishNative() {
+    if (finishingRef.current) return;
+    if (!recordingRef.current && !startedRef.current) return;
+    finishingRef.current = true;
+    recordingRef.current = false;
+    setPhase('processing');
+    try {
+      const { SpeechRecognition } = await import('@capacitor-community/speech-recognition');
+      if (startedRef.current) {
+        console.log('[VoiceInput] stop() — awaiting final onResults');
+        try { await SpeechRecognition.stop(); } catch (e) { console.warn('[VoiceInput] stop() threw', e); }
+      }
+      await waitForFinalResult();        // לא להסיר listeners לפני onResults הסופי
+      await SpeechRecognition.removeAllListeners();
+    } catch (e) {
+      console.warn('[VoiceInput] finishNative threw', e);
+    }
+    startedRef.current   = false;
+    finishingRef.current = false;
+    playSound(stopSndRef);
+    commit();
+  }
+
+  // ───────── מסלול דפדפן (Web Speech API) ─────────
+  function startWeb() {
+    if (recordingRef.current) return;
+    recordingRef.current = true;
+    hasErrorRef.current  = false;
+    transcriptRef.current = '';
+    setLiveText('');
+    setErrorMsg('');
+    playSound(startSndRef);
 
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) {
       recordingRef.current = false;
-      hasErrorRef.current = true;
+      hasErrorRef.current  = true;
       setErrorMsg('דפדפן זה אינו תומך בהקלטה');
       setPhase('error');
       return;
@@ -108,35 +218,37 @@ export default function VoiceInput({ onTranscript, disabled = false }) {
     const rec = new SR();
     rec.lang = 'he-IL';
     rec.continuous = true;
-    rec.interimResults = false;
+    rec.interimResults = true; // תמלול חי
     rec.maxAlternatives = 1;
 
     rec.onstart = () => { console.log('[VoiceInput] web onstart'); setPhase('recording'); };
-
     rec.onresult = (e) => {
+      let interim = '';
+      let final = transcriptRef.current;
       for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (e.results[i].isFinal) {
-          transcriptRef.current +=
-            (transcriptRef.current ? ' ' : '') + e.results[i][0].transcript;
-        }
+        const tr = e.results[i][0].transcript;
+        if (e.results[i].isFinal) final += (final ? ' ' : '') + tr;
+        else interim += tr;
       }
+      transcriptRef.current = final;
+      setLiveText((final + (interim ? ' ' + interim : '')).trim());
     };
-
     rec.onerror = (e) => {
-      console.error('[VoiceInput] web onerror', e.error, e);
+      console.error('[VoiceInput] web onerror', e.error);
       hasErrorRef.current = true;
       recordingRef.current = false;
       setErrorMsg(webSpeechError(e.error));
-      setPhase('error'); // נשאר עד הלחיצה הבאה — לא נעלם אוטומטית
+      setPhase('error');
+    };
+    rec.onend = () => {
+      console.log('[VoiceInput] web onend');
+      if (!hasErrorRef.current) { recordingRef.current = false; playSound(stopSndRef); commit(); }
     };
 
-    rec.onend = () => { console.log('[VoiceInput] web onend'); if (!hasErrorRef.current) finalize(); };
-
     recognitionRef.current = rec;
-    setPhase('recording'); // אופטימי — הג'סטה מיידית
-    try {
-      rec.start();
-    } catch (e) {
+    setPhase('recording');
+    try { rec.start(); }
+    catch (e) {
       console.error('[VoiceInput] web start threw', e);
       hasErrorRef.current = true;
       recordingRef.current = false;
@@ -145,151 +257,41 @@ export default function VoiceInput({ onTranscript, disabled = false }) {
     }
   }
 
-  function stopRecording() {
+  function stopWeb() {
     recordingRef.current = false;
-    recognitionRef.current?.stop();
+    try { recognitionRef.current?.stop(); } catch (_) {} // → onend → commit
   }
 
-  // ───────── מסלול נייטיב (Capacitor) ─────────
-  async function startNative() {
-    if (disabled || recordingRef.current) return;
-
-    recordingRef.current = true;
-    startedRef.current = false;
-    hasErrorRef.current = false;
-    transcriptRef.current = '';
-    setErrorMsg('');
-    setPhase('recording'); // אופטימי — pointerUp מסתמך על recordingRef, לא על ה-state
-
-    try {
-      const { SpeechRecognition } = await import('@capacitor-community/speech-recognition');
-
-      // 1) זמינות הזיהוי במכשיר — סיבת כשל נפוצה (אין שירות זיהוי / נחסם)
-      let avail = { available: false };
-      try { avail = await SpeechRecognition.available(); }
-      catch (err) { console.warn('[VoiceInput] available() threw', err); }
-      console.log('[VoiceInput] available=', avail?.available);
-      if (!avail?.available) throw new Error('זיהוי דיבור אינו זמין במכשיר זה');
-
-      // 2) הרשאה — לא מבקשים כאן בחסימה (זה היה שובר את הג'סטה). אם אין — הודעה + בקשה לפעם הבאה.
-      const perm = await SpeechRecognition.checkPermissions();
-      console.log('[VoiceInput] permission=', perm?.speechRecognition);
-      if (perm.speechRecognition !== 'granted') {
-        recordingRef.current = false;
-        hasErrorRef.current = true;
-        setErrorMsg('יש לאשר הרשאת מיקרופון ואז ללחוץ שוב');
-        setPhase('error');
-        SpeechRecognition.requestPermissions().catch(err => console.warn('[VoiceInput] requestPermissions', err));
-        return;
-      }
-
-      // 3) האזנה לתוצאות. ב-partialResults=true, גם התוצאה הסופית (onResults) מגיעה דרך אירוע זה,
-      //    אך *רק אחרי* stopListening — לכן אסור להסיר את ה-listener בעת השחרור (ר' stopNative).
-      await SpeechRecognition.removeAllListeners();
-      await SpeechRecognition.addListener('partialResults', (data) => {
-        if (data?.matches?.length) {
-          transcriptRef.current = data.matches[0];
-          console.log('[VoiceInput] partial/result=', data.matches[0]);
-          // התוצאה הסופית הגיעה — שחרר את ההמתנה ב-stopNative
-          if (finalResolveRef.current) { const r = finalResolveRef.current; finalResolveRef.current = null; r(); }
-        }
-      });
-      await SpeechRecognition.addListener('listeningState', (data) => {
-        console.log('[VoiceInput] listeningState=', data?.status);
-      });
-
-      // המשתמש אולי כבר שחרר בזמן ה-awaits — אל תתחיל הקלטה יתומה
-      if (!recordingRef.current) { console.log('[VoiceInput] released before start — aborting'); finalize(); return; }
-
-      // 4) התחלה
-      startedRef.current = true;
-      console.log('[VoiceInput] starting recognizer (he-IL)');
-      await SpeechRecognition.start({ language: 'he-IL', maxResults: 1, partialResults: true, popup: false });
-
-      // אם המשתמש שחרר בדיוק בזמן ש-start נפתר — עצור עכשיו
-      if (!recordingRef.current) stopNative();
-    } catch (e) {
-      console.error('[VoiceInput] native error', e);
-      hasErrorRef.current = true;
-      recordingRef.current = false;
-      startedRef.current = false;
-      setErrorMsg(describeErr(e));
-      setPhase('error'); // נשאר עד הלחיצה הבאה
-    }
-  }
-
-  // ממתין לתוצאה הסופית: Android שולח onResults רק *אחרי* stopListening (כמה מאות ms).
-  // משתחרר כשמגיע אירוע partialResults הסופי, או אחרי גג-זמן בטיחות (אם המכשיר לא שלח כלום, למשל NO_MATCH).
-  function waitForFinalResult() {
-    return new Promise((resolve) => {
-      let done = false;
-      const finish = () => { if (done) return; done = true; finalResolveRef.current = null; resolve(); };
-      finalResolveRef.current = finish;
-      setTimeout(finish, 1600);
-    });
-  }
-
-  async function stopNative() {
-    if (!recordingRef.current && !startedRef.current) return;
-    recordingRef.current = false;
-    setPhase('processing'); // מעבד — לא מסירים listeners עד שהתוצאה הסופית מגיעה
-    try {
-      const { SpeechRecognition } = await import('@capacitor-community/speech-recognition');
-      if (startedRef.current) {
-        console.log('[VoiceInput] stop() — waiting for final onResults');
-        try { await SpeechRecognition.stop(); } catch (e) { console.warn('[VoiceInput] stop() threw', e); }
-      }
-      await waitForFinalResult();        // ← קריטי: לא להסיר listeners לפני onResults הסופי
-      await SpeechRecognition.removeAllListeners();
-    } catch (e) {
-      console.warn('[VoiceInput] stopNative threw', e);
-    }
-    startedRef.current = false;
-    finalize({ reportEmpty: true });
-  }
-
-  // מסירת התמלול לשדה (משותף לשני המסלולים). reportEmpty=true → מציג "לא זוהה דיבור" כשאין תמלול.
-  function finalize({ reportEmpty = false } = {}) {
+  // מסירת התמלול לשדה
+  function commit() {
+    setLiveText('');
     if (hasErrorRef.current) return;
     const text = transcriptRef.current.trim();
     if (text) {
-      console.log('[VoiceInput] finalize transcript=', text);
-      setPhase('done');
+      console.log('[VoiceInput] commit=', text);
       onTranscript?.(text);
-      setTimeout(() => setPhase('idle'), 1200);
-    } else if (reportEmpty) {
-      console.log('[VoiceInput] finalize — no transcript (reportEmpty)');
+      setPhase('done');
+      setTimeout(() => setPhase('idle'), 900);
+    } else {
+      console.log('[VoiceInput] commit — empty');
       hasErrorRef.current = true;
       setErrorMsg('לא זוהה דיבור — נסה שוב');
       setPhase('error');
-    } else {
-      console.log('[VoiceInput] finalize — no transcript');
-      setPhase('idle');
     }
   }
 
-  function handlePointerDown(e) {
-    e.preventDefault();
-    if (isNative) startNative();
-    else startRecording();
-  }
-
-  function handlePointerUp() {
-    // מקור האמת לעצירה = recordingRef (סינכרוני), לא ה-state האסינכרוני
-    if (!recordingRef.current && !startedRef.current) return;
-    if (isNative) stopNative();
-    else stopRecording();
+  // לחיצה קצרה — toggle
+  function handleTap() {
+    if (disabled || phase === 'processing' || phase === 'done') return;
+    if (isNative) { recordingRef.current ? finishNative() : startNative(); }
+    else          { recordingRef.current ? stopWeb()      : startWeb();   }
   }
 
   if (isSupported === null) return null;
 
   if (!isSupported) {
     return (
-      <p style={{
-        fontSize: 12, color: '#e74c3c',
-        fontFamily: 'Rubik, sans-serif',
-        direction: 'rtl', margin: '6px 0 0',
-      }}>
+      <p style={{ fontSize: 12, color: '#e74c3c', fontFamily: 'Rubik, sans-serif', direction: 'rtl', margin: '6px 0 0' }}>
         דפדפן זה אינו תומך בהקלטה — נסה Chrome או Safari
       </p>
     );
@@ -308,56 +310,71 @@ export default function VoiceInput({ onTranscript, disabled = false }) {
                    '#3a249b';
 
   const sublabel =
-    isRecording  ? 'מקליט... שחרר לסיום' :
+    isRecording  ? 'מקליט... הקש לסיום' :
     isProcessing ? 'מעבד...' :
     isError      ? errorMsg :
-    isDone       ? 'הושלם ✓' :
-                   'לחץ והחזק להקלטה';
+    isDone       ? 'נוסף ✓' :
+                   'הקש כדי להקליט';
 
   return (
     <>
-      <style>{PULSE_KEYFRAMES}</style>
-      <div style={{
-        display: 'flex', flexDirection: 'column',
-        alignItems: 'center', gap: 10, marginTop: 10,
-      }}>
+      <style>{KEYFRAMES}</style>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 11, marginTop: 12 }}>
+
+        {/* אקולייזר — בזמן הקלטה */}
+        {isRecording && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, height: 26 }} aria-hidden="true">
+            {[0, 1, 2, 3, 4, 5, 6].map(i => (
+              <span key={i} style={{
+                width: 4, height: 22, borderRadius: 2, background: '#e74c3c',
+                transformOrigin: 'center', animation: `vi-eq 0.8s ease-in-out ${(i * 0.09).toFixed(2)}s infinite`,
+              }} />
+            ))}
+          </div>
+        )}
+
+        {/* כפתור */}
         <button
           type="button"
-          onPointerDown={handlePointerDown}
-          onPointerUp={handlePointerUp}
-          onPointerLeave={handlePointerUp}
+          onClick={handleTap}
           disabled={disabled || isDone || isProcessing}
-          aria-label={isRecording ? 'מקליט — שחרר לסיום' : 'לחץ והחזק להקלטה'}
+          aria-label={isRecording ? 'מקליט — הקש לסיום' : 'הקש כדי להקליט'}
           style={{
-            width: 64, height: 64,
-            borderRadius: '50%',
-            border: 'none',
-            background: bgColor,
-            color: '#fff',
+            width: 68, height: 68, borderRadius: '50%', border: 'none',
+            background: bgColor, color: '#fff',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             cursor: disabled || isDone || isProcessing ? 'default' : 'pointer',
-            animation: isRecording ? 'mic-pulse 0.85s ease-in-out infinite' : 'none',
-            boxShadow: isRecording
-              ? '0 0 0 0 rgba(231,76,60,0.45)'
-              : '0 4px 18px rgba(58,36,155,0.28)',
-            transition: 'background 0.2s',
-            WebkitUserSelect: 'none', userSelect: 'none',
-            touchAction: 'none',
+            animation: isRecording ? 'vi-pulse 1.1s ease-in-out infinite' : 'none',
+            boxShadow: isRecording ? '0 0 0 0 rgba(231,76,60,0.45)' : '0 4px 18px rgba(58,36,155,0.28)',
+            transition: 'background 0.2s', WebkitUserSelect: 'none', userSelect: 'none',
           }}
         >
-          {isDone
-            ? <span style={{ fontSize: 24 }}>✓</span>
-            : <Mic size={27} strokeWidth={2} />
-          }
+          {isProcessing
+            ? <span style={{ width: 22, height: 22, borderRadius: '50%', border: '2.5px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', display: 'inline-block', animation: 'vi-spin 0.7s linear infinite' }} />
+            : isDone
+            ? <span style={{ fontSize: 26 }}>✓</span>
+            : <Mic size={28} strokeWidth={2} />}
         </button>
+
+        {/* סטטוס */}
         <span style={{
           fontSize: isError ? 12 : 11, fontFamily: 'Rubik, sans-serif',
           color: isRecording || isError ? '#e74c3c' : isDone ? '#27ae60' : isProcessing ? '#6d4eca' : '#aaa',
-          direction: 'rtl', textAlign: 'center', maxWidth: 260,
-          fontWeight: isError ? 700 : 400, lineHeight: 1.5,
+          direction: 'rtl', textAlign: 'center', maxWidth: 280, fontWeight: isError ? 700 : 400, lineHeight: 1.5,
         }}>
           {sublabel}
         </span>
+
+        {/* תמלול חי */}
+        {(isRecording || isProcessing) && liveText && (
+          <div style={{
+            width: '100%', maxWidth: 520, background: '#fff', border: '1px solid #eee', borderRadius: 12,
+            padding: '10px 13px', fontSize: 13.5, color: '#333', lineHeight: 1.65, direction: 'rtl',
+            boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+          }}>
+            {liveText}
+          </div>
+        )}
       </div>
     </>
   );
