@@ -90,14 +90,8 @@ export default function AddInteractionPage() {
     setErrors(prev => ({ ...prev, [field]: undefined }));
   }
 
-  // Reset quality when switching to וידאו + ידידותי was selected
   function handleTypeChange(t) {
-    setForm(prev => ({
-      ...prev,
-      type: t,
-      quality: t === 'וידאו' && prev.quality === 'ידידותי' ? '' : prev.quality,
-    }));
-    setErrors(prev => ({ ...prev, type: undefined, quality: undefined }));
+    set('type', t);
   }
 
   function handleVoiceTranscript(text) {
@@ -287,25 +281,14 @@ export default function AddInteractionPage() {
         <div style={card}>
           <label className="form-label">איכות הקשר <span style={{ color: '#e24b4a' }}>*</span></label>
           <div className="chip-group">
-            {CONFIG.interactionQuality.map(q => {
-              const blocked = q === 'ידידותי' && form.type === 'וידאו';
-              return (
-                <button key={q} type="button"
-                  disabled={blocked}
-                  title={blocked ? 'וידאו ידידותי אינו זמין' : undefined}
-                  className={`chip ${form.quality === q ? 'chip-active' : ''}`}
-                  onClick={() => !blocked && set('quality', q)}
-                  style={blocked ? { opacity: 0.35, cursor: 'not-allowed' } : {}}>
-                  {q}
-                </button>
-              );
-            })}
+            {CONFIG.interactionQuality.map(q => (
+              <button key={q} type="button"
+                className={`chip ${form.quality === q ? 'chip-active' : ''}`}
+                onClick={() => set('quality', q)}>
+                {q}
+              </button>
+            ))}
           </div>
-          {form.type === 'וידאו' && (
-            <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>
-              וידאו ידידותי אינו זמין — ניתן לבחור תורני בלבד
-            </div>
-          )}
           {errors.quality && <span className="error-msg">{errors.quality}</span>}
         </div>
 
