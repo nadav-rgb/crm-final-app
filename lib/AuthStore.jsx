@@ -5,28 +5,45 @@ import { getSupabaseClient } from './supabaseClient';
 
 const AuthContext = createContext(null);
 
-// מיפוי username → email אמיתי ב-Supabase (חלקם אינם <username>@achdut-crm.test)
+// מיפוי username (שם מלא בעברית) → email ב-Supabase Auth.
+// סכמה אחידה — provisioning השקה 2026-06-29. שם המשתמש של כל אחד = השם המלא שלו.
 const USERNAME_TO_EMAIL = {
-  // שמות בעברית לטסטרים
-  'נדב':           'nadav@achdut-crm.test',
-  'רפאל':          'refaelraiton@achdut-crm.test',
-  'מוטי גלעד':     'moti_galed@achdut-crm.test',
-  'מוטי שטרלינג':  'moti_sterling@achdut-crm.test',
-  'חדווה':         'chedva@achdut-crm.test',
-  'קורלנסקי':      'korlansky@achdut-crm.test',
-  'מנכ״ל':         'rabbigreenboim@achdut-crm.test',
-  // טסטרים עם אימייל gmail אמיתי
-  'נחמיה גרטש':    'aa2304900@gmail.com',
-  'ניר קובי':      'Nirkoobi26@gmail.com',
-  'דוד':           'David7654372@gmail.com',
-  // alias באנגלית — כדי לא לשבור כניסה קיימת
-  nadav:     'nadav@achdut-crm.test',
-  refael:    'refaelraiton@achdut-crm.test',
-  moti:      'moti_galed@achdut-crm.test',
-  sterling:  'moti_sterling@achdut-crm.test',
-  chedva:    'chedva@achdut-crm.test',
-  korlansky: 'korlansky@achdut-crm.test',
-  ceo:       'rabbigreenboim@achdut-crm.test',
+  // === רכזים ===
+  'נדב לבון':         'nadav@achdut-crm.test',
+  'שמעון קורלנסקי':   'korlansky@achdut-crm.test',
+  // === פעילים (אחדות יהודית) ===
+  'אלעזר באום':       'mekarvim01@achdut-crm.test',
+  'בנימין קליימן':    'mekarvim02@achdut-crm.test',
+  'דבורה ידיד':       'mekarvim03@achdut-crm.test',
+  'דוד הרשל':         'mekarvim04@achdut-crm.test',
+  'דוד רוזנצוויג':    'mekarvim05@achdut-crm.test',
+  'חדוה מור יוסף':    'mekarvim06@achdut-crm.test',
+  'חיים פייגנבוים':   'mekarvim07@achdut-crm.test',
+  'יהושע לוונשטיין':  'mekarvim08@achdut-crm.test',
+  'יהושע מן':         'mekarvim09@achdut-crm.test',
+  'יהלי ברזל':        'mekarvim10@achdut-crm.test',
+  'יוחנן סלייטר':     'mekarvim11@achdut-crm.test',
+  'יעקב הופט':        'mekarvim12@achdut-crm.test',
+  'יעקב פינקלשטיין':  'mekarvim13@achdut-crm.test',
+  'יצחק וינטר':       'mekarvim14@achdut-crm.test',
+  'ליזי וידרקר':      'mekarvim15@achdut-crm.test',
+  'מוטי עלד':         'mekarvim16@achdut-crm.test',
+  'מוטי שטרלינג':     'mekarvim17@achdut-crm.test',
+  'מירי אריאלי':      'mekarvim18@achdut-crm.test',
+  'נחמיה גרטש':       'mekarvim19@achdut-crm.test',
+  'ניר קובי':         'mekarvim20@achdut-crm.test',
+  'נתי סלומון':       'mekarvim21@achdut-crm.test',
+  'פסח זאק':          'mekarvim22@achdut-crm.test',
+  'צביקה רוזנצוייג':  'mekarvim23@achdut-crm.test',
+  'רונן ישראלי':      'mekarvim24@achdut-crm.test',
+  'ריקי וילינגר':     'mekarvim25@achdut-crm.test',
+  'רפאל טפר':         'mekarvim26@achdut-crm.test',
+  'רפאל רייטן':       'mekarvim27@achdut-crm.test',
+  'שירה שם טוב':      'mekarvim28@achdut-crm.test',
+  'מוטי גלעד':        'mekarvim29@achdut-crm.test',
+  // === מנכ"ל ===
+  'הרב גרינבוים':     'rabbigreenboim@achdut-crm.test',
+  'מנכ״ל':            'rabbigreenboim@achdut-crm.test',
 };
 
 // קלט יכול להיות email מלא או username — מחזיר תמיד email
