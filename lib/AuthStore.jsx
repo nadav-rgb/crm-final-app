@@ -27,7 +27,6 @@ const USERNAME_TO_EMAIL = {
   'יעקב פינקלשטיין':  'mekarvim13@achdut-crm.test',
   'יצחק וינטר':       'mekarvim14@achdut-crm.test',
   'ליזי וידרקר':      'mekarvim15@achdut-crm.test',
-  'מוטי עלד':         'mekarvim16@achdut-crm.test',
   'מוטי שטרלינג':     'mekarvim17@achdut-crm.test',
   'מירי אריאלי':      'mekarvim18@achdut-crm.test',
   'נחמיה גרטש':       'mekarvim19@achdut-crm.test',
