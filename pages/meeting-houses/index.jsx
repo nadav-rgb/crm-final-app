@@ -121,7 +121,7 @@ export default function MeetingHousesPage() {
     <DesktopLayout
       title="בתי מפגש חדשים"
       subtitle={`${activeHouses.length} בתי מפגש פעילים · אחדות יהודית`}
-      actions={(
+      actions={can.seeMeetingHouses ? (
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={handleExternalImport} style={{ border: '0.5px solid rgba(108,92,231,0.35)', borderRadius: 10, padding: '9px 15px', fontFamily: 'inherit', fontWeight: 700, cursor: 'pointer', background: '#fff', color: '#6c5ce7', fontSize: 13 }}>
             ייבא דמו חיצוני
@@ -132,7 +132,7 @@ export default function MeetingHousesPage() {
             </button>
           </Link>
         </div>
-      )}
+      ) : undefined}
     >
       {importMessage && (
         <div style={{ marginBottom: 16, background: '#eefaf2', border: '0.5px solid rgba(22,120,65,0.15)', borderRadius: 12, padding: '12px 16px', color: '#1f7a45', fontSize: 13, fontWeight: 700 }}>

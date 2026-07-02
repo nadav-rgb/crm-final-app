@@ -7,6 +7,7 @@ import getReminders from '../../lib/getReminders';
 import StatusBadge from '../../components/StatusBadge';
 import DesktopLayout from '../../components/DesktopLayout';
 import { timeInSystem } from '../../lib/activistStats';
+import { formatDateHe } from '../../lib/formatDate';
 import { useCrm } from '../../lib/CrmStore';
 import { useState } from 'react';
 import { useAuth } from '../../lib/AuthStore';
@@ -117,7 +118,7 @@ export default function ContactDetail() {
                   ? ['בית מפגש', `${contact.meeting_place_city || '—'} / מס׳ ${contact.meeting_place_number || '—'}`]
                   : ['מאיפה הכרנו', contact.how_met || sourceLabel],
                 ['זמן במערכת',     timeLabel],
-                ['קשר אחרון',      contact.last_interaction_date || '—'],
+                ['קשר אחרון',      formatDateHe(contact.last_interaction_date)],
                 ...(showSensitive ? [['ימים מאז קשר', `${contact.days_since_last_contact} ימים`]] : []),
                 ...(contact.gender     ? [['מגדר',             contact.gender === 'male' ? 'איש' : 'אשה']] : []),
                 ...(contact.age        ? [['גיל',               `${contact.age}`]] : []),
@@ -152,7 +153,7 @@ export default function ContactDetail() {
               <div style={{ fontSize: 11, color: '#999', marginBottom: 4 }}>פעולה הבאה</div>
               <div style={{ fontSize: 14, fontWeight: 500 }}>{contact.next_action}</div>
               <div style={{ fontSize: 12, marginTop: 6, color: enriched.actionOverdue ? '#a32d2d' : '#3b6d11', fontWeight: enriched.actionOverdue ? 500 : 400 }}>
-                {enriched.actionOverdue ? '⚠ באיחור —' : 'לתאריך:'} {contact.next_action_date}
+                {enriched.actionOverdue ? '⚠ באיחור —' : 'לתאריך:'} {formatDateHe(contact.next_action_date)}
               </div>
             </div>
           )}

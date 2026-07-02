@@ -4,6 +4,7 @@ import getReminders from '../lib/getReminders';
 import DesktopLayout from '../components/DesktopLayout';
 import { useCrm } from '../lib/CrmStore';
 import { useAuth } from '../lib/AuthStore';
+import { formatDateHe } from '../lib/formatDate';
 
 export default function RemindersPage() {
   const { contacts, updateContact } = useCrm();
@@ -67,7 +68,7 @@ export default function RemindersPage() {
                   📌 {c.next_action}
                 </div>
                 <div style={{ fontSize: 12, color: c.actionOverdue ? '#c0392b' : '#27ae60', fontWeight: 500, marginBottom: 10 }}>
-                  {c.actionOverdue ? '⚠ באיחור —' : '📅'} {c.next_action_date}
+                  {c.actionOverdue ? '⚠ באיחור —' : '📅'} {formatDateHe(c.next_action_date)}
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button onClick={() => markDone(c.id)} className="btn"

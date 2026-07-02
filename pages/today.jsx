@@ -4,6 +4,7 @@ import getReminders from '../lib/getReminders';
 import DesktopLayout from '../components/DesktopLayout';
 import { useCrm } from '../lib/CrmStore';
 import { useAuth } from '../lib/AuthStore';
+import { formatDateHe } from '../lib/formatDate';
 
 export default function TodayPage() {
   const { contacts, updateContact } = useCrm();
@@ -52,7 +53,7 @@ export default function TodayPage() {
                 <div style={{ fontSize: 14, fontWeight: 400, color: '#333' }}>{c.next_action}</div>
                 <div style={{ fontSize: 13, fontWeight: 700, marginTop: 4, color: '#1a1a1a' }}>{c.name}</div>
                 <div style={{ fontSize: 12, marginTop: 3, color: c.actionOverdue ? '#c0392b' : '#27ae60', fontWeight: 400 }}>
-                  {c.actionOverdue ? 'באיחור —' : 'לתאריך:'} {c.next_action_date}
+                  {c.actionOverdue ? 'באיחור —' : 'לתאריך:'} {formatDateHe(c.next_action_date)}
                 </div>
                 <button onClick={() => markDone(c.id)} className="btn"
                   style={{ marginTop: 10, width: '100%', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: '#27ae60', borderColor: '#7cc47c' }}>
