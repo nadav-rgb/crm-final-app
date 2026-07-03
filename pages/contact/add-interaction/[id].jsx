@@ -70,7 +70,8 @@ export default function AddInteractionPage() {
     i.activist_id === currentUser?.id &&
     i.date?.slice(0, 7) === currentMonthKey
   );
-  const payableCheck = (isAchdut && form.type && form.quality && form.long_enough)
+  const isShabbat = form.type === 'אירוח שבת';
+  const payableCheck = (isAchdut && form.type && (form.quality || isShabbat) && form.long_enough)
     ? calcInteractionPayment(
         { type: form.type, quality: form.quality, duration_minutes: duration },
         previousContactMonthly,
@@ -92,6 +93,8 @@ export default function AddInteractionPage() {
 
   function handleTypeChange(t) {
     set('type', t);
+    // אירוח שבת — אין איכות קשר (תעריף קבוע); מנקים בחירה קודמת
+    if (t === 'אירוח שבת') set('quality', '');
   }
 
   function handleVoiceTranscript(text) {
@@ -120,7 +123,7 @@ export default function AddInteractionPage() {
   function validate() {
     const e = {};
     if (!form.type)                              e.type         = 'נא לבחור סוג קשר';
-    if (!form.quality)                           e.quality      = 'נא לבחור איכות קשר';
+    if (!form.quality && !isShabbat)             e.quality      = 'נא לבחור איכות קשר';
     if (!form.description?.trim())               e.description  = 'תיאור המפגש הוא שדה חובה';
     if (!form.date)                              e.date         = 'נא לבחור תאריך';
     if (form.date > TODAY)                       e.date         = 'תאריך לא יכול להיות בעתיד';
@@ -277,7 +280,8 @@ export default function AddInteractionPage() {
           {errors.type && <span className="error-msg">{errors.type}</span>}
         </div>
 
-        {/* איכות קשר */}
+        {/* איכות קשר — לא רלוונטי לאירוח שבת (תעריף קבוע) */}
+        {!isShabbat && (
         <div style={card}>
           <label className="form-label">איכות הקשר <span style={{ color: '#e24b4a' }}>*</span></label>
           <div className="chip-group">
@@ -291,6 +295,7 @@ export default function AddInteractionPage() {
           </div>
           {errors.quality && <span className="error-msg">{errors.quality}</span>}
         </div>
+        )}
 
         {/* משך זמן — אחדות יהודית בלבד */}
         {isAchdut && (

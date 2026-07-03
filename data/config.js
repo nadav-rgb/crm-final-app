@@ -34,7 +34,7 @@ const CONFIG = {
     'עמוק':    'עמוק',
   },
 
-  interactionTypes: ['פרונטלי', 'טלפוני', 'וידאו'],
+  interactionTypes: ['פרונטלי', 'טלפוני', 'וידאו', 'אירוח שבת'],
   interactionQuality: ['תורני', 'ידידותי'],
 
   outcomeValues: ['חיובי', 'ניטרלי', 'שלילי', 'ממתין למענה'],

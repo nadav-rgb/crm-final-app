@@ -8,7 +8,7 @@ import MobileBottomNav from './MobileBottomNav';
 import { getNotificationsForUser, markNotificationAsRead, markAllNotificationsAsRead } from '../lib/notificationDemo';
 import {
   Home, User, Users, Calendar, UserPlus,
-  ClipboardList, Star, CreditCard, Bell, BellRing,
+  ClipboardList, Star, CreditCard, Bell, BellRing, Receipt,
   MessageSquare, Building2, CheckCircle,
   BarChart2, FolderOpen, LayoutDashboard,
 } from 'lucide-react';
@@ -166,6 +166,7 @@ export default function DesktopLayout({ children, title, subtitle, actions, back
           {can.seePayments && (
             <NavItem href="/payments"     icon={<CreditCard    {...ICO} />} label="דוחות תשלום פעילים" open={open} active={router.pathname === '/payments'}         onActivate={() => setOpen(true)} />
           )}
+          <NavItem href="/expenses"       icon={<Receipt       {...ICO} />} label="דיווח הוצאות"        open={open} active={router.pathname === '/expenses'}         onActivate={() => setOpen(true)} />
           <NavItem href="/reminders"      icon={<Bell          {...ICO} />} label="תזכורות קשר"         open={open} active={router.pathname === '/reminders'}        onActivate={() => setOpen(true)} />
           <NavItem href="/notifications"  icon={<BellRing      {...ICO} />} label="התראות מערכת"        open={open} active={router.pathname === '/notifications'}    onActivate={() => setOpen(true)} />
           <NavItem href="/chat"           icon={<MessageSquare {...ICO} />} label="צ׳אט פעילים"         open={open} active={router.pathname === '/chat'}             onActivate={() => setOpen(true)} />

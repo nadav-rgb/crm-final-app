@@ -7,7 +7,7 @@ import { getNotificationsForUser } from '../lib/notificationDemo';
 import Link from 'next/link';
 import {
   Home, User, Users, Calendar, UserPlus,
-  ClipboardList, Star, CreditCard, Bell, BellRing,
+  ClipboardList, Star, CreditCard, Bell, BellRing, Receipt,
   MessageSquare, Building2, FolderOpen,
 } from 'lucide-react';
 import MobileBottomNav from '../components/MobileBottomNav';
@@ -231,6 +231,7 @@ export default function LandingPage() {
           {can.seePayments && (
             <SideItem icon={<CreditCard   {...ICO} />} label="דוחות תשלום"    open={open} onClick={() => router.push('/payments')} />
           )}
+          <SideItem icon={<Receipt        {...ICO} />} label="דיווח הוצאות"   open={open} onClick={() => router.push('/expenses')} />
           <SideItem icon={<Bell           {...ICO} />} label="תזכורות קשר"    open={open} onClick={() => router.push('/reminders')} />
           <SideItem icon={<BellRing       {...ICO} />} label="התראות מערכת"   open={open} onClick={() => router.push('/notifications')} />
           <SideItem icon={<MessageSquare  {...ICO} />} label="צ׳אט פעילים"    open={open} onClick={() => router.push('/chat')} />
