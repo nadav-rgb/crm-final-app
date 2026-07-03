@@ -6,6 +6,7 @@ import CONFIG from '../../data/config';
 import { useCrm } from '../../lib/CrmStore';
 import { useAuth } from '../../lib/AuthStore';
 import DesktopLayout from '../../components/DesktopLayout';
+import { fetchToursFromSupabase } from '../../lib/toursSupabase';
 
 const TODAY = new Date().toISOString().split('T')[0];
 
@@ -14,7 +15,8 @@ const EMPTY = {
   age: '', profession: '', how_met: '', notes: '',
   next_action: '', next_action_date: '',
   meeting_place_city: '', meeting_place_number: '',
-  source: 'meeting_house', // meeting_house | external (מחוץ לבתי המפגש → בונוס משתתף חדש)
+  tour_id: '', // נעים להכיר — הסיור שדרכו הגיע הלקוח
+  source: 'meeting_house', // meeting_house|tour | external (מבחוץ → בונוס משתתף חדש)
   mitzvot: {},
 };
 
@@ -32,6 +34,17 @@ export default function AddContactPage() {
   if (currentUser && !can.addContact) return null;
 
   const isAchdut  = activeProject?.id === 1;
+  const isNaim    = activeProject?.id === 2;
+
+  // נעים להכיר — רשימת הסיורים לקישור הלקוח
+  const [tourOptions, setTourOptions] = useState([]);
+  useEffect(() => {
+    if (!isNaim) return;
+    let active = true;
+    fetchToursFromSupabase().then(ts => { if (active) setTourOptions(ts); });
+    return () => { active = false; };
+  }, [isNaim]);
+
   const mitzvotList = form.gender === 'male'   ? CONFIG.mitzvotMale
                     : form.gender === 'female' ? CONFIG.mitzvotFemale
                     : [];
@@ -59,6 +72,9 @@ export default function AddContactPage() {
       if (!form.meeting_place_city.trim())   e.meeting_place_city   = 'יישוב בית המפגש חובה';
       if (!form.meeting_place_number.trim()) e.meeting_place_number = 'מספר בית המפגש חובה';
     }
+    if (isNaim && form.source !== 'external' && !form.tour_id) {
+      e.tour_id = 'נא לבחור את הסיור שדרכו הגיע הלקוח';
+    }
     if (form.gender && mitzvotList.length > 0) {
       const incomplete = mitzvotList.some(mitz => form.mitzvot[mitz] === undefined || form.mitzvot[mitz] === '');
       if (incomplete) e.mitzvot = 'יש למלא את כל שדות סרגל המצוות';
@@ -83,7 +99,8 @@ export default function AddContactPage() {
         meetingHouseCity:   houseCity,
         meetingHouseKey:    `${houseNumber}_${houseCity}`,
       } : {}),
-      ...(form.source === 'external' ? { meeting_place_city: '', meeting_place_number: '' } : {}),
+      ...(isNaim && form.source !== 'external' ? { source: 'tour', tour_id: form.tour_id } : {}),
+      ...(form.source === 'external' ? { meeting_place_city: '', meeting_place_number: '', tour_id: null } : {}),
     });
     if (result?.error) {
       alert('שגיאה בשמירת הלקוח: ' + (result.error.message || 'אנא נסה שוב'));
@@ -182,6 +199,45 @@ export default function AddContactPage() {
               {form.source === 'external' && (
                 <div style={{ background: '#f2fbf4', border: '0.5px solid rgba(39,174,96,0.25)', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: '#1f7a45', marginBottom: 4 }}>
                   🎁 לקוח שהגיע מחוץ לבתי המפגש מזכה בבונוס משתתף חדש
+                </div>
+              )}
+            </>
+          )}
+          {isNaim && (
+            <>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#888', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 14 }}>מקור הלקוח</div>
+              <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
+                {[{ value: 'meeting_house', label: '🚌 דרך סיור' }, { value: 'external', label: '🌟 מחוץ לסיורים' }].map(({ value, label }) => (
+                  <label key={value} style={{
+                    display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+                    padding: '10px 16px', borderRadius: 12, flex: 1, justifyContent: 'center',
+                    border: `1.5px solid ${form.source === value ? '#6c5ce7' : '#e8e8e8'}`,
+                    background: form.source === value ? '#f0effe' : '#fafafa',
+                    fontWeight: form.source === value ? 700 : 400,
+                    color: form.source === value ? '#6c5ce7' : '#555',
+                    transition: 'all 0.18s ease', fontSize: 13,
+                  }}>
+                    <input type="radio" name="source" value={value} checked={form.source === value}
+                      onChange={() => set('source', value)} style={{ display: 'none' }} />
+                    {label}
+                  </label>
+                ))}
+              </div>
+              {form.source !== 'external' ? (
+                <>
+                  <label className="form-label">הסיור שדרכו הגיע הלקוח <span style={{ color: '#e24b4a' }}>*</span></label>
+                  <select className={`form-input ${errors.tour_id ? 'form-error' : ''}`} value={form.tour_id}
+                    onChange={e => set('tour_id', e.target.value)} style={{ width: '100%', fontFamily: 'inherit' }}>
+                    <option value="">בחר סיור…</option>
+                    {tourOptions.map(t => (
+                      <option key={t.id} value={t.id}>סיור {t.tourNumber} · {t.settlement}{t.date ? ` · ${t.date.split('-').reverse().join('/')}` : ''}</option>
+                    ))}
+                  </select>
+                  {errors.tour_id && <span className="error-msg" style={{ display: 'block', marginTop: 4 }}>{errors.tour_id}</span>}
+                </>
+              ) : (
+                <div style={{ background: '#f2fbf4', border: '0.5px solid rgba(39,174,96,0.25)', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: '#1f7a45' }}>
+                  🎁 לקוח שהגיע מחוץ לסיורים מזכה בבונוס משתתף חדש
                 </div>
               )}
             </>

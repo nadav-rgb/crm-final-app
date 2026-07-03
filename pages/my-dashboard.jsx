@@ -41,7 +41,7 @@ function CounterCard({ counter }) {
 }
 
 export default function MyDashboardPage() {
-  const { interactions, contacts, mitzvotBonuses, newParticipantBonuses, paymentConfig, expenses } = useCrm();
+  const { interactions, contacts, mitzvotBonuses, newParticipantBonuses, paymentConfig, expenses, tours } = useCrm();
   const { currentUser } = useAuth();
 
   const now = new Date();
@@ -65,7 +65,17 @@ export default function MyDashboardPage() {
   const myExpenses = expenses
     .filter(x => Number(x.activist_id) === Number(currentUser?.id) && x.date >= monthStartIso)
     .reduce((s, x) => s + Number(x.amount || 0), 0);
-  const grandTotal = total + myExpenses;
+
+  // שכר הדרכת סיורים — 750₪ (config) לכל סיור שהתקיים החודש כשהמדריך הוא הפעיל הזה
+  const guideRate = paymentConfig.TOUR_GUIDE_RATE ?? 750;
+  const myGuidedTours = tours.filter(t =>
+    t.status === 'completed' &&
+    Number(t.guide_activist_id) === Number(currentUser?.id) &&
+    t.date >= monthStartIso
+  ).length;
+  const guidePay = myGuidedTours * guideRate;
+
+  const grandTotal = total + myExpenses + guidePay;
 
   return (
     <DesktopLayout title="הדשבורד שלי" subtitle={`סיכום חודשי · ${monthName} ${now.getFullYear()}`}>
@@ -83,7 +93,7 @@ export default function MyDashboardPage() {
         <div style={{ fontSize: 42, fontWeight: 800, letterSpacing: '-0.02em', marginBottom: 18 }}>{grandTotal.toLocaleString()} ₪</div>
 
         <div style={{ background: 'rgba(255,255,255,0.10)', borderRadius: 14, padding: '14px 16px' }}>
-          {salaryByType.length === 0 && bonuses.length === 0 && myExpenses === 0 ? (
+          {salaryByType.length === 0 && bonuses.length === 0 && myExpenses === 0 && guidePay === 0 ? (
             <div style={{ fontSize: 13, opacity: 0.8 }}>טרם נצברו קשרים מזכים החודש.</div>
           ) : (
             <>
@@ -99,6 +109,12 @@ export default function MyDashboardPage() {
                   <span style={{ fontWeight: 700 }}>{b.amount.toLocaleString()} ₪</span>
                 </div>
               ))}
+              {guidePay > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13.5, padding: '5px 0', borderBottom: '0.5px solid rgba(255,255,255,0.12)', color: '#9fd0ff' }}>
+                  <span>🧭 {myGuidedTours} × הדרכת סיור</span>
+                  <span style={{ fontWeight: 700 }}>{guidePay.toLocaleString()} ₪</span>
+                </div>
+              )}
               {myExpenses > 0 && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13.5, padding: '5px 0', color: '#a8e6c1' }}>
                   <span>🧾 החזר הוצאות</span>

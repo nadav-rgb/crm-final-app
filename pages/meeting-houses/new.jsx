@@ -5,6 +5,7 @@ import DesktopLayout from '../../components/DesktopLayout';
 import { useAuth } from '../../lib/AuthStore';
 import { saveManualMeetingHouse } from '../../lib/meetingHousesStorage';
 import { upsertMeetingHouseApi } from '../../lib/meetingHousesSupabase';
+import { inProject } from '../../lib/projectUtils';
 
 const emptyMeetings = [1, 2, 3, 4].map(num => ({ meetingNumber: num, date: '', startTime: '', completed: false, notes: '', summary: '' }));
 
@@ -21,7 +22,8 @@ export default function NewMeetingHousePage() {
   });
   const [error, setError] = useState('');
 
-  if (!can.seeMeetingHouses) {
+  // יצירה — רק רכז/הנהלה שחברים באחדות יהודית (או מנכ"ל)
+  if (!can.seeMeetingHouses || !(currentUser?.role === 'ceo' || inProject(currentUser, 1))) {
     return (
       <DesktopLayout title="הוספת בית מפגש" subtitle="אחדות עכשיו">
         <div style={{ textAlign:'center', padding:60, color:'#aaa' }}>

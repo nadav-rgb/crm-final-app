@@ -23,6 +23,10 @@ const STATUS_LABELS = {
 export default function MeetingHousesPage() {
   const { can, currentUser } = useAuth();
   const { activists } = useCrm();
+
+  // ניהול בתי מפגש (יצירה/ייבוא) — רק רכז/הנהלה שחברים באחדות יהודית (או מנכ"ל).
+  // רכזת נעים-להכיר רואה אך לא פותחת כאן.
+  const canManage = can.seeMeetingHouses && (currentUser?.role === 'ceo' || inProject(currentUser, 1));
   const [houses, setHouses] = useState([]);
   const [importMessage, setImportMessage] = useState('');
 
@@ -123,7 +127,7 @@ export default function MeetingHousesPage() {
     <DesktopLayout
       title="בתי מפגש חדשים"
       subtitle={`${activeHouses.length} בתי מפגש פעילים · אחדות יהודית`}
-      actions={can.seeMeetingHouses ? (
+      actions={canManage ? (
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={handleExternalImport} style={{ border: '0.5px solid rgba(108,92,231,0.35)', borderRadius: 10, padding: '9px 15px', fontFamily: 'inherit', fontWeight: 700, cursor: 'pointer', background: '#fff', color: '#6c5ce7', fontSize: 13 }}>
             ייבא דמו חיצוני

@@ -11,7 +11,7 @@ const MONTH_NAMES = ['ינואר','פברואר','מרץ','אפריל','מאי',
 const PROJECT_LABELS = { 1: 'אחדות יהודית', 2: 'נעים להכיר' };
 
 export default function PaymentsPage() {
-  const { contacts, interactions, mitzvotBonuses, newParticipantBonuses, activists, paymentConfig, expenses } = useCrm();
+  const { contacts, interactions, mitzvotBonuses, newParticipantBonuses, activists, paymentConfig, expenses, tours } = useCrm();
   const { currentUser, can, filterProject } = useAuth();
   const [viewMode, setViewMode] = useState('grid');
   const [selectedReport, setSelectedReport] = useState(null);
@@ -49,8 +49,15 @@ export default function PaymentsPage() {
     const expensesTotal = expenses
       .filter(x => Number(x.activist_id) === Number(activist.id) && x.date >= monthStartIso)
       .reduce((s, x) => s + Number(x.amount || 0), 0);
-    return { activist, ...result, expensesTotal, grandTotal: result.total + expensesTotal };
-  }), [achdutActivists, interactions, contacts, mitzvotBonuses, newParticipantBonuses, paymentConfig, expenses]);
+    // שכר הדרכת סיורים — 750₪ (config) לכל סיור שהתקיים החודש כשהפעיל הוא המדריך
+    const guidedCount = tours.filter(t =>
+      t.status === 'completed' &&
+      Number(t.guide_activist_id) === Number(activist.id) &&
+      t.date >= monthStartIso
+    ).length;
+    const guidePay = guidedCount * (paymentConfig.TOUR_GUIDE_RATE ?? 750);
+    return { activist, ...result, expensesTotal, guidePay, guidedCount, grandTotal: result.total + expensesTotal + guidePay };
+  }), [achdutActivists, interactions, contacts, mitzvotBonuses, newParticipantBonuses, paymentConfig, expenses, tours]);
 
   const totalAll = paymentData.reduce((s, d) => s + d.grandTotal, 0);
   const currentMonthName = MONTH_NAMES[month];
@@ -80,15 +87,18 @@ export default function PaymentsPage() {
       {/* תצוגת ריבועים */}
       {viewMode === 'grid' && (
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(220px,1fr))', gap:12, marginBottom:24 }}>
-          {paymentData.map(({ activist, total, breakdown, unpaid, expensesTotal, grandTotal }) => (
+          {paymentData.map(({ activist, total, breakdown, unpaid, expensesTotal, guidePay, guidedCount, grandTotal }) => (
             <div key={activist.id} style={{ background:'#fffaf5', borderRadius:14, padding:'16px', border:'0.5px solid rgba(0,0,0,0.07)', boxShadow:'0 1px 4px rgba(0,0,0,0.04)', cursor:'pointer', transition:'all 0.18s' }}
               onMouseEnter={e=>{ e.currentTarget.style.transform='translateY(-2px)'; e.currentTarget.style.boxShadow='0 4px 16px rgba(0,0,0,0.09)'; }}
               onMouseLeave={e=>{ e.currentTarget.style.transform='translateY(0)'; e.currentTarget.style.boxShadow='0 1px 4px rgba(0,0,0,0.04)'; }}
-              onClick={()=>setSelectedReport(selectedReport?.activist.id===activist.id?null:{activist,total,breakdown,unpaid,expensesTotal,grandTotal})}
+              onClick={()=>setSelectedReport(selectedReport?.activist.id===activist.id?null:{activist,total,breakdown,unpaid,expensesTotal,guidePay,guidedCount,grandTotal})}
             >
               <div style={{ fontSize:15, fontWeight:700, marginBottom:4 }}>{activist.name}</div>
               <div style={{ fontSize:12, color:'#aaa', marginBottom:12 }}>{breakdown.filter(b=>b.type==='קשר').length} קשרים מזכים</div>
               <div style={{ fontSize:28, fontWeight:700, color:'#6c5ce7' }}>{grandTotal.toLocaleString()} ₪</div>
+              {guidePay > 0 && (
+                <div style={{ fontSize:11.5, color:'#1b6ca8', marginTop:4, fontWeight:600 }}>🧭 כולל {guidedCount} × הדרכת סיור — {guidePay.toLocaleString()} ₪</div>
+              )}
               {expensesTotal > 0 && (
                 <div style={{ fontSize:11.5, color:'#1f7a45', marginTop:4, fontWeight:600 }}>🧾 כולל החזר הוצאות {expensesTotal.toLocaleString()} ₪</div>
               )}
@@ -100,16 +110,16 @@ export default function PaymentsPage() {
       {/* תצוגת רשימה */}
       {viewMode === 'list' && (
         <div style={{ background:'#fff', borderRadius:16, border:'0.5px solid rgba(0,0,0,0.07)', overflow:'hidden', marginBottom:24 }}>
-          {paymentData.map(({ activist, total, breakdown, unpaid, expensesTotal, grandTotal }, idx) => (
+          {paymentData.map(({ activist, total, breakdown, unpaid, expensesTotal, guidePay, guidedCount, grandTotal }, idx) => (
             <div key={activist.id}
               style={{ display:'flex', alignItems:'center', padding:'13px 18px', borderBottom:idx===paymentData.length-1?'none':'0.5px solid #f5f5f5', cursor:'pointer', transition:'background 0.15s' }}
               onMouseEnter={e=>e.currentTarget.style.background='#fafafa'}
               onMouseLeave={e=>e.currentTarget.style.background='transparent'}
-              onClick={()=>setSelectedReport(selectedReport?.activist.id===activist.id?null:{activist,total,breakdown,unpaid,expensesTotal,grandTotal})}
+              onClick={()=>setSelectedReport(selectedReport?.activist.id===activist.id?null:{activist,total,breakdown,unpaid,expensesTotal,guidePay,guidedCount,grandTotal})}
             >
               <div style={{ flex:1 }}>
                 <div style={{ fontSize:14, fontWeight:700 }}>{activist.name}</div>
-                <div style={{ fontSize:12, color:'#aaa' }}>{breakdown.length} קשרים מזכים{expensesTotal > 0 ? ` · 🧾 הוצאות ${expensesTotal.toLocaleString()} ₪` : ''}</div>
+                <div style={{ fontSize:12, color:'#aaa' }}>{breakdown.length} קשרים מזכים{guidePay > 0 ? ` · 🧭 ${guidedCount} הדרכות` : ''}{expensesTotal > 0 ? ` · 🧾 הוצאות ${expensesTotal.toLocaleString()} ₪` : ''}</div>
               </div>
               <div style={{ fontSize:22, fontWeight:700, color:'#6c5ce7' }}>{grandTotal.toLocaleString()} ₪</div>
             </div>
@@ -135,6 +145,12 @@ export default function PaymentsPage() {
               <div style={{ fontWeight:700, color:'#6c5ce7' }}>{item.amount} ₪</div>
             </div>
           ))}
+          {selectedReport.guidePay > 0 && (
+            <div style={{ display:'flex', justifyContent:'space-between', padding:'8px 0', borderBottom:'0.5px solid #f0f0f0', fontSize:13 }}>
+              <div><span style={{ fontWeight:700 }}>🧭 הדרכת סיורים</span><span style={{ color:'#aaa', marginRight:8 }}>— {selectedReport.guidedCount} סיורים שהתקיימו</span></div>
+              <div style={{ fontWeight:700, color:'#1b6ca8' }}>{selectedReport.guidePay.toLocaleString()} ₪</div>
+            </div>
+          )}
           {selectedReport.expensesTotal > 0 && (
             <div style={{ display:'flex', justifyContent:'space-between', padding:'8px 0', borderBottom:'0.5px solid #f0f0f0', fontSize:13 }}>
               <div><span style={{ fontWeight:700 }}>🧾 החזר הוצאות</span><span style={{ color:'#aaa', marginRight:8 }}>— מדיווחי הפעיל החודש</span></div>
@@ -172,9 +188,10 @@ export default function PaymentsPage() {
         <button
           onClick={() => {
             const lines = [`דוח פעילות לתשלום — ${currentMonthName} ${year}`, '='.repeat(40), ''];
-            paymentData.forEach(({ activist, total, breakdown, unpaid, expensesTotal, grandTotal }) => {
-              lines.push(`${activist.name}: ${grandTotal.toLocaleString()} ₪${expensesTotal > 0 ? ` (שכר ${total.toLocaleString()} + הוצאות ${expensesTotal.toLocaleString()})` : ''}`);
+            paymentData.forEach(({ activist, total, breakdown, unpaid, expensesTotal, guidePay, guidedCount, grandTotal }) => {
+              lines.push(`${activist.name}: ${grandTotal.toLocaleString()} ₪`);
               breakdown.forEach(b => lines.push(`  • ${b.contactName} — ${b.desc}: ${b.amount} ₪`));
+              if (guidePay > 0) lines.push(`  • הדרכת סיורים (${guidedCount}): ${guidePay.toLocaleString()} ₪`);
               if (expensesTotal > 0) lines.push(`  • החזר הוצאות: ${expensesTotal.toLocaleString()} ₪`);
               if (unpaid?.length) {
                 lines.push(`  קשרים שלא זוכו:`);

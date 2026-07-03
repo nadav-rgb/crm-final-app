@@ -15,7 +15,7 @@ import { useAuth } from '../../lib/AuthStore';
 export default function ContactDetail() {
   const router = useRouter();
   const { id, from, activistId, view, contactId: fromContactId } = router.query;
-  const { contacts, interactions, updateContact, deleteContact } = useCrm();
+  const { contacts, interactions, updateContact, deleteContact, tours } = useCrm();
   const { can, activeProject } = useAuth();
 
   // F1 — state לעריכה/מחיקה. חייב להיות לפני כל early return (כללי hooks).
@@ -133,9 +133,11 @@ export default function ContactDetail() {
               {[
                 ['יישוב',          contact.city || '—'],
                 ['אזור',           contact.area || '—'],
-                isAchdut
-                  ? ['בית מפגש', `${contact.meeting_place_city || '—'} / מס׳ ${contact.meeting_place_number || '—'}`]
-                  : ['מאיפה הכרנו', contact.how_met || sourceLabel],
+                contact.tour_id
+                  ? ['סיור', (() => { const t = tours.find(x => x.id === contact.tour_id); return t ? `סיור ${t.tour_number} · ${t.settlement}` : contact.tour_id; })()]
+                  : isAchdut
+                    ? ['בית מפגש', `${contact.meeting_place_city || '—'} / מס׳ ${contact.meeting_place_number || '—'}`]
+                    : ['מאיפה הכרנו', contact.how_met || sourceLabel],
                 ['זמן במערכת',     timeLabel],
                 ['קשר אחרון',      formatDateHe(contact.last_interaction_date)],
                 ...(showSensitive ? [['ימים מאז קשר', `${contact.days_since_last_contact} ימים`]] : []),

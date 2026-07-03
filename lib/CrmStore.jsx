@@ -79,7 +79,7 @@ const CONTACT_COLUMNS = [
   'profession', 'age', 'gender', 'high_potential', 'days_since_last_contact',
   'last_interaction_date', 'next_action', 'next_action_date', 'source',
   'joined_at', 'notes', 'how_met', 'mitzvot', 'mitzvot_history', 'is_graduate',
-  'referred_by', 'meeting_place_city', 'meeting_place_number',
+  'referred_by', 'meeting_place_city', 'meeting_place_number', 'tour_id',
   'meetingHouseCity', 'meetingHouseNumber', 'meetingHouseKey',
 ];
 
@@ -150,6 +150,7 @@ export function CrmProvider({ children }) {
   const [mitzvotBonuses, setMitzvotBonuses] = useState([]);
   const [baseMeetings, setBaseMeetings] = useState([]); // דיווחי מפגשי בסיס — מקור האמת: Supabase
   const [expenses,     setExpenses]     = useState([]); // דיווחי הוצאות — מקור האמת: Supabase (זורם לדשבורד+תשלומים)
+  const [tours,        setTours]        = useState([]); // סיורים (נעים להכיר) — לשכר מדריך בדשבורד+תשלומים
   const [paymentConfig, setPaymentConfig] = useState(DEFAULT_CONFIG); // תעריפים/יעדים/בונוסים מ-payment_config (DB)
 
   // בונוס "הבאת משתתף חדש" — נגזר מנתוני הלקוחות ולא מ-state (state התאפס בכל רענון
@@ -241,6 +242,21 @@ export function CrmProvider({ children }) {
       if (!active) return;
       if (error) { console.error('Failed to load expenses', error); return; }
       if (Array.isArray(data)) setExpenses(data);
+    })();
+    return () => { active = false; };
+  }, [currentUser, authLoading]);
+
+  // טעינת סיורים — לחישוב שכר מדריך (750₪ לסיור שהתקיים עם מדריך-פעיל).
+  useEffect(() => {
+    if (authLoading) return;
+    if (!currentUser) { setTours([]); return; }
+    let active = true;
+    (async () => {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase.from('tours').select('*');
+      if (!active) return;
+      if (error) { console.error('Failed to load tours', error); return; }
+      if (Array.isArray(data)) setTours(data);
     })();
     return () => { active = false; };
   }, [currentUser, authLoading]);
@@ -458,7 +474,7 @@ export function CrmProvider({ children }) {
   return (
     <CrmContext.Provider value={{
       contacts, interactions, activists, messages, baseMeetings, BASE_MEETING_QUESTIONS,
-      mitzvotBonuses, newParticipantBonuses, paymentConfig, expenses,
+      mitzvotBonuses, newParticipantBonuses, paymentConfig, expenses, tours,
       addInteraction, addContact, updateContact, deleteContact, updateNextAction, updateMitzvot, addMessage, submitBaseMeeting, upsertBaseMeetingReports, advanceBaseMeetingReminders,
       PROJECT_NAMES,
     }}>
