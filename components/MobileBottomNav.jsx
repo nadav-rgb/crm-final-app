@@ -7,6 +7,7 @@ import {
   MoreHorizontal, User, Calendar, UserPlus,
   Star, CreditCard, BellRing, MessageSquare,
   Building2, CheckCircle, BarChart2, LogOut,
+  LayoutDashboard, Receipt,
 } from 'lucide-react';
 
 const BG = 'linear-gradient(180deg, rgba(42,24,112,0.97) 0%, rgba(58,36,155,0.94) 52%, rgba(35,20,100,0.97) 100%)';
@@ -28,10 +29,12 @@ export default function MobileBottomNav() {
 
   const drawerItems = [
     can.seeSensitiveData && { href: '/',                          icon: <User         {...ICO} />, label: 'אזור אישי' },
+    (can.addContact && currentUser?.project_id === 1) && { href: '/my-dashboard', icon: <LayoutDashboard {...ICO} />, label: 'הדשבורד שלי' },
     (can.addContact && currentUser?.project_id === 1) && { href: '/today', icon: <Calendar {...ICO} />, label: 'פעולות היום' },
     can.addContact && { href: '/contacts/add',                    icon: <UserPlus     {...ICO} />, label: 'הוסף לקוח' },
     can.seeActivists && { href: '/activists',                     icon: <Star         {...ICO} />, label: 'פעילים' },
     can.seePayments && { href: '/payments',                       icon: <CreditCard   {...ICO} />, label: 'דוחות תשלום' },
+    { href: '/expenses',                                          icon: <Receipt      {...ICO} />, label: 'דיווח הוצאות' },
     { href: '/notifications',                                     icon: <BellRing     {...ICO} />, label: 'התראות מערכת' },
     { href: '/chat',                                              icon: <MessageSquare {...ICO} />, label: 'צ׳אט פעילים' },
     (can.seeMeetingHouses || currentUser?.role === 'activist') && { href: '/meeting-houses', icon: <Building2 {...ICO} />, label: 'בתי מפגש חדשים' },
