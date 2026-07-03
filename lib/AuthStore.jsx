@@ -44,6 +44,10 @@ const USERNAME_TO_EMAIL = {
   'רוזי גרטש':        'mekarvim16@achdut-crm.test',
   'נעמי סלומון':      'mekarvim30@achdut-crm.test',
   'עמיחי וילינגר':    'mekarvim31@achdut-crm.test',
+  // === פעילים (נעים להכיר) ===
+  'רפאל קליימן':      'mekarvim32@achdut-crm.test',
+  'אלי לינקר':        'mekarvim33@achdut-crm.test',
+  'דרור הראל':        'mekarvim34@achdut-crm.test',
   // === מנכ"ל ===
   'הרב גרינבוים':     'rabbigreenboim@achdut-crm.test',
   'מנכ״ל':            'rabbigreenboim@achdut-crm.test',
