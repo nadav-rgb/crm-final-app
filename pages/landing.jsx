@@ -7,7 +7,7 @@ import { getNotificationsForUser } from '../lib/notificationDemo';
 import Link from 'next/link';
 import {
   Home, User, Users, Calendar, UserPlus,
-  ClipboardList, Star, CreditCard, Bell, BellRing, Receipt,
+  ClipboardList, Star, CreditCard, Bell, BellRing, Receipt, Compass,
   MessageSquare, Building2, FolderOpen,
 } from 'lucide-react';
 import MobileBottomNav from '../components/MobileBottomNav';
@@ -236,6 +236,9 @@ export default function LandingPage() {
           <SideItem icon={<Bell           {...ICO} />} label="תזכורות קשר"    open={open} onClick={() => router.push('/reminders')} />
           <SideItem icon={<BellRing       {...ICO} />} label="התראות מערכת"   open={open} onClick={() => router.push('/notifications')} />
           <SideItem icon={<MessageSquare  {...ICO} />} label="צ׳אט פעילים"    open={open} onClick={() => router.push('/chat')} />
+          {(can.seeMeetingHouses || currentUser?.role === 'activist') && (currentUser?.role === 'ceo' || inProject(currentUser, 2)) && (
+            <SideItem icon={<Compass      {...ICO} />} label="סיורים"         open={open} onClick={() => router.push('/tours')} />
+          )}
           {(can.seeMeetingHouses || currentUser?.role === 'activist') && (
             <SideItem icon={<Building2    {...ICO} />} label="בתי מפגש"       open={open} onClick={() => router.push('/meeting-houses')} />
           )}

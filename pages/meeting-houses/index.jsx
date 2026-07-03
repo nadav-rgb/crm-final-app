@@ -7,6 +7,7 @@ import { getMeetingHouses, updateMeetingHouseAssignments, importExternalMeetingH
 import { fetchMeetingHousesFromSupabase, updateAssignmentsApi, sendAssignmentPushApi } from '../../lib/meetingHousesSupabase';
 import { createDemoNotification } from '../../lib/notificationDemo';
 import { useCrm } from '../../lib/CrmStore';
+import { inProject } from '../../lib/projectUtils';
 
 function formatDate(dateString) {
   if (!dateString) return '—';
@@ -26,7 +27,8 @@ export default function MeetingHousesPage() {
   const [importMessage, setImportMessage] = useState('');
 
   // מקור הפעילים האמיתי — activist_directory (דרך useCrm).
-  const activistPool = activists.filter(a => a.role === 'activist');
+  // בתי מפגש = אחדות יהודית → רק פעילים החברים בפרויקט 1 (כולל דו-פרויקטליים).
+  const activistPool = activists.filter(a => a.role === 'activist' && inProject(a, 1));
 
   // מקור אמת: Supabase. בתי מפגש דמו ישנים מ-localStorage מתווספים כ-fallback בלבד.
   async function loadHouses() {

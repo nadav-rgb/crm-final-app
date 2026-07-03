@@ -5,11 +5,11 @@ import Link from 'next/link';
 import { useAuth } from '../lib/AuthStore';
 import { useCrm } from '../lib/CrmStore';
 import MobileBottomNav from './MobileBottomNav';
-import { inAnyPaidProject } from '../lib/projectUtils';
+import { inAnyPaidProject, inProject } from '../lib/projectUtils';
 import { getNotificationsForUser, markNotificationAsRead, markAllNotificationsAsRead } from '../lib/notificationDemo';
 import {
   Home, User, Users, Calendar, UserPlus,
-  ClipboardList, Star, CreditCard, Bell, BellRing, Receipt,
+  ClipboardList, Star, CreditCard, Bell, BellRing, Receipt, Compass,
   MessageSquare, Building2, CheckCircle,
   BarChart2, FolderOpen, LayoutDashboard,
 } from 'lucide-react';
@@ -171,6 +171,15 @@ export default function DesktopLayout({ children, title, subtitle, actions, back
           <NavItem href="/reminders"      icon={<Bell          {...ICO} />} label="תזכורות קשר"         open={open} active={router.pathname === '/reminders'}        onActivate={() => setOpen(true)} />
           <NavItem href="/notifications"  icon={<BellRing      {...ICO} />} label="התראות מערכת"        open={open} active={router.pathname === '/notifications'}    onActivate={() => setOpen(true)} />
           <NavItem href="/chat"           icon={<MessageSquare {...ICO} />} label="צ׳אט פעילים"         open={open} active={router.pathname === '/chat'}             onActivate={() => setOpen(true)} />
+          {(can.seeMeetingHouses || currentUser?.role === 'activist') && (currentUser?.role === 'ceo' || inProject(currentUser, 2)) && (
+            <NavItem href="/tours"
+              icon={<Compass {...ICO} />}
+              label="סיורים"
+              open={open}
+              active={router.pathname === '/tours'}
+              onActivate={() => setOpen(true)}
+            />
+          )}
           {(can.seeMeetingHouses || currentUser?.role === 'activist') && (
             <NavItem href="/meeting-houses"
               icon={<Building2 {...ICO} />}

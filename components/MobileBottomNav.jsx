@@ -2,13 +2,13 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useAuth } from '../lib/AuthStore';
-import { inAnyPaidProject } from '../lib/projectUtils';
+import { inAnyPaidProject, inProject } from '../lib/projectUtils';
 import {
   Home, Users, ClipboardList, Bell,
   MoreHorizontal, User, Calendar, UserPlus,
   Star, CreditCard, BellRing, MessageSquare,
   Building2, CheckCircle, BarChart2, LogOut,
-  LayoutDashboard, Receipt,
+  LayoutDashboard, Receipt, Compass,
 } from 'lucide-react';
 
 const BG = 'linear-gradient(180deg, rgba(42,24,112,0.97) 0%, rgba(58,36,155,0.94) 52%, rgba(35,20,100,0.97) 100%)';
@@ -43,6 +43,7 @@ export default function MobileBottomNav() {
     { href: '/expenses',                                          icon: <Receipt      {...ICO} />, label: 'דיווח הוצאות' },
     { href: '/notifications',                                     icon: <BellRing     {...ICO} />, label: 'התראות מערכת' },
     { href: '/chat',                                              icon: <MessageSquare {...ICO} />, label: 'צ׳אט פעילים' },
+    ((can.seeMeetingHouses || currentUser?.role === 'activist') && (currentUser?.role === 'ceo' || inProject(currentUser, 2))) && { href: '/tours', icon: <Compass {...ICO} />, label: 'סיורים' },
     (can.seeMeetingHouses || currentUser?.role === 'activist') && { href: '/meeting-houses', icon: <Building2 {...ICO} />, label: 'בתי מפגש חדשים' },
     can.seeMeetingHouses && { href: '/meeting-houses/completed',  icon: <CheckCircle  {...ICO} />, label: 'בתי מפגש שהסתיימו' },
     can.seeMeetingHouseResults && { href: '/meeting-house-results', icon: <BarChart2  {...ICO} />, label: 'תוצאות בתי מפגש' },

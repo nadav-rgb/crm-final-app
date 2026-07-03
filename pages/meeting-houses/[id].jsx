@@ -8,6 +8,7 @@ import { fetchMeetingHousesFromSupabase, updateAssignmentsApi, sendAssignmentPus
 import { createDemoNotification } from '../../lib/notificationDemo';
 import ActivistSearchSelect from '../../components/ActivistSearchSelect';
 import { useCrm } from '../../lib/CrmStore';
+import { inProject } from '../../lib/projectUtils';
 import { summarizeMeetingHouseSeriesDemo, generateMeetingNotesAiSummaryDemo } from '../../lib/aiDemo';
 import { buildBaseMeetingsFromHouses, getMeetingSeriesReports } from '../../lib/baseMeetingUtils';
 import { advanceReminderStageForReports, getReminderStatus } from '../../lib/reminderSchedulerDemo';
@@ -46,8 +47,9 @@ export default function MeetingHouseDetailPage() {
     return () => { active = false; };
   }, [id]);
 
-  // מקור הפעילים האמיתי — activist_directory (דרך useCrm). מסונן לפרויקט בית המפגש כשידוע.
-  const activistOptions = activists.filter(a => a.role === 'activist' && (house?.project_id == null || Number(a.project_id) === Number(house.project_id)));
+  // מקור הפעילים האמיתי — activist_directory (דרך useCrm). מסונן לפי חברות בפרויקט
+  // של בית המפגש (בתי מפגש=אחדות/1) — כולל פעילים דו-פרויקטליים.
+  const activistOptions = activists.filter(a => a.role === 'activist' && inProject(a, house?.project_id ?? 1));
   const activistPool = activistOptions.length ? activistOptions : activists.filter(a => a.role === 'activist');
   const assignedActivists = assignedIds.map(aid => activists.find(a => Number(a.id) === Number(aid))).filter(Boolean);
   const expandedReports = house ? buildBaseMeetingsFromHouses({
