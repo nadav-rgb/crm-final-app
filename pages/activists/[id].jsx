@@ -19,13 +19,18 @@ export default function ActivistDetail() {
   const router = useRouter();
   const { id, from, contactId } = router.query;
   const { contacts, interactions, activists } = useCrm();
-  const { can } = useAuth();
+  const { can, filterProject } = useAuth();
 
   const activist = activists.find(a => a.id === Number(id));
   if (!activist) return <DesktopLayout title="פעיל"><div>פעיל לא נמצא</div></DesktopLayout>;
 
-  const ownedContacts  = contacts.filter(c => c.activist_id === activist.id);
-  const recentActivity = [...interactions.filter(i => i.activist_id === activist.id)]
+  // סוקפינג לפי הפרויקט הנבחר: רכז של פרויקט מסוים רואה רק את הצד שלו
+  // אצל פעיל דו-פרויקטלי (לקוחות, פעילות וסטטיסטיקה של אותו פרויקט בלבד).
+  const inScope = x => filterProject === null || x.project_id === filterProject;
+
+  const ownedContacts     = contacts.filter(c => c.activist_id === activist.id && inScope(c));
+  const scopedInteractions = interactions.filter(i => inScope(i));
+  const recentActivity = [...scopedInteractions.filter(i => i.activist_id === activist.id)]
     .sort((a, b) => new Date(b.date) - new Date(a.date))
     .slice(0, 4)
     .map(i => {
@@ -33,8 +38,8 @@ export default function ActivistDetail() {
       return { ...i, contactName: contact?.name ?? i.contact_name };
     });
 
-  const performance = getActivistPerformance(activist.id, contacts, interactions);
-  const i30         = interactionsLast30(activist.id, interactions);
+  const performance = getActivistPerformance(activist.id, ownedContacts, scopedInteractions);
+  const i30         = interactionsLast30(activist.id, scopedInteractions);
   const perf        = perfConfig[performance] ?? perfConfig.dormant;
   const timeLabel   = timeInSystem(activist.joined_at);
 
@@ -43,10 +48,14 @@ export default function ActivistDetail() {
 
   const enrichedContacts = ownedContacts.map(c => ({ ...c, ...getReminders(c) }));
 
+  // תווית פרויקטים — פעיל דו-פרויקטלי מציג את שניהם
+  const projLabel = (activist.project_ids?.length ? activist.project_ids : [activist.project_id])
+    .map(p => PROJECT_NAMES[p]).filter(Boolean).join(' · ');
+
   return (
     <DesktopLayout
       title={activist.name}
-      subtitle={PROJECT_NAMES[activist.project_id] ?? ''}
+      subtitle={projLabel}
       backHref={backHref}
       backLabel={backLabel}
     >
@@ -62,7 +71,7 @@ export default function ActivistDetail() {
               </div>
               <div>
                 <div style={{ fontSize: 17, fontWeight: 700, color: '#1a1a1a' }}>{activist.name}</div>
-                <div style={{ fontSize: 12, color: '#6c5ce7', fontWeight: 600, marginTop: 2 }}>📁 {PROJECT_NAMES[activist.project_id]}</div>
+                <div style={{ fontSize: 12, color: '#6c5ce7', fontWeight: 600, marginTop: 2 }}>📁 {projLabel}</div>
               </div>
             </div>
 

@@ -208,7 +208,7 @@ export function CrmProvider({ children }) {
       const supabase = getSupabaseClient();
       const { data, error } = await supabase
         .from('activist_directory')
-        .select('activist_code, name, role, project_id')
+        .select('activist_code, name, role, project_id, project_ids')
         .order('name');
       if (!active) return;
       if (error) { console.error('Failed to load activists', error); return; }
@@ -218,6 +218,10 @@ export function CrmProvider({ children }) {
           name:       a.name,
           role:       a.role,
           project_id: a.project_id,
+          // חברות מלאה בפרויקטים (רב-פרויקטלי). fallback: הפרויקט הראשי בלבד.
+          project_ids: Array.isArray(a.project_ids) && a.project_ids.length > 0
+            ? a.project_ids.map(Number)
+            : (a.project_id ? [Number(a.project_id)] : []),
           status:     'active',
         })));
       }

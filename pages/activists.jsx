@@ -7,6 +7,7 @@ import { interactionsLast30, getActivistPerformance } from '../lib/activistStats
 import ActivistCard from '../components/ActivistCard';
 import FilterChips from '../components/FilterChips';
 import DesktopLayout from '../components/DesktopLayout';
+import { inProject } from '../lib/projectUtils';
 
 const filterOptions = [
   { value: 'all',      label: 'הכל' },
@@ -23,10 +24,10 @@ export default function ActivistsPage() {
     return <DesktopLayout title="פעילים"><div style={{ textAlign: 'center', color: '#aaa', padding: 40 }}>אין הרשאה לדף זה</div></DesktopLayout>;
   }
 
-  // סינון לפי פרויקט
+  // סינון לפי פרויקט — לפי חברות (project_ids), כולל פעילים דו-פרויקטליים
   let displayActivists = activists.filter(a => a.role === 'activist');
   if (filterProject !== null) {
-    displayActivists = displayActivists.filter(a => a.project_id === filterProject);
+    displayActivists = displayActivists.filter(a => inProject(a, filterProject));
   }
 
   const filtered = filter === 'all' ? displayActivists : displayActivists.filter(a => a.status === filter);

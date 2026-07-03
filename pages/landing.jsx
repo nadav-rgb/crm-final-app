@@ -11,6 +11,7 @@ import {
   MessageSquare, Building2, FolderOpen,
 } from 'lucide-react';
 import MobileBottomNav from '../components/MobileBottomNav';
+import { inProject } from '../lib/projectUtils';
 
 const TORAH_DEFAULT = 'וְאָהַבְתָּ לְרֵעֲךָ כָּמוֹךָ — זה כלל גדול בתורה. כל מי שמקרב יהודי אחד לאביו שבשמים, כאילו קיים עולם מלא. השבוע נזכור שכל שיחה, כל פגישה, כל חיוך — הם צינור להאיר את עולמם של אחינו.';
 
@@ -116,7 +117,7 @@ export default function LandingPage() {
   const stats = [
     { num: filteredContacts.length, label: 'סה"כ לקוחות', color: '#c47a2e', rgb: '196,122,46', href: '/contacts' },
     { num: filteredInteractions.length, label: 'סה"כ קשרים', color: '#8b6d3f', rgb: '139,109,63', href: '/contacts' },
-    { num: activists.filter(a => a.role === 'activist' && a.status === 'active' && (selectedProj === 0 || a.project_id === selectedProj)).length, label: 'פעילים פעילים', color: '#c47a2e', rgb: '196,122,46', href: can.seeActivists ? '/activists' : null },
+    { num: activists.filter(a => a.role === 'activist' && a.status === 'active' && inProject(a, selectedProj)).length, label: 'פעילים פעילים', color: '#c47a2e', rgb: '196,122,46', href: can.seeActivists ? '/activists' : null },
     { num: filteredContacts.filter(c => c.days_since_last_contact >= 30).length, label: 'על סף ניתוק', color: '#a32d2d', rgb: '163,45,45', href: '/contacts' },
   ];
 
