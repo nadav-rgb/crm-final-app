@@ -1,5 +1,5 @@
 // lib/CrmStore.jsx
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import _messages     from '../data/messages';
 import { MITZVOT_BONUS_PER_LEVEL, NEW_PARTICIPANT_BONUS } from './paymentCalc';
 import { BASE_MEETING_QUESTIONS } from '../data/base-meetings';
@@ -149,8 +149,23 @@ export function CrmProvider({ children }) {
   const [messages,     setMessages]     = useState(_messages);
   const [mitzvotBonuses, setMitzvotBonuses] = useState([]);
   const [baseMeetings, setBaseMeetings] = useState([]); // דיווחי מפגשי בסיס — מקור האמת: Supabase
-  const [newParticipantBonuses, setNewParticipantBonuses] = useState([]); // { activist_id, contact_id, contactName, date, month }
   const [paymentConfig, setPaymentConfig] = useState(DEFAULT_CONFIG); // תעריפים/יעדים/בונוסים מ-payment_config (DB)
+
+  // בונוס "הבאת משתתף חדש" — נגזר מנתוני הלקוחות ולא מ-state (state התאפס בכל רענון
+  // והבונוס מעולם לא שרד עד עמוד התשלומים). זכאות: לקוח שהגיע מחוץ לבתי המפגש
+  // (source='external') או בהפניית לקוח קיים (referred_by). החודש = חודש ההצטרפות.
+  const newParticipantBonuses = useMemo(() => contacts
+    .filter(c => c.activist_id && c.joined_at && (c.source === 'external' || c.referred_by))
+    .map(c => {
+      const d = new Date(c.joined_at);
+      return {
+        activist_id: c.activist_id,
+        contact_id:  c.id,
+        contactName: c.name,
+        date:        c.joined_at,
+        month:       `${d.getFullYear()}-${d.getMonth()}`,
+      };
+    }), [contacts]);
 
   const { currentUser, authLoading } = useAuth();
 
@@ -309,20 +324,7 @@ export function CrmProvider({ children }) {
     }
     setContacts(syncResult.data);
 
-    // בדיקת הפניה — הבאת משתתף חדש
-    if (contactData.referred_by && contactData.activist_id) {
-      const referredContact = contacts.find(c => c.id === contactData.referred_by);
-      const now = new Date();
-      const monthKey = `${now.getFullYear()}-${now.getMonth()}`;
-      setNewParticipantBonuses(prev => [...prev, {
-        activist_id:  contactData.activist_id,
-        contact_id:   contactData.referred_by,
-        contactName:  referredContact?.name ?? '',
-        date:         now.toISOString().split('T')[0],
-        month:        monthKey,
-        amount:       NEW_PARTICIPANT_BONUS,
-      }]);
-    }
+    // בונוס "הבאת משתתף חדש" נגזר אוטומטית מ-source/referred_by של הלקוח (ראה newParticipantBonuses לעיל).
 
     return { data: syncResult.data };
   }

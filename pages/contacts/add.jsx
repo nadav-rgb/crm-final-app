@@ -14,6 +14,7 @@ const EMPTY = {
   age: '', profession: '', how_met: '', notes: '',
   next_action: '', next_action_date: '',
   meeting_place_city: '', meeting_place_number: '',
+  source: 'meeting_house', // meeting_house | external (מחוץ לבתי המפגש → בונוס משתתף חדש)
   mitzvot: {},
 };
 
@@ -54,7 +55,7 @@ export default function AddContactPage() {
     if (!form.phone.trim())      e.phone      = 'טלפון חובה';
     if (!form.city.trim())       e.city       = 'יישוב חובה';
     if (!form.profession.trim()) e.profession = 'עיסוק מקצועי חובה';
-    if (isAchdut) {
+    if (isAchdut && form.source !== 'external') {
       if (!form.meeting_place_city.trim())   e.meeting_place_city   = 'יישוב בית המפגש חובה';
       if (!form.meeting_place_number.trim()) e.meeting_place_number = 'מספר בית המפגש חובה';
     }
@@ -77,11 +78,12 @@ export default function AddContactPage() {
       days_since_last_contact: 0,
       last_interaction_date:   TODAY,
       joined_at:               TODAY,
-      ...(isAchdut ? {
+      ...(isAchdut && form.source !== 'external' ? {
         meetingHouseNumber: houseNumber,
         meetingHouseCity:   houseCity,
         meetingHouseKey:    `${houseNumber}_${houseCity}`,
       } : {}),
+      ...(form.source === 'external' ? { meeting_place_city: '', meeting_place_number: '' } : {}),
     });
     if (result?.error) {
       alert('שגיאה בשמירת הלקוח: ' + (result.error.message || 'אנא נסה שוב'));
@@ -157,9 +159,35 @@ export default function AddContactPage() {
 
         {/* מקור */}
         <div style={cardStyle}>
-          {isAchdut ? (
+          {isAchdut && (
             <>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#888', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 14 }}>בית מפגש</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#888', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 14 }}>מקור הלקוח</div>
+              <div style={{ display: 'flex', gap: 12, marginBottom: form.source === 'external' ? 14 : 18 }}>
+                {[{ value: 'meeting_house', label: '🏠 בית מפגש' }, { value: 'external', label: '🌟 מחוץ לבתי המפגש' }].map(({ value, label }) => (
+                  <label key={value} style={{
+                    display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+                    padding: '10px 16px', borderRadius: 12, flex: 1, justifyContent: 'center',
+                    border: `1.5px solid ${form.source === value ? '#6c5ce7' : '#e8e8e8'}`,
+                    background: form.source === value ? '#f0effe' : '#fafafa',
+                    fontWeight: form.source === value ? 700 : 400,
+                    color: form.source === value ? '#6c5ce7' : '#555',
+                    transition: 'all 0.18s ease', fontSize: 13,
+                  }}>
+                    <input type="radio" name="source" value={value} checked={form.source === value}
+                      onChange={() => set('source', value)} style={{ display: 'none' }} />
+                    {label}
+                  </label>
+                ))}
+              </div>
+              {form.source === 'external' && (
+                <div style={{ background: '#f2fbf4', border: '0.5px solid rgba(39,174,96,0.25)', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: '#1f7a45', marginBottom: 4 }}>
+                  🎁 לקוח שהגיע מחוץ לבתי המפגש מזכה בבונוס משתתף חדש
+                </div>
+              )}
+            </>
+          )}
+          {isAchdut && form.source !== 'external' ? (
+            <>
               <label className="form-label">יישוב בית המפגש <span style={{ color: '#e24b4a' }}>*</span></label>
               <input className={`form-input ${errors.meeting_place_city ? 'form-error' : ''}`}
                 placeholder="שם היישוב" value={form.meeting_place_city} onChange={e => set('meeting_place_city', e.target.value)}

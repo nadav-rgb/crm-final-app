@@ -29,19 +29,38 @@ export default function ContactDetail() {
 
   function openEdit() {
     setEditForm({
-      name:  contact.name || '',
-      phone: contact.phone || '',
-      notes: contact.notes || '',
+      name:                 contact.name || '',
+      phone:                contact.phone || '',
+      city:                 contact.city || '',
+      area:                 contact.area || '',
+      gender:               contact.gender || '',
+      age:                  contact.age ?? '',
+      profession:           contact.profession || '',
+      how_met:              contact.how_met || '',
+      high_potential:       !!contact.high_potential,
+      meeting_place_city:   contact.meeting_place_city || '',
+      meeting_place_number: contact.meeting_place_number || '',
+      notes:                contact.notes || '',
     });
     setEditing(true);
   }
 
   async function saveEdit() {
     setBusy(true);
+    const ageNum = Number(editForm.age);
     await updateContact(contact.id, {
-      name:  editForm.name?.trim() || contact.name,
-      phone: editForm.phone?.trim() || null,
-      notes: editForm.notes?.trim() || null,
+      name:                 editForm.name?.trim() || contact.name,
+      phone:                editForm.phone?.trim() || null,
+      city:                 editForm.city?.trim() || null,
+      area:                 editForm.area?.trim() || null,
+      gender:               editForm.gender || null,
+      age:                  editForm.age !== '' && Number.isFinite(ageNum) ? ageNum : null,
+      profession:           editForm.profession?.trim() || null,
+      how_met:              editForm.how_met?.trim() || null,
+      high_potential:       !!editForm.high_potential,
+      meeting_place_city:   editForm.meeting_place_city?.trim() || null,
+      meeting_place_number: editForm.meeting_place_number?.trim() || null,
+      notes:                editForm.notes?.trim() || null,
     });
     setBusy(false);
     setEditing(false);
@@ -165,6 +184,11 @@ export default function ContactDetail() {
                 style={{ flex: 1, textAlign: 'center', textDecoration: 'none' }}>
                 + הוסף קשר
               </Link>
+              <a href={`https://wa.me/${(contact.phone || '').replace(/\D/g, '').replace(/^0/, '972')}`}
+                target="_blank" rel="noopener noreferrer" className="btn"
+                style={{ flex: 1, textAlign: 'center', textDecoration: 'none', color: '#1d8a4e', borderColor: '#25d366' }}>
+                💬 וואטסאפ
+              </a>
               <a href={`tel:${contact.phone}`} className="btn"
                 style={{ flex: 1, textAlign: 'center', textDecoration: 'none', color: '#3b6d11', borderColor: '#639922' }}>
                 📞 התקשר
@@ -255,7 +279,7 @@ export default function ContactDetail() {
       {editing && editForm && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.42)', zIndex: 9000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
           onClick={() => !busy && setEditing(false)}>
-          <div style={{ background: '#fff', borderRadius: 18, padding: 24, maxWidth: 420, width: '100%', boxShadow: '0 24px 80px rgba(0,0,0,0.25)' }}
+          <div style={{ background: '#fff', borderRadius: 18, padding: 24, maxWidth: 460, width: '100%', maxHeight: '86vh', overflowY: 'auto', boxShadow: '0 24px 80px rgba(0,0,0,0.25)' }}
             onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 17, fontWeight: 800, color: '#2d1f5e', marginBottom: 16 }}>עריכת פרטי לקוח</div>
             <label style={{ fontSize: 12, color: '#777' }}>שם</label>
@@ -266,6 +290,63 @@ export default function ContactDetail() {
             <input className="input" value={editForm.phone} inputMode="tel"
               onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))}
               style={{ width: '100%', marginBottom: 12, marginTop: 4 }} />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div>
+                <label style={{ fontSize: 12, color: '#777' }}>יישוב</label>
+                <input className="input" value={editForm.city}
+                  onChange={e => setEditForm(f => ({ ...f, city: e.target.value }))}
+                  style={{ width: '100%', marginBottom: 12, marginTop: 4 }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: '#777' }}>אזור</label>
+                <input className="input" value={editForm.area}
+                  onChange={e => setEditForm(f => ({ ...f, area: e.target.value }))}
+                  style={{ width: '100%', marginBottom: 12, marginTop: 4 }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: '#777' }}>מגדר</label>
+                <select className="input" value={editForm.gender}
+                  onChange={e => setEditForm(f => ({ ...f, gender: e.target.value }))}
+                  style={{ width: '100%', marginBottom: 12, marginTop: 4, fontFamily: 'inherit' }}>
+                  <option value="">—</option>
+                  <option value="male">איש</option>
+                  <option value="female">אשה</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: '#777' }}>גיל</label>
+                <input className="input" type="number" min="1" max="120" value={editForm.age}
+                  onChange={e => setEditForm(f => ({ ...f, age: e.target.value }))}
+                  style={{ width: '100%', marginBottom: 12, marginTop: 4 }} />
+              </div>
+            </div>
+            <label style={{ fontSize: 12, color: '#777' }}>עיסוק מקצועי</label>
+            <input className="input" value={editForm.profession}
+              onChange={e => setEditForm(f => ({ ...f, profession: e.target.value }))}
+              style={{ width: '100%', marginBottom: 12, marginTop: 4 }} />
+            <label style={{ fontSize: 12, color: '#777' }}>מאיפה הכרנו</label>
+            <input className="input" value={editForm.how_met}
+              onChange={e => setEditForm(f => ({ ...f, how_met: e.target.value }))}
+              style={{ width: '100%', marginBottom: 12, marginTop: 4 }} />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div>
+                <label style={{ fontSize: 12, color: '#777' }}>יישוב בית המפגש</label>
+                <input className="input" value={editForm.meeting_place_city}
+                  onChange={e => setEditForm(f => ({ ...f, meeting_place_city: e.target.value }))}
+                  style={{ width: '100%', marginBottom: 12, marginTop: 4 }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: '#777' }}>מספר בית המפגש</label>
+                <input className="input" value={editForm.meeting_place_number}
+                  onChange={e => setEditForm(f => ({ ...f, meeting_place_number: e.target.value }))}
+                  style={{ width: '100%', marginBottom: 12, marginTop: 4 }} />
+              </div>
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#444', marginBottom: 12, cursor: 'pointer' }}>
+              <input type="checkbox" checked={editForm.high_potential}
+                onChange={e => setEditForm(f => ({ ...f, high_potential: e.target.checked }))} />
+              פוטנציאל גבוה
+            </label>
             <label style={{ fontSize: 12, color: '#777' }}>הערות</label>
             <textarea className="input" value={editForm.notes} rows={3}
               onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
