@@ -12,8 +12,6 @@ import { getSupabaseClient } from '../lib/supabaseClient';
 import { getReminderStatus } from '../lib/reminderSchedulerDemo';
 import activists from '../data/activists';
 import users from '../data/users';
-import { registerPushSubscription } from '../lib/pushClient';
-import { initNativePush } from '../lib/nativePush';
 import { authHeader } from '../lib/apiAuth';
 
 const MEETING_NUMBER_LABELS = { 1:'מפגש ראשון 🌱', 2:'מפגש שני 🌿', 3:'מפגש שלישי 🌳', 4:'מפגש רביעי 🏆' };
@@ -144,13 +142,7 @@ export default function BaseMeetingsPage() {
   const [voiceAiSummary, setVoiceAiSummary] = useState(null);
   const [fullReport,     setFullReport]     = useState(null); // מודאל צפייה בדיווח המובנה המלא
 
-  // Register push notifications for this activist (web-push בדפדפן, FCM באפליקציה)
-  useEffect(() => {
-    if (currentUser?.id) {
-      registerPushSubscription(String(currentUser.id));
-      initNativePush(String(currentUser.id));
-    }
-  }, [currentUser?.id]);
+  // רישום push עבר ל-PushRegistrationMount הגלובלי (_app.jsx) — נרשם בכל התחברות, לא רק כאן.
 
   // Schedule reminders for today's pending meetings
   useEffect(() => {

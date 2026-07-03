@@ -4,6 +4,7 @@ import '../styles/components.css';
 import { CrmProvider } from '../lib/CrmStore';
 import { AuthProvider, useAuth } from '../lib/AuthStore';
 import ReminderSchedulerMount from '../components/ReminderSchedulerMount';
+import PushRegistrationMount from '../components/PushRegistrationMount';
 import LoginPage from './login';
 import LandingPage from './landing';
 import { useRouter } from 'next/router';
@@ -24,6 +25,7 @@ export default function App({ Component, pageProps }) {
     <AuthProvider>
       <CrmProvider>
         <ReminderSchedulerMount />
+        <PushRegistrationMount />
         <AppShell Component={Component} pageProps={pageProps} />
       </CrmProvider>
     </AuthProvider>
