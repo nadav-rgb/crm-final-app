@@ -198,7 +198,7 @@ export default function DesktopLayout({ children, title, subtitle, actions, back
             />
           )}
 
-          {!isActivist && (
+          {(!isActivist || (currentUser?.project_ids?.length ?? 0) > 1) && (
             <>
               <div
                 onClick={() => { setOpen(true); setProjectsOpen(p => !p); }}
@@ -214,7 +214,10 @@ export default function DesktopLayout({ children, title, subtitle, actions, back
               </div>
               {open && projectsOpen && (
                 <div style={{ animation: 'fadeIn 0.2s ease' }}>
-                  {PROJECTS_LIST.map(p => {
+                  {(isActivist
+                    ? PROJECTS_LIST.filter(p => currentUser.project_ids.includes(p.id)) // פעיל רב-פרויקטלי: רק הפרויקטים שלו, בלי "כל הפרויקטים"
+                    : PROJECTS_LIST
+                  ).map(p => {
                     const isActive = filterProject === p.id || (p.id === 0 && filterProject === null);
                     return (
                       <div key={p.id} onClick={() => { switchProject(p.id); setOpen(true); setProjectsOpen(false); }}

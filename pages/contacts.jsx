@@ -45,7 +45,11 @@ export default function ContactsPage() {
 
   let visibleContacts = contacts;
   if (can.addContact) {
-    visibleContacts = contacts.filter(c => c.activist_id === currentUser.id);
+    // פעיל רואה את הלקוחות שלו; אם הוא רב-פרויקטלי ובחר פרויקט — מסונן גם לפיו
+    visibleContacts = contacts.filter(c =>
+      c.activist_id === currentUser.id &&
+      (filterProject === null || c.project_id === filterProject)
+    );
   } else if (filterProject !== null) {
     visibleContacts = contacts.filter(c => c.project_id === filterProject);
   }

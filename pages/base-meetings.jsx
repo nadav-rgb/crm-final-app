@@ -131,7 +131,7 @@ export default function BaseMeetingsPage() {
       const act = activists.find(a => Number(a.id) === Number(meeting.activist_id));
       return act?.project_id === currentUser?.project_id;
     }
-    if (['head', 'finance'].includes(currentUser?.role) && Number(currentUser?.project_id) === 2) return true;
+    if (['head', 'finance'].includes(currentUser?.role) && Number(currentUser?.project_id) === 1) return true;
     return Number(meeting.activist_id) === Number(currentUser?.id);
   });
 

@@ -239,8 +239,8 @@ export default function LandingPage() {
             <SideItem icon={<Building2    {...ICO} />} label="בתי מפגש"       open={open} onClick={() => router.push('/meeting-houses')} />
           )}
 
-          {/* פרויקטים — רק למנכ"ל וראש פרויקט */}
-          {!isActivist && (
+          {/* פרויקטים — מנכ"ל/ראש פרויקט, וגם פעיל שחבר ביותר מפרויקט אחד */}
+          {(!isActivist || (currentUser?.project_ids?.length ?? 0) > 1) && (
             <>
               <div
                 onClick={() => { setProjectsOpen(p => !p); if (!open) setOpen(true); }}
@@ -258,7 +258,10 @@ export default function LandingPage() {
                 <span style={{ color: 'rgba(255,255,255,0.75)', fontSize: 14, flex: 1, whiteSpace: 'nowrap', fontWeight: 600, lineHeight: '18px', opacity: open ? 1 : 0, transform: open ? 'none' : 'translateX(6px)', transition: 'opacity 0.22s ease, transform 0.22s ease', pointerEvents: open ? 'auto' : 'none' }}>פרויקט</span>
                 <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, opacity: open ? 1 : 0, transform: open ? 'none' : 'translateX(4px)', transition: 'opacity 0.22s ease, transform 0.22s ease', pointerEvents: open ? 'auto' : 'none' }}>{projectsOpen ? '▲' : '▼'}</span>
               </div>
-              {open && projectsOpen && PROJECTS.map(p => (
+              {open && projectsOpen && (isActivist
+                ? PROJECTS.filter(p => p.id !== 0 && currentUser.project_ids.includes(p.id))
+                : PROJECTS
+              ).map(p => (
                 <div key={p.id} onClick={() => { setSelectedProj(p.id); switchProject(p.id); setProjectsOpen(false); }}
                   style={{
                     padding: '7px 14px', fontSize: 13, cursor: 'pointer',

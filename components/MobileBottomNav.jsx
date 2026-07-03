@@ -15,8 +15,13 @@ const ICO = { size: 20, strokeWidth: 1.8 };
 
 export default function MobileBottomNav() {
   const router = useRouter();
-  const { can, currentUser, logout } = useAuth();
+  const { can, currentUser, logout, activeProject, switchProject, projects } = useAuth();
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // פעיל שחבר ביותר מפרויקט אחד — מקבל מתג מעבר בין הפרויקטים שלו במגירה
+  const myProjects = (currentUser?.project_ids?.length ?? 0) > 1
+    ? projects.filter(p => currentUser.project_ids.includes(p.id))
+    : [];
 
   const mainItems = [
     { href: '/landing',       icon: <Home        size={22} strokeWidth={1.8} />, label: 'בית' },
@@ -87,6 +92,31 @@ export default function MobileBottomNav() {
 
         {/* Items */}
         <div style={{ padding: '8px 0 16px' }}>
+          {/* מעבר פרויקט — לפעיל רב-פרויקטלי */}
+          {myProjects.length > 1 && (
+            <div style={{ padding: '4px 22px 12px', borderBottom: '1px solid rgba(255,255,255,0.07)', marginBottom: 6 }}>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)', fontWeight: 600, marginBottom: 8 }}>פרויקט פעיל</div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {myProjects.map(p => {
+                  const isActive = activeProject?.id === p.id;
+                  return (
+                    <button key={p.id}
+                      onClick={() => { switchProject(p.id); setDrawerOpen(false); }}
+                      style={{
+                        flex: 1, padding: '9px 8px', borderRadius: 10, cursor: 'pointer',
+                        border: `1.5px solid ${isActive ? '#a78bfa' : 'rgba(255,255,255,0.18)'}`,
+                        background: isActive ? 'rgba(167,139,250,0.18)' : 'transparent',
+                        color: isActive ? '#c4b5fd' : 'rgba(255,255,255,0.70)',
+                        fontWeight: isActive ? 700 : 500, fontSize: 13,
+                        fontFamily: 'Rubik, sans-serif', transition: 'all 0.18s ease',
+                      }}>
+                      {isActive ? '◉ ' : '○ '}{p.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           {drawerItems.map(item => {
             const active = router.pathname === item.href ||
               (item.href !== '/landing' && router.pathname.startsWith(item.href));

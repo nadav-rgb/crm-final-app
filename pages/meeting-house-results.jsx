@@ -6,7 +6,7 @@ import { useAuth } from '../lib/AuthStore';
 import { getMeetingHouses } from '../lib/meetingHousesStorage';
 import users from '../data/users';
 
-const achdutActivists = users.filter(u => u.role === 'activist' && u.project_id === 2);
+const achdutActivists = users.filter(u => u.role === 'activist' && u.project_id === 1);
 
 export default function MeetingHouseResultsPage() {
   const { contacts, baseMeetings } = useCrm();
@@ -18,7 +18,7 @@ export default function MeetingHouseResultsPage() {
   }, []);
 
   const achdutContacts = contacts.filter(c =>
-    c.project_id === 2 && c.meeting_place_number && c.meeting_place_city
+    c.project_id === 1 && c.meeting_place_number && c.meeting_place_city
   );
 
   const grouped = {};

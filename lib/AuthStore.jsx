@@ -67,7 +67,7 @@ export function AuthProvider({ children }) {
   async function applyProfile(supabase, authUser) {
     const { data: profile, error } = await supabase
       .from('profiles')
-      .select('activist_code, name, role, project_id')
+      .select('activist_code, name, role, project_id, project_ids')
       .eq('id', authUser.id)
       .single();
     if (error || !profile) return false;
@@ -77,6 +77,10 @@ export function AuthProvider({ children }) {
       name:       profile.name,
       role:       profile.role,
       project_id: profile.project_id,
+      // כל הפרויקטים שהמשתמש חבר בהם (migration 0009). fallback: הפרויקט הראשי בלבד.
+      project_ids: Array.isArray(profile.project_ids) && profile.project_ids.length > 0
+        ? profile.project_ids.map(Number)
+        : (profile.project_id ? [Number(profile.project_id)] : []),
       email:      authUser.email,
     };
     setCurrentUser(user);
