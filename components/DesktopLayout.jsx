@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useAuth } from '../lib/AuthStore';
 import { useCrm } from '../lib/CrmStore';
 import MobileBottomNav from './MobileBottomNav';
+import { inAnyPaidProject } from '../lib/projectUtils';
 import { getNotificationsForUser, markNotificationAsRead, markAllNotificationsAsRead } from '../lib/notificationDemo';
 import {
   Home, User, Users, Calendar, UserPlus,
@@ -148,10 +149,10 @@ export default function DesktopLayout({ children, title, subtitle, actions, back
             <NavItem href="/"             icon={<User          {...ICO} />} label="אזור אישי"           open={open} active={router.pathname === '/'}               highlight onActivate={() => setOpen(true)} />
           )}
           <NavItem href="/contacts"       icon={<Users         {...ICO} />} label="לקוחות"              open={open} active={router.pathname === '/contacts'}        onActivate={() => setOpen(true)} />
-          {can.addContact && currentUser?.project_id === 1 && (
+          {can.addContact && inAnyPaidProject(currentUser) && (
             <NavItem href="/my-dashboard" icon={<LayoutDashboard {...ICO} />} label="הדשבורד שלי"        open={open} active={router.pathname === '/my-dashboard'}     onActivate={() => setOpen(true)} />
           )}
-          {can.addContact && currentUser?.project_id === 1 && (
+          {can.addContact && inAnyPaidProject(currentUser) && (
             <NavItem href="/today"        icon={<Calendar      {...ICO} />} label="פעולות היום"         open={open} active={router.pathname === '/today'}           onActivate={() => setOpen(true)} />
           )}
           {can.addContact && (

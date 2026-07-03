@@ -1,16 +1,18 @@
-// pages/payments.jsx — עמוד תשלומים (אחדות יהודית — רכז בלבד)
+// pages/payments.jsx — עמוד תשלומים (רכז/הנהלה; פרויקטים בתשלום: אחדות יהודית + נעים להכיר)
 import { useState, useMemo } from 'react';
 import DesktopLayout from '../components/DesktopLayout';
 import { useCrm } from '../lib/CrmStore';
 import { useAuth } from '../lib/AuthStore';
 import { calcMonthlyPayment } from '../lib/paymentCalc';
+import { inProject, inAnyPaidProject } from '../lib/projectUtils';
 // activists מגיע מ-CrmStore (Supabase) — לא מקובץ סטטי, כך ה-IDs תואמים ל-activist_id בקשרים
 
 const MONTH_NAMES = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+const PROJECT_LABELS = { 1: 'אחדות יהודית', 2: 'נעים להכיר' };
 
 export default function PaymentsPage() {
-  const { contacts, interactions, mitzvotBonuses, newParticipantBonuses, activists, paymentConfig } = useCrm();
-  const { currentUser, can } = useAuth();
+  const { contacts, interactions, mitzvotBonuses, newParticipantBonuses, activists, paymentConfig, expenses } = useCrm();
+  const { currentUser, can, filterProject } = useAuth();
   const [viewMode, setViewMode] = useState('grid');
   const [selectedReport, setSelectedReport] = useState(null);
 
@@ -30,22 +32,32 @@ export default function PaymentsPage() {
   const month = now.getMonth();
   const year  = now.getFullYear();
 
-  // פעילי אחדות יהודית — project_id=1 ב-Supabase, role מ-activist_directory
-  const achdutActivists = activists.filter(a => a.project_id === 1 && a.role !== 'manager' && a.role !== 'coord' && a.role !== 'head' && a.role !== 'ceo' && a.role !== 'finance');
+  // פעילים בפרויקטים בתשלום (אחדות/נעים להכיר), מסוננים לפי הפרויקט הנבחר בסרגל.
+  // פעיל דו-פרויקטלי מופיע פעם אחת — הסכום שלו מאוחד משני הפרויקטים (תקרות משותפות).
+  const achdutActivists = activists.filter(a =>
+    a.role === 'activist' && inAnyPaidProject(a) &&
+    (filterProject === null || inProject(a, filterProject))
+  );
 
-  // חישוב תשלומים לכל פעיל
+  const monthStartIso = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+
+  // חישוב תשלומים לכל פעיל (+ החזר הוצאות החודש — מדווח בעמוד "דיווח הוצאות")
   const paymentData = useMemo(() => achdutActivists.map(activist => {
     const myMitzvotBonuses = mitzvotBonuses.filter(b => b.activist_id === activist.id && b.month === `${year}-${month}`);
     const myNewBonuses     = newParticipantBonuses.filter(b => b.activist_id === activist.id && b.month === `${year}-${month}`);
     const result = calcMonthlyPayment(activist.id, interactions, contacts, myMitzvotBonuses, myNewBonuses, paymentConfig);
-    return { activist, ...result };
-  }), [achdutActivists, interactions, contacts, mitzvotBonuses, newParticipantBonuses, paymentConfig]);
+    const expensesTotal = expenses
+      .filter(x => Number(x.activist_id) === Number(activist.id) && x.date >= monthStartIso)
+      .reduce((s, x) => s + Number(x.amount || 0), 0);
+    return { activist, ...result, expensesTotal, grandTotal: result.total + expensesTotal };
+  }), [achdutActivists, interactions, contacts, mitzvotBonuses, newParticipantBonuses, paymentConfig, expenses]);
 
-  const totalAll = paymentData.reduce((s, d) => s + d.total, 0);
+  const totalAll = paymentData.reduce((s, d) => s + d.grandTotal, 0);
   const currentMonthName = MONTH_NAMES[month];
+  const scopeLabel = filterProject === null ? 'כל הפרויקטים' : (PROJECT_LABELS[filterProject] ?? 'פרויקטים בתשלום');
 
   return (
-    <DesktopLayout title="דוחות תשלום פעילים" subtitle={`אחדות יהודית · ${currentMonthName} ${year}`}>
+    <DesktopLayout title="דוחות תשלום פעילים" subtitle={`${scopeLabel} · ${currentMonthName} ${year}`}>
 
       {/* סיכום כולל */}
       <div style={{ background:'linear-gradient(135deg,#6c5ce7,#a29bfe)', borderRadius:16, padding:'20px 24px', marginBottom:20, color:'#fff', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
@@ -68,15 +80,18 @@ export default function PaymentsPage() {
       {/* תצוגת ריבועים */}
       {viewMode === 'grid' && (
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(220px,1fr))', gap:12, marginBottom:24 }}>
-          {paymentData.map(({ activist, total, breakdown, unpaid }) => (
+          {paymentData.map(({ activist, total, breakdown, unpaid, expensesTotal, grandTotal }) => (
             <div key={activist.id} style={{ background:'#fffaf5', borderRadius:14, padding:'16px', border:'0.5px solid rgba(0,0,0,0.07)', boxShadow:'0 1px 4px rgba(0,0,0,0.04)', cursor:'pointer', transition:'all 0.18s' }}
               onMouseEnter={e=>{ e.currentTarget.style.transform='translateY(-2px)'; e.currentTarget.style.boxShadow='0 4px 16px rgba(0,0,0,0.09)'; }}
               onMouseLeave={e=>{ e.currentTarget.style.transform='translateY(0)'; e.currentTarget.style.boxShadow='0 1px 4px rgba(0,0,0,0.04)'; }}
-              onClick={()=>setSelectedReport(selectedReport?.activist.id===activist.id?null:{activist,total,breakdown,unpaid})}
+              onClick={()=>setSelectedReport(selectedReport?.activist.id===activist.id?null:{activist,total,breakdown,unpaid,expensesTotal,grandTotal})}
             >
               <div style={{ fontSize:15, fontWeight:700, marginBottom:4 }}>{activist.name}</div>
               <div style={{ fontSize:12, color:'#aaa', marginBottom:12 }}>{breakdown.filter(b=>b.type==='קשר').length} קשרים מזכים</div>
-              <div style={{ fontSize:28, fontWeight:700, color:'#6c5ce7' }}>{total.toLocaleString()} ₪</div>
+              <div style={{ fontSize:28, fontWeight:700, color:'#6c5ce7' }}>{grandTotal.toLocaleString()} ₪</div>
+              {expensesTotal > 0 && (
+                <div style={{ fontSize:11.5, color:'#1f7a45', marginTop:4, fontWeight:600 }}>🧾 כולל החזר הוצאות {expensesTotal.toLocaleString()} ₪</div>
+              )}
             </div>
           ))}
         </div>
@@ -85,18 +100,18 @@ export default function PaymentsPage() {
       {/* תצוגת רשימה */}
       {viewMode === 'list' && (
         <div style={{ background:'#fff', borderRadius:16, border:'0.5px solid rgba(0,0,0,0.07)', overflow:'hidden', marginBottom:24 }}>
-          {paymentData.map(({ activist, total, breakdown, unpaid }, idx) => (
+          {paymentData.map(({ activist, total, breakdown, unpaid, expensesTotal, grandTotal }, idx) => (
             <div key={activist.id}
               style={{ display:'flex', alignItems:'center', padding:'13px 18px', borderBottom:idx===paymentData.length-1?'none':'0.5px solid #f5f5f5', cursor:'pointer', transition:'background 0.15s' }}
               onMouseEnter={e=>e.currentTarget.style.background='#fafafa'}
               onMouseLeave={e=>e.currentTarget.style.background='transparent'}
-              onClick={()=>setSelectedReport(selectedReport?.activist.id===activist.id?null:{activist,total,breakdown,unpaid})}
+              onClick={()=>setSelectedReport(selectedReport?.activist.id===activist.id?null:{activist,total,breakdown,unpaid,expensesTotal,grandTotal})}
             >
               <div style={{ flex:1 }}>
                 <div style={{ fontSize:14, fontWeight:700 }}>{activist.name}</div>
-                <div style={{ fontSize:12, color:'#aaa' }}>{breakdown.length} קשרים מזכים</div>
+                <div style={{ fontSize:12, color:'#aaa' }}>{breakdown.length} קשרים מזכים{expensesTotal > 0 ? ` · 🧾 הוצאות ${expensesTotal.toLocaleString()} ₪` : ''}</div>
               </div>
-              <div style={{ fontSize:22, fontWeight:700, color:'#6c5ce7' }}>{total.toLocaleString()} ₪</div>
+              <div style={{ fontSize:22, fontWeight:700, color:'#6c5ce7' }}>{grandTotal.toLocaleString()} ₪</div>
             </div>
           ))}
           {/* שורה תחתונה — סיכום */}
@@ -120,9 +135,15 @@ export default function PaymentsPage() {
               <div style={{ fontWeight:700, color:'#6c5ce7' }}>{item.amount} ₪</div>
             </div>
           ))}
+          {selectedReport.expensesTotal > 0 && (
+            <div style={{ display:'flex', justifyContent:'space-between', padding:'8px 0', borderBottom:'0.5px solid #f0f0f0', fontSize:13 }}>
+              <div><span style={{ fontWeight:700 }}>🧾 החזר הוצאות</span><span style={{ color:'#aaa', marginRight:8 }}>— מדיווחי הפעיל החודש</span></div>
+              <div style={{ fontWeight:700, color:'#1f7a45' }}>{selectedReport.expensesTotal.toLocaleString()} ₪</div>
+            </div>
+          )}
           <div style={{ display:'flex', justifyContent:'space-between', marginTop:10, fontWeight:700, fontSize:15 }}>
             <span>סה"כ</span>
-            <span style={{ color:'#6c5ce7' }}>{selectedReport.total.toLocaleString()} ₪</span>
+            <span style={{ color:'#6c5ce7' }}>{(selectedReport.grandTotal ?? selectedReport.total).toLocaleString()} ₪</span>
           </div>
 
           {/* קשרים שלא זוכו + הסיבה — שקיפות (לא משפיע על הסכום) */}
@@ -151,9 +172,10 @@ export default function PaymentsPage() {
         <button
           onClick={() => {
             const lines = [`דוח פעילות לתשלום — ${currentMonthName} ${year}`, '='.repeat(40), ''];
-            paymentData.forEach(({ activist, total, breakdown, unpaid }) => {
-              lines.push(`${activist.name}: ${total.toLocaleString()} ₪`);
+            paymentData.forEach(({ activist, total, breakdown, unpaid, expensesTotal, grandTotal }) => {
+              lines.push(`${activist.name}: ${grandTotal.toLocaleString()} ₪${expensesTotal > 0 ? ` (שכר ${total.toLocaleString()} + הוצאות ${expensesTotal.toLocaleString()})` : ''}`);
               breakdown.forEach(b => lines.push(`  • ${b.contactName} — ${b.desc}: ${b.amount} ₪`));
+              if (expensesTotal > 0) lines.push(`  • החזר הוצאות: ${expensesTotal.toLocaleString()} ₪`);
               if (unpaid?.length) {
                 lines.push(`  קשרים שלא זוכו:`);
                 unpaid.forEach(u => lines.push(`    ✗ ${u.contactName} — ${u.desc} (${u.date}): ${u.reason}`));

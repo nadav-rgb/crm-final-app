@@ -2,6 +2,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useAuth } from '../lib/AuthStore';
+import { inAnyPaidProject } from '../lib/projectUtils';
 import {
   Home, Users, ClipboardList, Bell,
   MoreHorizontal, User, Calendar, UserPlus,
@@ -34,8 +35,8 @@ export default function MobileBottomNav() {
 
   const drawerItems = [
     can.seeSensitiveData && { href: '/',                          icon: <User         {...ICO} />, label: 'אזור אישי' },
-    (can.addContact && currentUser?.project_id === 1) && { href: '/my-dashboard', icon: <LayoutDashboard {...ICO} />, label: 'הדשבורד שלי' },
-    (can.addContact && currentUser?.project_id === 1) && { href: '/today', icon: <Calendar {...ICO} />, label: 'פעולות היום' },
+    (can.addContact && inAnyPaidProject(currentUser)) && { href: '/my-dashboard', icon: <LayoutDashboard {...ICO} />, label: 'הדשבורד שלי' },
+    (can.addContact && inAnyPaidProject(currentUser)) && { href: '/today', icon: <Calendar {...ICO} />, label: 'פעולות היום' },
     can.addContact && { href: '/contacts/add',                    icon: <UserPlus     {...ICO} />, label: 'הוסף לקוח' },
     can.seeActivists && { href: '/activists',                     icon: <Star         {...ICO} />, label: 'פעילים' },
     can.seePayments && { href: '/payments',                       icon: <CreditCard   {...ICO} />, label: 'דוחות תשלום' },

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import CONFIG from '../../../data/config';
 import { useCrm } from '../../../lib/CrmStore';
 import { useAuth } from '../../../lib/AuthStore';
-import { calcInteractionPayment } from '../../../lib/paymentCalc';
+import { calcInteractionPayment, PAID_PROJECT_IDS } from '../../../lib/paymentCalc';
 import DesktopLayout from '../../../components/DesktopLayout';
 import { summarizeInteractionText } from '../../../lib/aiService';
 import { createPaymentInteractionNotifications, createDemoNotification } from '../../../lib/notificationDemo';
@@ -51,8 +51,9 @@ export default function AddInteractionPage() {
     );
   }
 
-  // אחדות יהודית = project_id 1 ב-Supabase (תיקון מקומי בלבד)
-  const isAchdut = activeProject?.id === 1 || contact.project_id === 1;
+  // פרויקט בתשלום: אחדות יהודית (1) או נעים להכיר (2) — כללי תשלום זהים, תקרות משותפות.
+  // השם isAchdut נשמר היסטורית; המשמעות בפועל = "פרויקט מזכה בתשלום".
+  const isAchdut = PAID_PROJECT_IDS.includes(activeProject?.id) || PAID_PROJECT_IDS.includes(contact.project_id);
 
   // משך מזכה — נגזר מהקונפיג (MIN_DURATION+1) ולא מספר קבוע, כדי שיתאים תמיד לסף שהמנוע אוכף.
   const MIN_DUR = paymentConfig.MIN_DURATION ?? 15;

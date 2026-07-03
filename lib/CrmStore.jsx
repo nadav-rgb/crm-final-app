@@ -149,6 +149,7 @@ export function CrmProvider({ children }) {
   const [messages,     setMessages]     = useState(_messages);
   const [mitzvotBonuses, setMitzvotBonuses] = useState([]);
   const [baseMeetings, setBaseMeetings] = useState([]); // דיווחי מפגשי בסיס — מקור האמת: Supabase
+  const [expenses,     setExpenses]     = useState([]); // דיווחי הוצאות — מקור האמת: Supabase (זורם לדשבורד+תשלומים)
   const [paymentConfig, setPaymentConfig] = useState(DEFAULT_CONFIG); // תעריפים/יעדים/בונוסים מ-payment_config (DB)
 
   // בונוס "הבאת משתתף חדש" — נגזר מנתוני הלקוחות ולא מ-state (state התאפס בכל רענון
@@ -225,6 +226,21 @@ export function CrmProvider({ children }) {
           status:     'active',
         })));
       }
+    })();
+    return () => { active = false; };
+  }, [currentUser, authLoading]);
+
+  // טעינת דיווחי הוצאות — אותה תבנית auth-gated. זורמים ל"דשבורד שלי" ולעמוד התשלומים.
+  useEffect(() => {
+    if (authLoading) return;
+    if (!currentUser) { setExpenses([]); return; }
+    let active = true;
+    (async () => {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase.from('expenses').select('*');
+      if (!active) return;
+      if (error) { console.error('Failed to load expenses', error); return; }
+      if (Array.isArray(data)) setExpenses(data);
     })();
     return () => { active = false; };
   }, [currentUser, authLoading]);
@@ -442,7 +458,7 @@ export function CrmProvider({ children }) {
   return (
     <CrmContext.Provider value={{
       contacts, interactions, activists, messages, baseMeetings, BASE_MEETING_QUESTIONS,
-      mitzvotBonuses, newParticipantBonuses, paymentConfig,
+      mitzvotBonuses, newParticipantBonuses, paymentConfig, expenses,
       addInteraction, addContact, updateContact, deleteContact, updateNextAction, updateMitzvot, addMessage, submitBaseMeeting, upsertBaseMeetingReports, advanceBaseMeetingReminders,
       PROJECT_NAMES,
     }}>

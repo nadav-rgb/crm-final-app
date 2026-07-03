@@ -11,7 +11,7 @@ import {
   MessageSquare, Building2, FolderOpen,
 } from 'lucide-react';
 import MobileBottomNav from '../components/MobileBottomNav';
-import { inProject } from '../lib/projectUtils';
+import { inProject, inAnyPaidProject } from '../lib/projectUtils';
 
 const TORAH_DEFAULT = 'וְאָהַבְתָּ לְרֵעֲךָ כָּמוֹךָ — זה כלל גדול בתורה. כל מי שמקרב יהודי אחד לאביו שבשמים, כאילו קיים עולם מלא. השבוע נזכור שכל שיחה, כל פגישה, כל חיוך — הם צינור להאיר את עולמם של אחינו.';
 
@@ -216,7 +216,7 @@ export default function LandingPage() {
           )}
           <SideItem icon={<Users {...ICO} />} label="לקוחות" open={open} onClick={() => router.push('/contacts')} />
 
-          {can.addContact && currentUser?.project_id === 1 && (
+          {can.addContact && inAnyPaidProject(currentUser) && (
             <SideItem icon={<Calendar     {...ICO} />} label="פעולות היום"    open={open} onClick={() => router.push('/today')} />
           )}
           {can.addContact && (

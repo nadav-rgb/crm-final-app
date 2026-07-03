@@ -41,7 +41,7 @@ function CounterCard({ counter }) {
 }
 
 export default function MyDashboardPage() {
-  const { interactions, contacts, mitzvotBonuses, newParticipantBonuses, paymentConfig } = useCrm();
+  const { interactions, contacts, mitzvotBonuses, newParticipantBonuses, paymentConfig, expenses } = useCrm();
   const { currentUser } = useAuth();
 
   const now = new Date();
@@ -60,6 +60,13 @@ export default function MyDashboardPage() {
 
   const { counters, total, salaryByType, bonuses, unpaid } = data;
 
+  // החזר הוצאות החודש — מדיווחי הפעיל בעמוד "דיווח הוצאות"
+  const monthStartIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  const myExpenses = expenses
+    .filter(x => Number(x.activist_id) === Number(currentUser?.id) && x.date >= monthStartIso)
+    .reduce((s, x) => s + Number(x.amount || 0), 0);
+  const grandTotal = total + myExpenses;
+
   return (
     <DesktopLayout title="הדשבורד שלי" subtitle={`סיכום חודשי · ${monthName} ${now.getFullYear()}`}>
 
@@ -72,11 +79,11 @@ export default function MyDashboardPage() {
 
       {/* ווידג'ט שכר */}
       <div style={{ background: 'linear-gradient(135deg,#2a1870,#3a249b)', borderRadius: 20, padding: '24px 26px', color: '#fff', marginBottom: 24 }}>
-        <div style={{ fontSize: 14, opacity: 0.85, marginBottom: 4 }}>סה"כ שכר נצבר החודש (משוער)</div>
-        <div style={{ fontSize: 42, fontWeight: 800, letterSpacing: '-0.02em', marginBottom: 18 }}>{total.toLocaleString()} ₪</div>
+        <div style={{ fontSize: 14, opacity: 0.85, marginBottom: 4 }}>סה"כ לתשלום החודש (משוער{myExpenses > 0 ? ', כולל החזר הוצאות' : ''})</div>
+        <div style={{ fontSize: 42, fontWeight: 800, letterSpacing: '-0.02em', marginBottom: 18 }}>{grandTotal.toLocaleString()} ₪</div>
 
         <div style={{ background: 'rgba(255,255,255,0.10)', borderRadius: 14, padding: '14px 16px' }}>
-          {salaryByType.length === 0 && bonuses.length === 0 ? (
+          {salaryByType.length === 0 && bonuses.length === 0 && myExpenses === 0 ? (
             <div style={{ fontSize: 13, opacity: 0.8 }}>טרם נצברו קשרים מזכים החודש.</div>
           ) : (
             <>
@@ -92,6 +99,12 @@ export default function MyDashboardPage() {
                   <span style={{ fontWeight: 700 }}>{b.amount.toLocaleString()} ₪</span>
                 </div>
               ))}
+              {myExpenses > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13.5, padding: '5px 0', color: '#a8e6c1' }}>
+                  <span>🧾 החזר הוצאות</span>
+                  <span style={{ fontWeight: 700 }}>{myExpenses.toLocaleString()} ₪</span>
+                </div>
+              )}
             </>
           )}
         </div>
