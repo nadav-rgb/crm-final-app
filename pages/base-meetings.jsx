@@ -10,8 +10,6 @@ import { getMeetingHouses } from '../lib/meetingHousesStorage';
 import { buildBaseMeetingsFromHouses } from '../lib/baseMeetingUtils';
 import { getSupabaseClient } from '../lib/supabaseClient';
 import { getReminderStatus } from '../lib/reminderSchedulerDemo';
-import activists from '../data/activists';
-import users from '../data/users';
 import { authHeader } from '../lib/apiAuth';
 
 const MEETING_NUMBER_LABELS = { 1:'מפגש ראשון 🌱', 2:'מפגש שני 🌿', 3:'מפגש שלישי 🌳', 4:'מפגש רביעי 🏆' };
@@ -91,7 +89,7 @@ function structuredToText(sa) {
 }
 
 export default function BaseMeetingsPage() {
-  const { baseMeetings, submitBaseMeeting } = useCrm();
+  const { baseMeetings, submitBaseMeeting, activists } = useCrm();
   const { currentUser } = useAuth();
   const [houses, setHouses] = useState([]);
 
@@ -144,13 +142,12 @@ export default function BaseMeetingsPage() {
 
   // רישום push עבר ל-PushRegistrationMount הגלובלי (_app.jsx) — נרשם בכל התחברות, לא רק כאן.
 
-  // Schedule reminders for today's pending meetings
+  // Schedule reminders for today's pending meetings — הרכז מחושב בצד השרת (ראה api/reminders/schedule).
   useEffect(() => {
     if (!currentUser?.id || visibleMeetings.length === 0) return;
     const today = new Date().toISOString().split('T')[0];
     const pending = visibleMeetings.filter(m => !m.submitted && m.date === today);
     if (!pending.length) return;
-    const coordinator = users.find(u => u.role === 'coord' && u.project_id === currentUser.project_id);
     pending.forEach(async meeting => {
       fetch('/api/reminders/schedule', {
         method: 'POST',
@@ -158,7 +155,6 @@ export default function BaseMeetingsPage() {
         body: JSON.stringify({
           meetingId: String(meeting.id),
           activistId: String(meeting.activist_id || currentUser.id),
-          coordinatorId: coordinator ? String(coordinator.id) : null,
           meetingDate: today,
         }),
       }).catch(() => {});

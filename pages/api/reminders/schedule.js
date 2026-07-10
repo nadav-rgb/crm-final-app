@@ -19,7 +19,7 @@ export default async function handler(req, res) {
   const auth = await requireAuth(req);
   if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
 
-  const { meetingId, activistId, coordinatorId, meetingDate } = req.body;
+  const { meetingId, activistId, meetingDate } = req.body;
   if (!meetingId || !activistId || !meetingDate) {
     return res.status(400).json({ error: 'Missing fields' });
   }
@@ -39,7 +39,19 @@ export default async function handler(req, res) {
   }
 
   const [year, month, day] = meetingDate.split('-').map(Number);
-  const coordId = coordinatorId || 'none';
+
+  // הרכז מחושב בצד השרת (service role) לפי הפרויקט של הפעיל, לא מתקבל מהלקוח —
+  // לקוח מסוג "פעיל" כבר לא טוען את רשימת הפעילים המלאה (בידוד נתונים), כך שלא יכול לדעת מי הרכז שלו.
+  let coordId = 'none';
+  const { data: activistProfile } = await supabase
+    .from('profiles').select('project_id').eq('activist_code', activistId).maybeSingle();
+  if (activistProfile?.project_id) {
+    const { data: coord } = await supabase
+      .from('profiles').select('activist_code')
+      .eq('role', 'coord').eq('project_id', activistProfile.project_id)
+      .limit(1).maybeSingle();
+    if (coord) coordId = String(coord.activist_code);
+  }
 
   const base = { meeting_id: meetingId, activist_id: activistId, coordinator_id: coordId, meeting_date: meetingDate };
 

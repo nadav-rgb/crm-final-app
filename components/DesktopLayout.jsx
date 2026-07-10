@@ -60,6 +60,7 @@ export default function DesktopLayout({ children, title, subtitle, actions, back
   }, [router.pathname]);
 
   const isActivist = currentUser?.role === 'activist';
+  const isCeo      = currentUser?.role === 'ceo';
   const roleLabels = { ceo: 'מנכ"ל', head: 'ראש פרויקט', coord: 'רכז', activist: 'פעיל', finance: 'בעל גישה לתשלומים' };
 
   const currentProjName = isActivist
@@ -208,7 +209,7 @@ export default function DesktopLayout({ children, title, subtitle, actions, back
             />
           )}
 
-          {(!isActivist || (currentUser?.project_ids?.length ?? 0) > 1) && (
+          {(isCeo || (currentUser?.project_ids?.length ?? 0) > 1) && (
             <>
               <div
                 onClick={() => { setOpen(true); setProjectsOpen(p => !p); }}
@@ -224,9 +225,9 @@ export default function DesktopLayout({ children, title, subtitle, actions, back
               </div>
               {open && projectsOpen && (
                 <div style={{ animation: 'fadeIn 0.2s ease' }}>
-                  {(isActivist
-                    ? PROJECTS_LIST.filter(p => currentUser.project_ids.includes(p.id)) // פעיל רב-פרויקטלי: רק הפרויקטים שלו, בלי "כל הפרויקטים"
-                    : PROJECTS_LIST
+                  {(isCeo
+                    ? PROJECTS_LIST
+                    : PROJECTS_LIST.filter(p => p.id !== 0 && (currentUser?.project_ids || []).includes(p.id)) // רק הפרויקטים שהמשתמש חבר בהם, בלי "כל הפרויקטים"
                   ).map(p => {
                     const isActive = filterProject === p.id || (p.id === 0 && filterProject === null);
                     return (

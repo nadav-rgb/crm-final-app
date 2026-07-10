@@ -37,7 +37,7 @@ export default function LandingPage() {
   const router = useRouter();
 
   const isActivist = currentUser?.role === 'activist';
-  const isCeo      = currentUser?.role === 'ceo' || currentUser?.role === 'head';
+  const isCeo      = currentUser?.role === 'ceo';
 
   const [open,              setOpen]             = useState(false);
   const [projectsOpen,      setProjectsOpen]     = useState(false);
@@ -61,12 +61,9 @@ export default function LandingPage() {
   const notifications       = getNotificationsForUser(currentUser, baseMeetings);
   const unreadNotifications = notifications.filter(n => !n.read).length;
 
-  // פעילות אחרונה — פעיל רואה רק את הפרויקט שלו, מנכ"ל לפי פרויקט נבחר
+  // פעילות אחרונה — פעיל רואה רק את הפעילות שלו (לא של פעילים אחרים באותו פרויקט), מנכ"ל/רכז לפי פרויקט נבחר
   const filteredInteractions = isActivist
-    ? interactions.filter(i => {
-        const contact = contacts.find(c => c.id === i.contact_id);
-        return contact?.project_id === currentUser?.project_id;
-      })
+    ? interactions.filter(i => i.activist_id === currentUser?.id)
     : selectedProj === 0 ? interactions : interactions.filter(i => {
         const contact = contacts.find(c => c.id === i.contact_id);
         return contact?.project_id === selectedProj;
@@ -114,10 +111,16 @@ export default function LandingPage() {
   const outcomeColor = { 'חיובי': '#3b6d11', 'שלילי': '#a32d2d', 'ניטרלי': '#8b6d3f', 'ממתין למענה': '#854f0b' };
   const outcomeBg    = { 'חיובי': '#eaf3de', 'שלילי': '#fcebeb', 'ניטרלי': '#fdf6ef', 'ממתין למענה': '#faeeda' };
 
+  // "פעילים פעילים" חושף מידע על פעילים אחרים — רק למי שרשאי לראות את כלל הפעילים (רכז ומעלה).
+  const thisMonthKey = new Date().toISOString().slice(0, 7);
+  const activistScopedTile = can.seeActivists
+    ? { num: activists.filter(a => a.role === 'activist' && a.status === 'active' && inProject(a, selectedProj)).length, label: 'פעילים פעילים', color: '#c47a2e', rgb: '196,122,46', href: '/activists' }
+    : { num: filteredInteractions.filter(i => i.date?.slice(0, 7) === thisMonthKey).length, label: 'קשרים החודש', color: '#c47a2e', rgb: '196,122,46', href: '/contacts' };
+
   const stats = [
     { num: filteredContacts.length, label: 'סה"כ לקוחות', color: '#c47a2e', rgb: '196,122,46', href: '/contacts' },
     { num: filteredInteractions.length, label: 'סה"כ קשרים', color: '#8b6d3f', rgb: '139,109,63', href: '/contacts' },
-    { num: activists.filter(a => a.role === 'activist' && a.status === 'active' && inProject(a, selectedProj)).length, label: 'פעילים פעילים', color: '#c47a2e', rgb: '196,122,46', href: can.seeActivists ? '/activists' : null },
+    activistScopedTile,
     { num: filteredContacts.filter(c => c.days_since_last_contact >= 30).length, label: 'על סף ניתוק', color: '#a32d2d', rgb: '163,45,45', href: '/contacts' },
   ];
 
@@ -243,8 +246,8 @@ export default function LandingPage() {
             <SideItem icon={<Building2    {...ICO} />} label="בתי מפגש"       open={open} onClick={() => router.push('/meeting-houses')} />
           )}
 
-          {/* פרויקטים — מנכ"ל/ראש פרויקט, וגם פעיל שחבר ביותר מפרויקט אחד */}
-          {(!isActivist || (currentUser?.project_ids?.length ?? 0) > 1) && (
+          {/* פרויקטים — מנכ"ל (רואה הכל), וכל משתמש אחר (כולל רכז) רק אם הוא חבר ביותר מפרויקט אחד */}
+          {(isCeo || (currentUser?.project_ids?.length ?? 0) > 1) && (
             <>
               <div
                 onClick={() => { setProjectsOpen(p => !p); if (!open) setOpen(true); }}
@@ -262,9 +265,9 @@ export default function LandingPage() {
                 <span style={{ color: 'rgba(255,255,255,0.75)', fontSize: 14, flex: 1, whiteSpace: 'nowrap', fontWeight: 600, lineHeight: '18px', opacity: open ? 1 : 0, transform: open ? 'none' : 'translateX(6px)', transition: 'opacity 0.22s ease, transform 0.22s ease', pointerEvents: open ? 'auto' : 'none' }}>פרויקט</span>
                 <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 10, opacity: open ? 1 : 0, transform: open ? 'none' : 'translateX(4px)', transition: 'opacity 0.22s ease, transform 0.22s ease', pointerEvents: open ? 'auto' : 'none' }}>{projectsOpen ? '▲' : '▼'}</span>
               </div>
-              {open && projectsOpen && (isActivist
-                ? PROJECTS.filter(p => p.id !== 0 && currentUser.project_ids.includes(p.id))
-                : PROJECTS
+              {open && projectsOpen && (isCeo
+                ? PROJECTS
+                : PROJECTS.filter(p => p.id !== 0 && (currentUser?.project_ids || []).includes(p.id))
               ).map(p => (
                 <div key={p.id} onClick={() => { setSelectedProj(p.id); switchProject(p.id); setProjectsOpen(false); }}
                   style={{

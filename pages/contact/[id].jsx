@@ -2,7 +2,6 @@
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import CONFIG from '../../data/config';
-import activists from '../../data/activists';
 import getReminders from '../../lib/getReminders';
 import StatusBadge from '../../components/StatusBadge';
 import DesktopLayout from '../../components/DesktopLayout';
@@ -15,17 +14,23 @@ import { useAuth } from '../../lib/AuthStore';
 export default function ContactDetail() {
   const router = useRouter();
   const { id, from, activistId, view, contactId: fromContactId } = router.query;
-  const { contacts, interactions, updateContact, deleteContact, tours } = useCrm();
-  const { can, activeProject } = useAuth();
+  const { contacts, interactions, activists, tours, updateContact, deleteContact, updateInteraction, deleteInteraction } = useCrm();
+  const { can, activeProject, currentUser } = useAuth();
 
   // F1 — state לעריכה/מחיקה. חייב להיות לפני כל early return (כללי hooks).
   const [editing, setEditing]     = useState(false);
   const [editForm, setEditForm]   = useState(null);
   const [confirmDel, setConfirmDel] = useState(false);
   const [busy, setBusy]           = useState(false);
+  const [editingInterId, setEditingInterId] = useState(null);
+  const [interForm, setInterForm]           = useState(null);
+  const [confirmDelInterId, setConfirmDelInterId] = useState(null);
 
   const contact = contacts.find(c => c.id === Number(id));
   if (!contact) return <DesktopLayout title="לקוח"><div>לקוח לא נמצא</div></DesktopLayout>;
+
+  // בעלות — פעיל רואה/עורך רק לקוח ששייך לו; רכז/ראש-פרויקט/מנכ"ל מוגבלים לפי פרויקט (isOwnProject).
+  const isOwner = currentUser?.role !== 'activist' || contact.activist_id === currentUser?.id;
 
   function openEdit() {
     setEditForm({
@@ -40,6 +45,7 @@ export default function ContactDetail() {
       high_potential:       !!contact.high_potential,
       meeting_place_city:   contact.meeting_place_city || '',
       meeting_place_number: contact.meeting_place_number || '',
+      tour_id:              contact.tour_id || '',
       notes:                contact.notes || '',
     });
     setEditing(true);
@@ -60,6 +66,7 @@ export default function ContactDetail() {
       high_potential:       !!editForm.high_potential,
       meeting_place_city:   editForm.meeting_place_city?.trim() || null,
       meeting_place_number: editForm.meeting_place_number?.trim() || null,
+      ...(contact.project_id === 2 ? { tour_id: editForm.tour_id || null } : {}),
       notes:                editForm.notes?.trim() || null,
     });
     setBusy(false);
@@ -73,13 +80,46 @@ export default function ContactDetail() {
     router.push('/contacts');
   }
 
+  function openEditInteraction(i) {
+    setInterForm({
+      type:              i.type || '',
+      quality:           i.quality || '',
+      duration_minutes:  i.duration_minutes ?? '',
+      date:              i.date || '',
+      outcome:           i.outcome || '',
+      description:       i.description || '',
+      notes:             i.notes || '',
+    });
+    setEditingInterId(i.id);
+  }
+
+  async function saveEditInteraction() {
+    setBusy(true);
+    const durNum = Number(interForm.duration_minutes);
+    await updateInteraction(editingInterId, {
+      type:              interForm.type,
+      quality:           interForm.quality,
+      duration_minutes:  interForm.duration_minutes !== '' && Number.isFinite(durNum) ? durNum : null,
+      date:              interForm.date,
+      outcome:           interForm.outcome,
+      description:       interForm.description?.trim() || '',
+      notes:             interForm.notes?.trim() || '',
+    });
+    setBusy(false);
+    setEditingInterId(null);
+  }
+
+  async function doDeleteInteraction() {
+    setBusy(true);
+    await deleteInteraction(confirmDelInterId);
+    setBusy(false);
+    setConfirmDelInterId(null);
+  }
+
   const reminders    = getReminders(contact);
   const enriched     = { ...contact, ...reminders };
-  // מפת בטא מקומית מינימלית: activist_code → שם (fallback ל-data/activists)
-  const BETA_ACTIVIST_NAMES = { 11: 'רפאל רייטן', 12: 'מוטי גלעד', 13: 'מוטי שטרלינג', 14: 'חדווה מור יוסף' };
-  const ownerFallback = activists.find(a => a.id === contact.activist_id);
-  const ownerName     = BETA_ACTIVIST_NAMES[contact.activist_id] ?? ownerFallback?.name ?? null;
-  const owner         = ownerName ? { id: contact.activist_id, name: ownerName } : null;
+  const owner         = activists.find(a => a.id === contact.activist_id)
+    || (contact.activist_id === currentUser?.id ? currentUser : null);
   const contactInter = [...interactions.filter(i => i.contact_id === contact.id)]
     .sort((a, b) => new Date(b.date) - new Date(a.date));
 
@@ -102,9 +142,9 @@ export default function ContactDetail() {
   const sourceLabel = contact.source ? (CONFIG.contactSources?.[contact.source] ?? contact.source) : '—';
   const timeLabel   = timeInSystem(contact.joined_at);
 
-  // הרשאות — פעיל רואה נתונים רגישים רק בפרויקט שלו
+  // הרשאות — פעיל רואה נתונים רגישים רק על לקוח שלו; רכז/ראש-פרויקט/מנכ"ל לפי פרויקט
   const isOwnProject  = can.ownProjectId === null || contact.project_id === can.ownProjectId;
-  const showSensitive = can.seeSensitiveData && isOwnProject;
+  const showSensitive = can.seeSensitiveData && isOwnProject && isOwner;
 
   return (
     <DesktopLayout
@@ -180,7 +220,7 @@ export default function ContactDetail() {
           )}
 
           {/* כפתורי פעולה */}
-          {can.addContact && isOwnProject && (
+          {can.addContact && isOwnProject && isOwner && (
             <div style={{ display: 'flex', gap: 8 }}>
               <Link href={`/contact/add-interaction/${contact.id}`} className="btn btn-primary"
                 style={{ flex: 1, textAlign: 'center', textDecoration: 'none' }}>
@@ -199,7 +239,7 @@ export default function ContactDetail() {
           )}
 
           {/* עדכון התקדמות רוחנית (סרגל מצוות) — כניסה בולטת; הדף קיים אך לא היה נגיש */}
-          {can.addContact && isOwnProject && (
+          {can.addContact && isOwnProject && isOwner && (
             <Link href={`/contact/update-mitzvot/${contact.id}`} className="btn"
               style={{ display: 'block', marginTop: 8, textAlign: 'center', textDecoration: 'none',
                        color: '#3a249b', borderColor: '#6d4eca', fontWeight: 600 }}>
@@ -208,7 +248,7 @@ export default function ContactDetail() {
           )}
 
           {/* F1 — עריכה / מחיקת לקוח */}
-          {can.addContact && isOwnProject && (
+          {can.addContact && isOwnProject && isOwner && (
             <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
               <button onClick={openEdit} className="btn"
                 style={{ flex: 1, cursor: 'pointer', fontFamily: 'inherit' }}>
@@ -243,7 +283,17 @@ export default function ContactDetail() {
                   <div key={i.id} style={{ background: '#fff', borderRadius: 12, padding: '12px 14px', marginBottom: 8, border: '0.5px solid #e0e0e0' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                       <strong style={{ fontSize: 14 }}>{i.type}</strong>
-                      <span style={{ fontSize: 12, color: '#aaa' }}>{i.date}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 12, color: '#aaa' }}>{i.date}</span>
+                        {isOwner && (
+                          <>
+                            <button onClick={() => openEditInteraction(i)} title="עריכת קשר"
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, padding: 2, lineHeight: 1 }}>✏️</button>
+                            <button onClick={() => setConfirmDelInterId(i.id)} title="מחיקת קשר"
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, padding: 2, lineHeight: 1 }}>🗑️</button>
+                          </>
+                        )}
+                      </div>
                     </div>
 
                     {/* תגיות: איכות / משך / תוצאה */}
@@ -330,20 +380,34 @@ export default function ContactDetail() {
             <input className="input" value={editForm.how_met}
               onChange={e => setEditForm(f => ({ ...f, how_met: e.target.value }))}
               style={{ width: '100%', marginBottom: 12, marginTop: 4 }} />
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            {contact.project_id === 2 ? (
               <div>
-                <label style={{ fontSize: 12, color: '#777' }}>יישוב בית המפגש</label>
-                <input className="input" value={editForm.meeting_place_city}
-                  onChange={e => setEditForm(f => ({ ...f, meeting_place_city: e.target.value }))}
-                  style={{ width: '100%', marginBottom: 12, marginTop: 4 }} />
+                <label style={{ fontSize: 12, color: '#777' }}>סיור משויך</label>
+                <select className="input" value={editForm.tour_id}
+                  onChange={e => setEditForm(f => ({ ...f, tour_id: e.target.value }))}
+                  style={{ width: '100%', marginBottom: 12, marginTop: 4, fontFamily: 'inherit' }}>
+                  <option value="">— מחוץ לסיורים —</option>
+                  {tours.map(t => (
+                    <option key={t.id} value={t.id}>סיור {t.tour_number} · {t.settlement} ({t.date})</option>
+                  ))}
+                </select>
               </div>
-              <div>
-                <label style={{ fontSize: 12, color: '#777' }}>מספר בית המפגש</label>
-                <input className="input" value={editForm.meeting_place_number}
-                  onChange={e => setEditForm(f => ({ ...f, meeting_place_number: e.target.value }))}
-                  style={{ width: '100%', marginBottom: 12, marginTop: 4 }} />
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 12, color: '#777' }}>יישוב בית המפגש</label>
+                  <input className="input" value={editForm.meeting_place_city}
+                    onChange={e => setEditForm(f => ({ ...f, meeting_place_city: e.target.value }))}
+                    style={{ width: '100%', marginBottom: 12, marginTop: 4 }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, color: '#777' }}>מספר בית המפגש</label>
+                  <input className="input" value={editForm.meeting_place_number}
+                    onChange={e => setEditForm(f => ({ ...f, meeting_place_number: e.target.value }))}
+                    style={{ width: '100%', marginBottom: 12, marginTop: 4 }} />
+                </div>
               </div>
-            </div>
+            )}
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#444', marginBottom: 12, cursor: 'pointer' }}>
               <input type="checkbox" checked={editForm.high_potential}
                 onChange={e => setEditForm(f => ({ ...f, high_potential: e.target.checked }))} />
@@ -382,47 +446,89 @@ export default function ContactDetail() {
           </div>
         </div>
       )}
-    </DesktopLayout>
-  );
-}
 
-function NextActionButton({ contactId, currentNextAction, currentNextDate }) {
-  const [open, setOpen] = useState(false);
-  const [action, setAction] = useState(currentNextAction || '');
-  const [date,   setDate]   = useState(currentNextDate || '');
-  const { updateNextAction } = useCrm();
-  const TODAY = new Date().toISOString().split('T')[0];
-
-  function handleSave() {
-    if (updateNextAction) updateNextAction(contactId, action, date);
-    setOpen(false);
-  }
-
-  return (
-    <div>
-      <button onClick={() => setOpen(o => !o)} style={{
-        width: '100%', padding: '9px', borderRadius: 12, border: '1.5px solid #6c5ce7',
-        background: '#f0effe', color: '#6c5ce7', fontSize: 13, fontWeight: 700,
-        cursor: 'pointer', fontFamily: 'Rubik, sans-serif', transition: 'all 0.18s ease',
-      }}
-        onMouseEnter={e => { e.currentTarget.style.background = '#6c5ce7'; e.currentTarget.style.color = '#fff'; }}
-        onMouseLeave={e => { e.currentTarget.style.background = '#f0effe'; e.currentTarget.style.color = '#6c5ce7'; }}>
-        📅 {currentNextAction ? 'עדכן פעולה הבאה' : 'הגדר פעולה הבאה'}
-      </button>
-      {open && (
-        <div style={{ marginTop: 8, background: '#fffaf5', borderRadius: 12, padding: 14, border: '0.5px solid rgba(0,0,0,0.06)' }}>
-          <label className="form-label">תיאור הפעולה</label>
-          <input className="form-input" value={action} onChange={e => setAction(e.target.value)}
-            placeholder="למשל: לתאם פגישה..." style={{ marginBottom: 10 }} />
-          <label className="form-label">תאריך יעד</label>
-          <input type="date" className="form-input" value={date} min={TODAY}
-            onChange={e => setDate(e.target.value)} style={{ marginBottom: 10 }} />
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn" style={{ flex: 1 }} onClick={() => setOpen(false)}>ביטול</button>
-            <button className="btn btn-primary" style={{ flex: 2 }} onClick={handleSave}>שמור</button>
+      {/* עריכת קשר שדווח */}
+      {editingInterId && interForm && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.42)', zIndex: 9000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+          onClick={() => !busy && setEditingInterId(null)}>
+          <div style={{ background: '#fff', borderRadius: 18, padding: 24, maxWidth: 460, width: '100%', maxHeight: '86vh', overflowY: 'auto', boxShadow: '0 24px 80px rgba(0,0,0,0.25)' }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 17, fontWeight: 800, color: '#2d1f5e', marginBottom: 16 }}>עריכת קשר</div>
+            <label style={{ fontSize: 12, color: '#777' }}>סוג קשר</label>
+            <select className="input" value={interForm.type}
+              onChange={e => setInterForm(f => ({ ...f, type: e.target.value }))}
+              style={{ width: '100%', marginBottom: 12, marginTop: 4, fontFamily: 'inherit' }}>
+              {CONFIG.interactionTypes.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+            {interForm.type !== 'אירוח שבת' && (
+              <>
+                <label style={{ fontSize: 12, color: '#777' }}>איכות קשר</label>
+                <select className="input" value={interForm.quality}
+                  onChange={e => setInterForm(f => ({ ...f, quality: e.target.value }))}
+                  style={{ width: '100%', marginBottom: 12, marginTop: 4, fontFamily: 'inherit' }}>
+                  <option value="">—</option>
+                  {CONFIG.interactionQuality.map(q => <option key={q} value={q}>{q}</option>)}
+                </select>
+              </>
+            )}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div>
+                <label style={{ fontSize: 12, color: '#777' }}>משך (דקות)</label>
+                <input className="input" type="number" min="0" value={interForm.duration_minutes}
+                  onChange={e => setInterForm(f => ({ ...f, duration_minutes: e.target.value }))}
+                  style={{ width: '100%', marginBottom: 12, marginTop: 4 }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: '#777' }}>תאריך</label>
+                <input className="input" type="date" value={interForm.date} max={new Date().toISOString().split('T')[0]}
+                  onChange={e => setInterForm(f => ({ ...f, date: e.target.value }))}
+                  style={{ width: '100%', marginBottom: 12, marginTop: 4 }} />
+              </div>
+            </div>
+            <label style={{ fontSize: 12, color: '#777' }}>תוצאה</label>
+            <select className="input" value={interForm.outcome}
+              onChange={e => setInterForm(f => ({ ...f, outcome: e.target.value }))}
+              style={{ width: '100%', marginBottom: 12, marginTop: 4, fontFamily: 'inherit' }}>
+              <option value="">—</option>
+              {CONFIG.outcomeValues.map(o => <option key={o} value={o}>{o}</option>)}
+            </select>
+            <label style={{ fontSize: 12, color: '#777' }}>תיאור המפגש</label>
+            <textarea className="input" value={interForm.description} rows={3}
+              onChange={e => setInterForm(f => ({ ...f, description: e.target.value }))}
+              style={{ width: '100%', marginBottom: 12, marginTop: 4, fontFamily: 'inherit', resize: 'vertical' }} />
+            <label style={{ fontSize: 12, color: '#777' }}>הערות</label>
+            <textarea className="input" value={interForm.notes} rows={2}
+              onChange={e => setInterForm(f => ({ ...f, notes: e.target.value }))}
+              style={{ width: '100%', marginBottom: 16, marginTop: 4, fontFamily: 'inherit', resize: 'vertical' }} />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn" style={{ flex: 1, cursor: 'pointer', fontFamily: 'inherit' }}
+                onClick={() => setEditingInterId(null)} disabled={busy}>ביטול</button>
+              <button className="btn btn-primary" style={{ flex: 2, cursor: 'pointer', fontFamily: 'inherit' }}
+                onClick={saveEditInteraction} disabled={busy}>{busy ? 'שומר…' : 'שמור'}</button>
+            </div>
           </div>
         </div>
       )}
-    </div>
+
+      {/* אישור מחיקת קשר */}
+      {confirmDelInterId && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.42)', zIndex: 9000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+          onClick={() => !busy && setConfirmDelInterId(null)}>
+          <div style={{ background: '#fff', borderRadius: 18, padding: 24, maxWidth: 380, width: '100%', boxShadow: '0 24px 80px rgba(0,0,0,0.25)' }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 17, fontWeight: 800, color: '#a32d2d', marginBottom: 10 }}>מחיקת קשר</div>
+            <div style={{ fontSize: 14, color: '#555', lineHeight: 1.7, marginBottom: 18 }}>
+              למחוק את הקשר הזה? הפעולה אינה הפיכה.
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn" style={{ flex: 1, cursor: 'pointer', fontFamily: 'inherit' }}
+                onClick={() => setConfirmDelInterId(null)} disabled={busy}>ביטול</button>
+              <button className="btn" style={{ flex: 1, cursor: 'pointer', fontFamily: 'inherit', color: '#fff', background: '#a32d2d', borderColor: '#a32d2d' }}
+                onClick={doDeleteInteraction} disabled={busy}>{busy ? 'מוחק…' : 'מחק'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </DesktopLayout>
   );
 }

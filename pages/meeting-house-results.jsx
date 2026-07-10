@@ -1,17 +1,16 @@
 // pages/meeting-house-results.jsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import DesktopLayout from '../components/DesktopLayout';
 import { useCrm } from '../lib/CrmStore';
 import { useAuth } from '../lib/AuthStore';
 import { getMeetingHouses } from '../lib/meetingHousesStorage';
-import users from '../data/users';
-
-const achdutActivists = users.filter(u => u.role === 'activist' && u.project_id === 1);
+import { inProject } from '../lib/projectUtils';
 
 export default function MeetingHouseResultsPage() {
-  const { contacts, baseMeetings } = useCrm();
+  const { contacts, baseMeetings, activists } = useCrm();
   const { can } = useAuth();
   const [houses, setHouses] = useState([]);
+  const achdutActivists = useMemo(() => activists.filter(a => a.role === 'activist' && inProject(a, 1)), [activists]);
 
   useEffect(() => {
     setHouses(getMeetingHouses());

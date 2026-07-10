@@ -10,7 +10,6 @@ import DesktopLayout from '../../../components/DesktopLayout';
 import { summarizeInteractionText } from '../../../lib/aiService';
 import { createPaymentInteractionNotifications, createDemoNotification } from '../../../lib/notificationDemo';
 import VoiceInput from '../../../components/VoiceInput';
-import users from '../../../data/users';
 
 const TODAY = new Date().toISOString().split('T')[0];
 
@@ -170,11 +169,10 @@ export default function AddInteractionPage() {
     addInteraction(interactionPayload);
 
     if (isAchdut && payableCheck) {
-      const activist = users.find(u => Number(u.id) === Number(currentUser.id)) || currentUser;
       createPaymentInteractionNotifications({
         interaction: interactionPayload,
         contact,
-        activist,
+        activist: currentUser,
         paymentResult: payableCheck,
       });
     }

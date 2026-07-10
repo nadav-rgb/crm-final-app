@@ -138,16 +138,20 @@ export function AuthProvider({ children }) {
     setCurrentUser(null); setActiveProject(null); setFilterProject(null);
   }
 
+  // מעבר פרויקט — מאומת מול חברות בפועל (project_ids). מונע ממשתמש (למשל רכז פרויקט אחד)
+  // לעבור לפרויקט שהוא לא חבר בו ולחשוף את נתוניו, גם אם רכיב כלשהו מציע לו את האפשרות.
   function switchProject(projectId) {
     if (projectId === 0) {
+      if (currentUser?.role !== 'ceo') return; // "כל הפרויקטים" — מנכ"ל בלבד
       setFilterProject(null);
-      // כשבוחרים "כל הפרויקטים" — משאירים את הפרויקט הפעיל כמות שהוא
-    } else {
-      const proj = projects.find(p => p.id === projectId);
-      if (proj) {
-        setActiveProject(proj);
-        setFilterProject(projectId);
-      }
+      return;
+    }
+    const isMember = currentUser?.role === 'ceo' || (currentUser?.project_ids || []).includes(projectId);
+    if (!isMember) return;
+    const proj = projects.find(p => p.id === projectId);
+    if (proj) {
+      setActiveProject(proj);
+      setFilterProject(projectId);
     }
   }
 

@@ -9,6 +9,18 @@ import { loadPaymentConfig, DEFAULT_CONFIG } from './paymentConfig';
 import { getSupabaseClient } from './supabaseClient';
 import { useAuth } from './AuthStore';
 
+// בידוד נתונים בין פעילים: פעיל רואה רק שורות ששייכות לו (activist_id), רכז/ראש-פרויקט/כספים
+// רק שורות בפרויקטים שהם חברים בהם (project_ids), מנכ"ל רואה הכל. הגנת-הגנה בצד לקוח בנוסף ל-RLS.
+function scopeQueryToUser(query, currentUser, { activistColumn = 'activist_id', projectColumn = 'project_id' } = {}) {
+  if (!currentUser) return query;
+  if (currentUser.role === 'ceo') return query;
+  if (currentUser.role === 'activist') return query.eq(activistColumn, currentUser.id);
+  const ids = Array.isArray(currentUser.project_ids) && currentUser.project_ids.length > 0
+    ? currentUser.project_ids
+    : (currentUser.project_id ? [currentUser.project_id] : []);
+  return query.in(projectColumn, ids.length > 0 ? ids : [-1]);
+}
+
 const CrmContext = createContext(null);
 
 const BASE_REPORTS_STORAGE_KEY = 'crm_base_meeting_reports_demo_v1';
@@ -122,10 +134,12 @@ async function insertContactToSupabase(contact) {
 }
 
 // כתיבת השדות הנגזרים חזרה לטבלת contacts (אחרת הם נשארים מקומיים ונעלמים ב-reload)
-async function loadContactsFromSupabase() {
+async function loadContactsFromSupabase(currentUser) {
   const supabase = getSupabaseClient();
   // is_active=false = לקוח שנמחק (soft-delete) — לא נטען. השדה NOT NULL default true.
-  const { data, error } = await supabase.from('contacts').select('*').eq('is_active', true);
+  let query = supabase.from('contacts').select('*').eq('is_active', true);
+  query = scopeQueryToUser(query, currentUser);
+  const { data, error } = await query;
   if (error) {
     console.error('Failed to load customers from Supabase contacts table', error);
     return { data: null, error };
@@ -147,7 +161,6 @@ export function CrmProvider({ children }) {
   const [interactions, setInteractions] = useState([]); // מקור האמת: Supabase
   const [activists,    setActivists]    = useState([]); // מקור האמת: Supabase view activist_directory (קריאה בלבד)
   const [messages,     setMessages]     = useState(_messages);
-  const [mitzvotBonuses, setMitzvotBonuses] = useState([]);
   const [baseMeetings, setBaseMeetings] = useState([]); // דיווחי מפגשי בסיס — מקור האמת: Supabase
   const [expenses,     setExpenses]     = useState([]); // דיווחי הוצאות — מקור האמת: Supabase (זורם לדשבורד+תשלומים)
   const [tours,        setTours]        = useState([]); // סיורים (נעים להכיר) — לשכר מדריך בדשבורד+תשלומים
@@ -169,6 +182,31 @@ export function CrmProvider({ children }) {
       };
     }), [contacts]);
 
+  // בונוס-מצוות — נגזר מ-mitzvot_history הפרסיסטנטי (Supabase) של כל לקוח, לא מ-state זמני.
+  // אותו דפוס בדיוק כמו newParticipantBonuses לעיל: מקור-אמת יחיד, נגזר-מחדש בכל טעינה —
+  // לא ניתן "לצבור" בונוס כפול כי אין state שמצטבר, רק חישוב טהור מהנתון השמור.
+  // בונוס אחד (₪600) לכל עליית-רמה בודדת בהיסטוריה, כדי לשמר את מדיניות התשלום המקורית.
+  const mitzvotBonuses = useMemo(() => contacts.flatMap(c => {
+    if (!c.activist_id || !Array.isArray(c.mitzvot_history)) return [];
+    return c.mitzvot_history.flatMap(h => {
+      const from = Number(h?.from ?? 0);
+      const to   = Number(h?.to ?? 0);
+      const diff = to - from;
+      if (!h?.mitzva || diff <= 0) return [];
+      const d = h.date ? new Date(h.date) : new Date();
+      const month = `${d.getFullYear()}-${d.getMonth()}`;
+      return Array.from({ length: diff }, (_, i) => ({
+        activist_id: c.activist_id,
+        contact_id:  c.id,
+        contactName: c.name,
+        amount:      MITZVOT_BONUS_PER_LEVEL,
+        desc:        `עליה ב${h.mitzva} מרמה ${from + i} ל-${from + i + 1}`,
+        date:        h.date,
+        month,
+      }));
+    });
+  }), [contacts]);
+
   const { currentUser, authLoading } = useAuth();
 
   // טעינת קונפיג השכר מ-Supabase (No-Hard-Coding). fallback ל-DEFAULT_CONFIG בכשל.
@@ -181,12 +219,13 @@ export function CrmProvider({ children }) {
 
   // טעינת לקוחות מ-Supabase — רק אחרי שההתחברות מוכנה ויש משתמש,
   // כדי שה-select לא יצא כאנונימי (קריטי כשיופעל RLS). אותה תבנית כמו base_meeting_reports.
+  // מסונן לפי בעלות (activist_id) / חברות-פרויקט — בידוד נתונים בין פעילים (הגנה בצד לקוח, בנוסף ל-RLS).
   useEffect(() => {
     if (authLoading) return;
     if (!currentUser) { setContacts([]); return; }
     let active = true;
     (async () => {
-      const { data, error } = await loadContactsFromSupabase();
+      const { data, error } = await loadContactsFromSupabase(currentUser);
       if (!active) return;
       if (error) return;
       setContacts(data);
@@ -202,16 +241,26 @@ export function CrmProvider({ children }) {
 
   // טעינת פעילים מ-Supabase view activist_directory — אותה תבנית auth-gated.
   // ברירות מחדל בטוחות: id מתוך activist_code, status='active' (ה-view לא חושף status).
+  // פעיל רואה רק את עצמו (רק רכז/ראש-פרויקט/מנכ"ל רואים רשימת פעילים); רכז מוגבל לפרויקטים שלו.
   useEffect(() => {
     if (authLoading) return;
     if (!currentUser) { setActivists([]); return; }
     let active = true;
     (async () => {
       const supabase = getSupabaseClient();
-      const { data, error } = await supabase
+      let query = supabase
         .from('activist_directory')
         .select('activist_code, name, role, project_id, project_ids')
         .order('name');
+      if (currentUser.role === 'activist') {
+        query = query.eq('activist_code', currentUser.id);
+      } else if (currentUser.role !== 'ceo') {
+        const ids = Array.isArray(currentUser.project_ids) && currentUser.project_ids.length > 0
+          ? currentUser.project_ids
+          : (currentUser.project_id ? [currentUser.project_id] : []);
+        query = query.overlaps('project_ids', ids.length > 0 ? ids : [-1]);
+      }
+      const { data, error } = await query;
       if (!active) return;
       if (error) { console.error('Failed to load activists', error); return; }
       if (Array.isArray(data)) {
@@ -231,14 +280,16 @@ export function CrmProvider({ children }) {
     return () => { active = false; };
   }, [currentUser, authLoading]);
 
-  // טעינת דיווחי הוצאות — אותה תבנית auth-gated. זורמים ל"דשבורד שלי" ולעמוד התשלומים.
+  // טעינת דיווחי הוצאות — אותה תבנית auth-gated. זורמים ל"דשבורד שלי" ולעמוד התשלומים. מסונן לפי בעלות.
   useEffect(() => {
     if (authLoading) return;
     if (!currentUser) { setExpenses([]); return; }
     let active = true;
     (async () => {
       const supabase = getSupabaseClient();
-      const { data, error } = await supabase.from('expenses').select('*');
+      let query = supabase.from('expenses').select('*');
+      query = scopeQueryToUser(query, currentUser);
+      const { data, error } = await query;
       if (!active) return;
       if (error) { console.error('Failed to load expenses', error); return; }
       if (Array.isArray(data)) setExpenses(data);
@@ -246,14 +297,21 @@ export function CrmProvider({ children }) {
     return () => { active = false; };
   }, [currentUser, authLoading]);
 
-  // טעינת סיורים — לחישוב שכר מדריך (750₪ לסיור שהתקיים עם מדריך-פעיל).
+  // טעינת סיורים — לחישוב שכר מדריך (750₪ לסיור שהתקיים עם מדריך-פעיל). פעילות משותפת בפרויקט — מסונן לפי פרויקט בלבד.
   useEffect(() => {
     if (authLoading) return;
     if (!currentUser) { setTours([]); return; }
     let active = true;
     (async () => {
       const supabase = getSupabaseClient();
-      const { data, error } = await supabase.from('tours').select('*');
+      let query = supabase.from('tours').select('*');
+      if (currentUser.role !== 'ceo') {
+        const ids = Array.isArray(currentUser.project_ids) && currentUser.project_ids.length > 0
+          ? currentUser.project_ids
+          : (currentUser.project_id ? [currentUser.project_id] : []);
+        query = query.in('project_id', ids.length > 0 ? ids : [-1]);
+      }
+      const { data, error } = await query;
       if (!active) return;
       if (error) { console.error('Failed to load tours', error); return; }
       if (Array.isArray(data)) setTours(data);
@@ -261,14 +319,16 @@ export function CrmProvider({ children }) {
     return () => { active = false; };
   }, [currentUser, authLoading]);
 
-  // טעינת דיווחי קשר מ-Supabase — אותה תבנית: רק אחרי auth מוכן ויש משתמש.
+  // טעינת דיווחי קשר מ-Supabase — אותה תבנית: רק אחרי auth מוכן ויש משתמש. מסונן לפי בעלות.
   useEffect(() => {
     if (authLoading) return;
     if (!currentUser) { setInteractions([]); return; }
     let active = true;
     (async () => {
       const supabase = getSupabaseClient();
-      const { data, error } = await supabase.from('interactions').select('*');
+      let query = supabase.from('interactions').select('*');
+      query = scopeQueryToUser(query, currentUser);
+      const { data, error } = await query;
       if (!active) return;
       if (error) { console.error('Failed to load interactions', error); return; }
       if (Array.isArray(data)) setInteractions(data);
@@ -277,14 +337,16 @@ export function CrmProvider({ children }) {
   }, [currentUser, authLoading]);
 
   // טעינת דיווחי מפגשי בסיס מ-Supabase — רק אחרי שההתחברות מוכנה ויש משתמש,
-  // כדי שה-select לא יצא כאנונימי (קריטי כשיופעל RLS).
+  // כדי שה-select לא יצא כאנונימי (קריטי כשיופעל RLS). מסונן לפי בעלות.
   useEffect(() => {
     if (authLoading) return;                       // ממתינים לשחזור session
     if (!currentUser) { setBaseMeetings([]); return; } // אין משתמש — מאפסים
     let active = true;
     (async () => {
       const supabase = getSupabaseClient();
-      const { data, error } = await supabase.from('base_meeting_reports').select('*');
+      let query = supabase.from('base_meeting_reports').select('*');
+      query = scopeQueryToUser(query, currentUser);
+      const { data, error } = await query;
       if (!active) return;
       if (error) { console.error('Failed to load base meeting reports', error); return; }
       if (Array.isArray(data)) setBaseMeetings(data);
@@ -344,6 +406,26 @@ export function CrmProvider({ children }) {
     updateContactFieldsInSupabase(contact_id, contactFields);
   }
 
+  // עריכת קשר שכבר דווח (לפני כן לא הייתה שום דרך לתקן/למחוק דיווח קיים).
+  async function updateInteraction(interactionId, fields) {
+    if (!fields || Object.keys(fields).length === 0) return { error: null };
+    const row = {};
+    INTERACTION_COLUMNS.forEach(key => { if (fields[key] !== undefined) row[key] = fields[key]; });
+    const supabase = getSupabaseClient();
+    const { error } = await supabase.from('interactions').update(row).eq('id', interactionId);
+    if (error) { console.error('Failed to update interaction', error); return { error }; }
+    setInteractions(prev => prev.map(i => i.id === interactionId ? { ...i, ...row } : i));
+    return { error: null };
+  }
+
+  async function deleteInteraction(interactionId) {
+    const supabase = getSupabaseClient();
+    const { error } = await supabase.from('interactions').delete().eq('id', interactionId);
+    if (error) { console.error('Failed to delete interaction', error); return { error }; }
+    setInteractions(prev => prev.filter(i => i.id !== interactionId));
+    return { error: null };
+  }
+
   async function addContact(contactData) {
     // random integer 100M–999M: בטוח ב-int4, רחוק מ-seed data (1001-9999), לא גולש כמו Date.now()
     const tempId = Math.floor(Math.random() * 900_000_000) + 100_000_000;
@@ -354,7 +436,7 @@ export function CrmProvider({ children }) {
       return { error };
     }
 
-    const syncResult = await loadContactsFromSupabase();
+    const syncResult = await loadContactsFromSupabase(currentUser);
     if (syncResult.error) {
       return { error: syncResult.error };
     }
@@ -384,40 +466,28 @@ export function CrmProvider({ children }) {
     return { error: null };
   }
 
-  function updateNextAction(contactId, nextAction, nextActionDate) {
-    setContacts(prev => prev.map(c => {
-      if (c.id !== contactId) return c;
-      return { ...c, next_action: nextAction || null, next_action_date: nextActionDate || null };
-    }));
-  }
+  // עדכון סרגל מצוות — מזהה שינויים, שומר היסטוריה ל-Supabase (מקור-אמת יחיד לבונוס, ראה mitzvotBonuses לעיל).
+  // תוקן: הגרסה הקודמת עדכנה רק state מקומי (setContacts) בלי לכתוב ל-DB — אחרי רענון/מכשיר אחר
+  // הרמה חוזרת לישנה, וחזרה על אותה שמירה יוצרת בונוס כפול על אותה עליה ששולמה כבר.
+  async function updateMitzvot(contactId, activistId, newMitzvot) {
+    const contact = contacts.find(c => c.id === contactId);
+    if (!contact) return { error: new Error('Contact not found') };
+    const oldMitzvot = contact.mitzvot || {};
+    const history     = [...(contact.mitzvot_history || [])];
+    const now         = new Date().toISOString().split('T')[0];
 
-  // עדכון סרגל מצוות — מזהה עליות ומוסיף בונוסים
-  function updateMitzvot(contactId, activistId, newMitzvot) {
-    setContacts(prev => prev.map(c => {
-      if (c.id !== contactId) return c;
-      const oldMitzvot = c.mitzvot || {};
-      const history    = [...(c.mitzvot_history || [])];
-      const bonusesAdded = [];
-      const now        = new Date();
-      const monthKey   = `${now.getFullYear()}-${now.getMonth()}`;
-
-      for (const [mitzva, newLevel] of Object.entries(newMitzvot)) {
-        const oldLevel = oldMitzvot[mitzva] ?? 0;
-        const diff     = Number(newLevel) - Number(oldLevel);
-        if (diff > 0) {
-          history.push({ mitzva, from: oldLevel, to: newLevel, date: now.toISOString().split('T')[0] });
-          for (let d = 0; d < diff; d++) {
-            bonusesAdded.push({ activist_id: activistId, contact_id: contactId, contactName: c.name, amount: MITZVOT_BONUS_PER_LEVEL, desc: `עליה ב${mitzva} מרמה ${oldLevel+d} ל-${oldLevel+d+1}`, date: now.toISOString().split('T')[0], month: monthKey });
-          }
-        }
+    for (const [mitzva, newLevel] of Object.entries(newMitzvot)) {
+      const oldLevel    = Number(oldMitzvot[mitzva] ?? 0);
+      const newLevelNum = Number(newLevel);
+      if (newLevelNum !== oldLevel) {
+        history.push({ mitzva, from: oldLevel, to: newLevelNum, date: now });
       }
+    }
 
-      if (bonusesAdded.length > 0) {
-        setMitzvotBonuses(prev => [...prev, ...bonusesAdded]);
-      }
-
-      return { ...c, mitzvot: newMitzvot, mitzvot_history: history };
-    }));
+    const fields = { mitzvot: newMitzvot, mitzvot_history: history };
+    await updateContactFieldsInSupabase(contactId, fields);
+    setContacts(prev => prev.map(c => c.id === contactId ? { ...c, ...fields } : c));
+    return { error: null };
   }
 
   function submitBaseMeeting(meetingId, answers, meetingData = {}) {
@@ -475,7 +545,7 @@ export function CrmProvider({ children }) {
     <CrmContext.Provider value={{
       contacts, interactions, activists, messages, baseMeetings, BASE_MEETING_QUESTIONS,
       mitzvotBonuses, newParticipantBonuses, paymentConfig, expenses, tours,
-      addInteraction, addContact, updateContact, deleteContact, updateNextAction, updateMitzvot, addMessage, submitBaseMeeting, upsertBaseMeetingReports, advanceBaseMeetingReminders,
+      addInteraction, updateInteraction, deleteInteraction, addContact, updateContact, deleteContact, updateMitzvot, addMessage, submitBaseMeeting, upsertBaseMeetingReports, advanceBaseMeetingReminders,
       PROJECT_NAMES,
     }}>
       {children}

@@ -21,6 +21,11 @@ export default function ActivistDetail() {
   const { contacts, interactions, activists } = useCrm();
   const { can, filterProject } = useAuth();
 
+  // רק רכז/ראש-פרויקט/מנכ"ל יכולים לצפות בפרטי פעיל אחר (תואם ל-can.seeActivists בעמוד הרשימה).
+  if (!can.seeActivists) {
+    return <DesktopLayout title="פעיל"><div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>אין הרשאה לדף זה</div></DesktopLayout>;
+  }
+
   const activist = activists.find(a => a.id === Number(id));
   if (!activist) return <DesktopLayout title="פעיל"><div>פעיל לא נמצא</div></DesktopLayout>;
 
