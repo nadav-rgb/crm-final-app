@@ -1,8 +1,12 @@
 # מקרבים — CRM אחדות יהודית
 
 ## מה הפרויקט
-מערכת CRM לניהול פעילים, לקוחות ובתי מפגש עבור ארגון "אחדות יהודית".
-Next.js 14, Pages Router, RTL עברית, localStorage בלבד (אין backend).
+מערכת CRM לניהול פעילים, לקוחות ובתי מפגש עבור ארגון "אחדות יהודית" ופרויקט "נעים להכיר".
+Next.js 14, Pages Router, RTL עברית. **Backend: Supabase (Postgres+Auth+RLS)** — לא localStorage
+(השורה הקודמת כאן הייתה לא-מעודכנת). כל טעינת נתונים (contacts/interactions/expenses/
+base_meeting_reports/activist_directory) מסוננת בשרת לפי activist_id/project_ids של המשתמש
+המחובר (ראה `lib/CrmStore.jsx`, `migrations/0013_activist_isolation_rls.sql`) — בידוד נתונים
+בין פעילים הוא דרישת-על, לא רק נוחות UI.
 
 ## כללי עבודה — חובה לפני כל שינוי
 1. קרא את הקובץ הרלוונטי לפני כל עריכה
