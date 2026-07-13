@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import DesktopLayout from '../../components/DesktopLayout';
 import { useAuth } from '../../lib/AuthStore';
-import { getMeetingHouses, updateMeetingHouseAssignments, importExternalMeetingHousesDemo } from '../../lib/meetingHousesStorage';
+import { getMeetingHouses, updateMeetingHouseAssignments } from '../../lib/meetingHousesStorage';
 import { fetchMeetingHousesFromSupabase, updateAssignmentsApi, sendAssignmentPushApi } from '../../lib/meetingHousesSupabase';
 import { createDemoNotification } from '../../lib/notificationDemo';
 import { useCrm } from '../../lib/CrmStore';
@@ -28,7 +28,6 @@ export default function MeetingHousesPage() {
   // רכזת נעים-להכיר רואה אך לא פותחת כאן.
   const canManage = can.seeMeetingHouses && (currentUser?.role === 'ceo' || inProject(currentUser, 1));
   const [houses, setHouses] = useState([]);
-  const [importMessage, setImportMessage] = useState('');
 
   // מקור הפעילים האמיתי — activist_directory (דרך useCrm).
   // בתי מפגש = אחדות יהודית → רק פעילים החברים בפרויקט 1 (כולל דו-פרויקטליים).
@@ -60,12 +59,6 @@ export default function MeetingHousesPage() {
     }
     return true;
   });
-
-  async function handleExternalImport() {
-    const imported = importExternalMeetingHousesDemo();
-    setHouses(await loadHouses());
-    setImportMessage('יובאו ' + imported.length + ' בתי מפגש מדמו חיצוני.');
-  }
 
   async function handleAssign(houseId, activistId, houseNumber, houseCity) {
     // מקור אמת: Supabase. נפילה ל-localStorage רק לבתי מפגש דמו ישנים.
@@ -128,24 +121,13 @@ export default function MeetingHousesPage() {
       title="בתי מפגש חדשים"
       subtitle={`${activeHouses.length} בתי מפגש פעילים · אחדות יהודית`}
       actions={canManage ? (
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={handleExternalImport} style={{ border: '0.5px solid rgba(108,92,231,0.35)', borderRadius: 10, padding: '9px 15px', fontFamily: 'inherit', fontWeight: 700, cursor: 'pointer', background: '#fff', color: '#6c5ce7', fontSize: 13 }}>
-            ייבא דמו חיצוני
+        <Link href="/meeting-houses/new" style={{ textDecoration: 'none' }}>
+          <button style={{ border: 'none', borderRadius: 10, padding: '9px 15px', fontFamily: 'inherit', fontWeight: 700, cursor: 'pointer', background: '#6c5ce7', color: '#fff', fontSize: 13 }}>
+            + הוסף בית מפגש
           </button>
-          <Link href="/meeting-houses/new" style={{ textDecoration: 'none' }}>
-            <button style={{ border: 'none', borderRadius: 10, padding: '9px 15px', fontFamily: 'inherit', fontWeight: 700, cursor: 'pointer', background: '#6c5ce7', color: '#fff', fontSize: 13 }}>
-              + הוסף בית מפגש
-            </button>
-          </Link>
-        </div>
+        </Link>
       ) : undefined}
     >
-      {importMessage && (
-        <div style={{ marginBottom: 16, background: '#eefaf2', border: '0.5px solid rgba(22,120,65,0.15)', borderRadius: 12, padding: '12px 16px', color: '#1f7a45', fontSize: 13, fontWeight: 700 }}>
-          {importMessage}
-        </div>
-      )}
-
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
         {activeHouses.length === 0 ? (
           <div style={{ gridColumn: '1/-1', textAlign: 'center', color: '#ccc', padding: 48, fontSize: 14 }}>
