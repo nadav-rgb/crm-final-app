@@ -36,6 +36,8 @@ const CONFIG = {
 
   interactionTypes: ['פרונטלי', 'טלפוני', 'וידאו', 'אירוח שבת'],
   interactionQuality: ['תורני', 'ידידותי'],
+  // איכות מיוחדת — זמינה רק לקשר מסוג "פרונטלי". מלגה קבועה 300 ש"ח (ראה BASE_PRICES ב-lib/paymentCalc.js).
+  interactionQualityMulti: 'רב משתתפים',
 
   outcomeValues: ['חיובי', 'ניטרלי', 'שלילי', 'ממתין למענה'],
 

@@ -1,9 +1,10 @@
 // pages/my-dashboard.jsx — דשבורד יועץ: מונים חודשיים, התקדמות מול יעד, ושכר משוער.
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import DesktopLayout from '../components/DesktopLayout';
 import { useCrm } from '../lib/CrmStore';
 import { useAuth } from '../lib/AuthStore';
 import { calcConsultantDashboard } from '../lib/paymentCalc';
+import { getSupabaseClient } from '../lib/supabaseClient';
 
 const MONTH_NAMES = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
 
@@ -43,9 +44,26 @@ function CounterCard({ counter }) {
 export default function MyDashboardPage() {
   const { interactions, contacts, mitzvotBonuses, newParticipantBonuses, paymentConfig, expenses, tours } = useCrm();
   const { currentUser } = useAuth();
+  const [cancelledBonuses, setCancelledBonuses] = useState([]); // בונוסים שרכז ביטל — ראה pages/payments.jsx
 
   const now = new Date();
   const monthName = MONTH_NAMES[now.getMonth()];
+
+  // בונוסים שבוטלו — נטען לפי הפעיל המחובר בלבד (RLS מגביל ממילא ל-activist_id של עצמו)
+  useEffect(() => {
+    if (!currentUser) { setCancelledBonuses([]); return; }
+    let active = true;
+    (async () => {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase.from('bonus_cancellations').select('*').eq('activist_id', currentUser.id);
+      if (!active) return;
+      if (error) { console.error('Failed to load bonus cancellations', error); return; }
+      setCancelledBonuses(Array.isArray(data) ? data : []);
+    })();
+    return () => { active = false; };
+  }, [currentUser?.id]);
+
+  const cancelledBonusKeys = useMemo(() => new Set(cancelledBonuses.map(b => b.bonus_key)), [cancelledBonuses]);
 
   const data = useMemo(() => {
     if (!currentUser) return null;
@@ -53,8 +71,8 @@ export default function MyDashboardPage() {
     const monthKey = `${now.getFullYear()}-${now.getMonth()}`;
     const myMitzvot = mitzvotBonuses.filter(b => b.activist_id === currentUser.id && b.month === monthKey);
     const myNew     = newParticipantBonuses.filter(b => b.activist_id === currentUser.id && b.month === monthKey);
-    return calcConsultantDashboard(currentUser.id, interactions, contacts, myMitzvot, myNew, paymentConfig);
-  }, [currentUser, interactions, contacts, mitzvotBonuses, newParticipantBonuses, paymentConfig]);
+    return calcConsultantDashboard(currentUser.id, interactions, contacts, myMitzvot, myNew, paymentConfig, cancelledBonusKeys);
+  }, [currentUser, interactions, contacts, mitzvotBonuses, newParticipantBonuses, paymentConfig, cancelledBonusKeys]);
 
   if (!data) return <DesktopLayout title="הדשבורד שלי"><div style={{ padding: 40, color: '#aaa' }}>טוען…</div></DesktopLayout>;
 

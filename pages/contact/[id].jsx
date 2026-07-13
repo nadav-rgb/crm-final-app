@@ -8,8 +8,10 @@ import DesktopLayout from '../../components/DesktopLayout';
 import { timeInSystem } from '../../lib/activistStats';
 import { formatDateHe } from '../../lib/formatDate';
 import { useCrm } from '../../lib/CrmStore';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../../lib/AuthStore';
+import { getMeetingHouses } from '../../lib/meetingHousesStorage';
+import { fetchMeetingHousesFromSupabase } from '../../lib/meetingHousesSupabase';
 
 export default function ContactDetail() {
   const router = useRouter();
@@ -25,6 +27,22 @@ export default function ContactDetail() {
   const [editingInterId, setEditingInterId] = useState(null);
   const [interForm, setInterForm]           = useState(null);
   const [confirmDelInterId, setConfirmDelInterId] = useState(null);
+
+  // בתי מפגש אמיתיים — לבחירת "בית מפגש משויך" בעריכת הלקוח (במקום טקסט חופשי בלבד).
+  const [houses, setHouses]   = useState([]);
+  const [houseSel, setHouseSel] = useState(''); // מפתח הבית שנבחר, '' = לא נבחר, '__manual__' = הזנה ידנית
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const remote = await fetchMeetingHousesFromSupabase();
+      const local  = getMeetingHouses();
+      const remoteIds = new Set(remote.map(h => String(h.id)));
+      const merged = [...remote, ...local.filter(h => !remoteIds.has(String(h.id)))];
+      if (active) setHouses(merged);
+    })();
+    return () => { active = false; };
+  }, []);
+  const houseKey = h => `${h.houseNumber}||${h.settlement || h.city || ''}`;
 
   const contact = contacts.find(c => c.id === Number(id));
   if (!contact) return <DesktopLayout title="לקוח"><div>לקוח לא נמצא</div></DesktopLayout>;
@@ -46,9 +64,19 @@ export default function ContactDetail() {
       meeting_place_city:   contact.meeting_place_city || '',
       meeting_place_number: contact.meeting_place_number || '',
       tour_id:              contact.tour_id || '',
+      mitzvot:              { ...(contact.mitzvot || {}) }, // סולם מצוות ראשוני — עריכה ישירה
       notes:                contact.notes || '',
     });
+    // ברירת מחדל לבחירת בית מפגש: מסמן את הבית התואם אם קיים, אחרת הזנה ידנית (שמירת נתון חופשי קיים)
+    const match = houses.find(h => String(h.houseNumber) === String(contact.meeting_place_number) &&
+      (h.settlement || h.city || '') === (contact.meeting_place_city || ''));
+    setHouseSel(match ? houseKey(match)
+      : (contact.meeting_place_city || contact.meeting_place_number) ? '__manual__' : '');
     setEditing(true);
+  }
+
+  function setEditMitzvah(name, level) {
+    setEditForm(f => ({ ...f, mitzvot: { ...(f.mitzvot || {}), [name]: level } }));
   }
 
   async function saveEdit() {
@@ -67,6 +95,8 @@ export default function ContactDetail() {
       meeting_place_city:   editForm.meeting_place_city?.trim() || null,
       meeting_place_number: editForm.meeting_place_number?.trim() || null,
       ...(contact.project_id === 2 ? { tour_id: editForm.tour_id || null } : {}),
+      // סולם מצוות ראשוני — עריכה ישירה של הבסיס (לא דרך "עדכון התקדמות" → לא מזכה בונוס)
+      ...(editForm.mitzvot ? { mitzvot: editForm.mitzvot } : {}),
       notes:                editForm.notes?.trim() || null,
     });
     setBusy(false);
@@ -307,7 +337,7 @@ export default function ContactDetail() {
 
                     {i.ai_summary && (
                       <div style={{ fontSize: 12, color: '#444', background: '#faf9ff', border: '0.5px solid #ece9fb', borderRadius: 10, padding: '8px 10px', marginBottom: 6, whiteSpace: 'pre-wrap' }}>
-                        <span style={{ fontWeight: 700, color: '#6c5ce7' }}>סיכום AI: </span>{i.ai_summary}
+                        <span style={{ fontWeight: 700, color: '#6c5ce7' }}>סיכום: </span>{i.ai_summary}
                       </div>
                     )}
 
@@ -393,19 +423,40 @@ export default function ContactDetail() {
                 </select>
               </div>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div>
-                  <label style={{ fontSize: 12, color: '#777' }}>יישוב בית המפגש</label>
-                  <input className="input" value={editForm.meeting_place_city}
-                    onChange={e => setEditForm(f => ({ ...f, meeting_place_city: e.target.value }))}
-                    style={{ width: '100%', marginBottom: 12, marginTop: 4 }} />
-                </div>
-                <div>
-                  <label style={{ fontSize: 12, color: '#777' }}>מספר בית המפגש</label>
-                  <input className="input" value={editForm.meeting_place_number}
-                    onChange={e => setEditForm(f => ({ ...f, meeting_place_number: e.target.value }))}
-                    style={{ width: '100%', marginBottom: 12, marginTop: 4 }} />
-                </div>
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 12, color: '#777' }}>בית מפגש משויך</label>
+                <select className="input" value={houseSel}
+                  onChange={e => {
+                    const v = e.target.value;
+                    if (v === '__manual__') { setHouseSel('__manual__'); return; }
+                    if (v === '') { setHouseSel(''); setEditForm(f => ({ ...f, meeting_place_city: '', meeting_place_number: '' })); return; }
+                    const h = houses.find(x => houseKey(x) === v);
+                    if (h) setEditForm(f => ({ ...f, meeting_place_city: h.settlement || h.city || '', meeting_place_number: String(h.houseNumber ?? '') }));
+                    setHouseSel(v);
+                  }}
+                  style={{ width: '100%', marginBottom: 8, marginTop: 4, fontFamily: 'inherit' }}>
+                  <option value="">— ללא בית מפגש —</option>
+                  {houses.map(h => (
+                    <option key={houseKey(h)} value={houseKey(h)}>בית מפגש {h.houseNumber} · {h.settlement || h.city || ''}</option>
+                  ))}
+                  <option value="__manual__">הזנה ידנית (עיר + מספר)</option>
+                </select>
+                {(houseSel === '__manual__' || houses.length === 0) && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    <div>
+                      <label style={{ fontSize: 12, color: '#777' }}>יישוב בית המפגש</label>
+                      <input className="input" value={editForm.meeting_place_city}
+                        onChange={e => setEditForm(f => ({ ...f, meeting_place_city: e.target.value }))}
+                        style={{ width: '100%', marginBottom: 12, marginTop: 4 }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 12, color: '#777' }}>מספר בית המפגש</label>
+                      <input className="input" value={editForm.meeting_place_number}
+                        onChange={e => setEditForm(f => ({ ...f, meeting_place_number: e.target.value }))}
+                        style={{ width: '100%', marginBottom: 12, marginTop: 4 }} />
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#444', marginBottom: 12, cursor: 'pointer' }}>
@@ -413,6 +464,29 @@ export default function ContactDetail() {
                 onChange={e => setEditForm(f => ({ ...f, high_potential: e.target.checked }))} />
               פוטנציאל גבוה
             </label>
+
+            {/* סולם מצוות ראשוני — עריכה ישירה של הבסיס (לתיקון; אינה מזכה בונוס. לעדכון התקדמות עם בונוס יש דף נפרד) */}
+            {(editForm.gender === 'male' || editForm.gender === 'female') && (
+              <div style={{ background: '#faf9ff', border: '0.5px solid #ece9fb', borderRadius: 12, padding: '12px 14px', marginBottom: 12 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#6c5ce7', marginBottom: 2 }}>סולם מצוות ראשוני</div>
+                <div style={{ fontSize: 11, color: '#aaa', marginBottom: 10 }}>עריכה ישירה של הבסיס — לתיקון בלבד, אינה מזכה בבונוס. לעדכון התקדמות עם בונוס יש דף נפרד.</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {(editForm.gender === 'male' ? CONFIG.mitzvotMale : CONFIG.mitzvotFemale).map(mitz => {
+                    const lvl = editForm.mitzvot?.[mitz] ?? 0;
+                    return (
+                      <div key={mitz} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: 13, color: '#333' }}>{mitz}</span>
+                        <select value={lvl} onChange={e => setEditMitzvah(mitz, Number(e.target.value))}
+                          style={{ width: 88, padding: '5px 8px', borderRadius: 8, border: `1.5px solid ${lvl > 0 ? '#6c5ce7' : '#e8e8e8'}`, fontSize: 12.5, background: lvl > 0 ? '#f0effe' : '#fafafa', color: lvl > 0 ? '#6c5ce7' : '#999', fontFamily: 'Rubik, sans-serif' }}>
+                          {CONFIG.mitzvotLevels.map(l => <option key={l} value={l}>רמה {l}</option>)}
+                        </select>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <label style={{ fontSize: 12, color: '#777' }}>הערות</label>
             <textarea className="input" value={editForm.notes} rows={3}
               onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}

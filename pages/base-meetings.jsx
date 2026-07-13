@@ -235,7 +235,7 @@ export default function BaseMeetingsPage() {
 
       {saved && (
         <div style={{ marginBottom:14, background:'#edfaf1', border:'0.5px solid rgba(39,174,96,0.2)', color:'#20894b', borderRadius:12, padding:'10px 14px', fontSize:13, fontWeight:800 }}>
-          הדיווח נשמר וננעל. מעכשיו הוא מקושר לבית המפגש ולא ניתן לעריכה בדמו.
+          הדיווח נשמר וננעל. מעכשיו הוא מקושר לבית המפגש ולא ניתן לעריכה.
         </div>
       )}
 
@@ -294,7 +294,7 @@ export default function BaseMeetingsPage() {
                   <div style={{ display:'flex', gap:8, marginTop:8, flexWrap:'wrap' }}>
                     <button type="button" onClick={e=>{ e.stopPropagation(); openAiSummary(meeting); }}
                       style={{ border:'none', borderRadius:8, padding:'6px 10px', background:'#f0effe', color:'#6c5ce7', fontWeight:800, cursor:'pointer', fontFamily:'inherit', fontSize:12 }}>
-                      סיכום AI
+                      סיכום
                     </button>
                     {sa && (
                       <button type="button" onClick={e=>{ e.stopPropagation(); setFullReport(meeting); }}
@@ -458,7 +458,7 @@ export default function BaseMeetingsPage() {
                 <VoiceInput onTranscript={handleVoiceTranscript} />
                 {voiceAiSummary && (
                   <div style={{ marginTop:10, background:'#f8f7ff', border:'0.5px solid rgba(108,92,231,0.2)', borderRadius:12, padding:'12px 14px' }}>
-                    <div style={{ fontSize:11, fontWeight:700, color:'#6c5ce7', marginBottom:6, textTransform:'uppercase', letterSpacing:'0.05em' }}>סיכום AI דמו — מהקלטה</div>
+                    <div style={{ fontSize:11, fontWeight:700, color:'#6c5ce7', marginBottom:6, textTransform:'uppercase', letterSpacing:'0.05em' }}>סיכום — מהקלטה</div>
                     <pre style={{ whiteSpace:'pre-wrap', fontFamily:'inherit', fontSize:12, color:'#333', lineHeight:1.75, margin:0 }}>{voiceAiSummary}</pre>
                   </div>
                 )}
@@ -486,7 +486,7 @@ export default function BaseMeetingsPage() {
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}
           onClick={e=>{ if(e.target===e.currentTarget) setAiSummary(null); }}>
           <div style={{ background:'#fff', borderRadius:18, padding:24, maxWidth:560, width:'100%', direction:'rtl' }}>
-            <div style={{ fontSize:18, fontWeight:800, marginBottom:8 }}>סיכום AI</div>
+            <div style={{ fontSize:18, fontWeight:800, marginBottom:8 }}>סיכום</div>
             <pre style={{ whiteSpace:'pre-wrap', background:'#fffaf5', border:'0.5px solid #eee', borderRadius:12, padding:14, fontFamily:'inherit', lineHeight:1.7, fontSize:13 }}>{aiSummary.text}</pre>
             <button onClick={()=>setAiSummary(null)} style={{ marginTop:12, border:'none', borderRadius:10, padding:'9px 18px', background:'#6c5ce7', color:'#fff', fontWeight:800, cursor:'pointer', fontFamily:'inherit' }}>סגור</button>
           </div>

@@ -1,10 +1,12 @@
 // pages/payments.jsx — עמוד תשלומים (רכז/הנהלה; פרויקטים בתשלום: אחדות יהודית + נעים להכיר)
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/router';
 import DesktopLayout from '../components/DesktopLayout';
 import { useCrm } from '../lib/CrmStore';
 import { useAuth } from '../lib/AuthStore';
 import { calcMonthlyPayment } from '../lib/paymentCalc';
 import { inProject, inAnyPaidProject } from '../lib/projectUtils';
+import { getSupabaseClient } from '../lib/supabaseClient';
 // activists מגיע מ-CrmStore (Supabase) — לא מקובץ סטטי, כך ה-IDs תואמים ל-activist_id בקשרים
 
 const MONTH_NAMES = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
@@ -13,11 +15,27 @@ const PROJECT_LABELS = { 1: 'אחדות יהודית', 2: 'נעים להכיר' 
 export default function PaymentsPage() {
   const { contacts, interactions, mitzvotBonuses, newParticipantBonuses, activists, paymentConfig, expenses, tours } = useCrm();
   const { currentUser, can, filterProject } = useAuth();
+  const router = useRouter();
   const [viewMode, setViewMode] = useState('grid');
-  const [selectedReport, setSelectedReport] = useState(null);
+  const [cancelledBonuses, setCancelledBonuses] = useState([]); // שורות bonus_cancellations החודש — נחוץ לחישוב מדויק של הסכומים ברשימה
 
   // רשאים לצפות: כל מי ש-AuthStore מאשר (רכז, מנכ"ל, כספים, ראש פרויקט)
   const canView = can.seePayments;
+
+  const loadCancelledBonuses = useCallback(async () => {
+    if (!canView) return;
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase.from('bonus_cancellations').select('*');
+    if (error) { console.error('Failed to load bonus cancellations', error); return; }
+    setCancelledBonuses(Array.isArray(data) ? data : []);
+  }, [canView]);
+
+  useEffect(() => { loadCancelledBonuses(); }, [loadCancelledBonuses]);
+
+  const cancelledBonusKeys = useMemo(() => new Set(cancelledBonuses.map(b => b.bonus_key)), [cancelledBonuses]);
+
+  // לחיצה על כרטיס פעיל → דף פירוט תשלום ייעודי (pages/payments/[id].jsx)
+  const openActivist = (activistId) => router.push(`/payments/${activistId}`);
 
   if (!canView) return (
     <DesktopLayout title="דוחות תשלום פעילים">
@@ -45,7 +63,7 @@ export default function PaymentsPage() {
   const paymentData = useMemo(() => achdutActivists.map(activist => {
     const myMitzvotBonuses = mitzvotBonuses.filter(b => b.activist_id === activist.id && b.month === `${year}-${month}`);
     const myNewBonuses     = newParticipantBonuses.filter(b => b.activist_id === activist.id && b.month === `${year}-${month}`);
-    const result = calcMonthlyPayment(activist.id, interactions, contacts, myMitzvotBonuses, myNewBonuses, paymentConfig);
+    const result = calcMonthlyPayment(activist.id, interactions, contacts, myMitzvotBonuses, myNewBonuses, paymentConfig, cancelledBonusKeys);
     const expensesTotal = expenses
       .filter(x => Number(x.activist_id) === Number(activist.id) && x.date >= monthStartIso)
       .reduce((s, x) => s + Number(x.amount || 0), 0);
@@ -57,7 +75,7 @@ export default function PaymentsPage() {
     ).length;
     const guidePay = guidedCount * (paymentConfig.TOUR_GUIDE_RATE ?? 750);
     return { activist, ...result, expensesTotal, guidePay, guidedCount, grandTotal: result.total + expensesTotal + guidePay };
-  }), [achdutActivists, interactions, contacts, mitzvotBonuses, newParticipantBonuses, paymentConfig, expenses, tours]);
+  }), [achdutActivists, interactions, contacts, mitzvotBonuses, newParticipantBonuses, paymentConfig, expenses, tours, cancelledBonusKeys]);
 
   const totalAll = paymentData.reduce((s, d) => s + d.grandTotal, 0);
   const currentMonthName = MONTH_NAMES[month];
@@ -91,7 +109,7 @@ export default function PaymentsPage() {
             <div key={activist.id} style={{ background:'#fffaf5', borderRadius:14, padding:'16px', border:'0.5px solid rgba(0,0,0,0.07)', boxShadow:'0 1px 4px rgba(0,0,0,0.04)', cursor:'pointer', transition:'all 0.18s' }}
               onMouseEnter={e=>{ e.currentTarget.style.transform='translateY(-2px)'; e.currentTarget.style.boxShadow='0 4px 16px rgba(0,0,0,0.09)'; }}
               onMouseLeave={e=>{ e.currentTarget.style.transform='translateY(0)'; e.currentTarget.style.boxShadow='0 1px 4px rgba(0,0,0,0.04)'; }}
-              onClick={()=>setSelectedReport(selectedReport?.activist.id===activist.id?null:{activist,total,breakdown,unpaid,expensesTotal,guidePay,guidedCount,grandTotal})}
+              onClick={()=>openActivist(activist.id)}
             >
               <div style={{ fontSize:15, fontWeight:700, marginBottom:4 }}>{activist.name}</div>
               <div style={{ fontSize:12, color:'#aaa', marginBottom:12 }}>{breakdown.filter(b=>b.type==='קשר').length} קשרים מזכים</div>
@@ -115,7 +133,7 @@ export default function PaymentsPage() {
               style={{ display:'flex', alignItems:'center', padding:'13px 18px', borderBottom:idx===paymentData.length-1?'none':'0.5px solid #f5f5f5', cursor:'pointer', transition:'background 0.15s' }}
               onMouseEnter={e=>e.currentTarget.style.background='#fafafa'}
               onMouseLeave={e=>e.currentTarget.style.background='transparent'}
-              onClick={()=>setSelectedReport(selectedReport?.activist.id===activist.id?null:{activist,total,breakdown,unpaid,expensesTotal,guidePay,guidedCount,grandTotal})}
+              onClick={()=>openActivist(activist.id)}
             >
               <div style={{ flex:1 }}>
                 <div style={{ fontSize:14, fontWeight:700 }}>{activist.name}</div>
@@ -129,57 +147,6 @@ export default function PaymentsPage() {
             <div style={{ flex:1, fontSize:14, color:'#6c5ce7' }}>סה"כ</div>
             <div style={{ fontSize:22, color:'#6c5ce7' }}>{totalAll.toLocaleString()} ₪</div>
           </div>
-        </div>
-      )}
-
-      {/* פירוט פעיל נבחר */}
-      {selectedReport && (
-        <div style={{ background:'#fffaf5', borderRadius:16, padding:'20px', border:'0.5px solid rgba(108,92,231,0.2)', marginBottom:24 }}>
-          <div style={{ fontSize:15, fontWeight:700, marginBottom:14 }}>פירוט — {selectedReport.activist.name}</div>
-          {selectedReport.breakdown.map((item, i) => (
-            <div key={i} style={{ display:'flex', justifyContent:'space-between', padding:'8px 0', borderBottom:'0.5px solid #f0f0f0', fontSize:13 }}>
-              <div>
-                <span style={{ fontWeight:700 }}>{item.contactName}</span>
-                {item.desc && <span style={{ color:'#aaa', marginRight:8 }}>— {item.desc}</span>}
-              </div>
-              <div style={{ fontWeight:700, color:'#6c5ce7' }}>{item.amount} ₪</div>
-            </div>
-          ))}
-          {selectedReport.guidePay > 0 && (
-            <div style={{ display:'flex', justifyContent:'space-between', padding:'8px 0', borderBottom:'0.5px solid #f0f0f0', fontSize:13 }}>
-              <div><span style={{ fontWeight:700 }}>🧭 הדרכת סיורים</span><span style={{ color:'#aaa', marginRight:8 }}>— {selectedReport.guidedCount} סיורים שהתקיימו</span></div>
-              <div style={{ fontWeight:700, color:'#1b6ca8' }}>{selectedReport.guidePay.toLocaleString()} ₪</div>
-            </div>
-          )}
-          {selectedReport.expensesTotal > 0 && (
-            <div style={{ display:'flex', justifyContent:'space-between', padding:'8px 0', borderBottom:'0.5px solid #f0f0f0', fontSize:13 }}>
-              <div><span style={{ fontWeight:700 }}>🧾 החזר הוצאות</span><span style={{ color:'#aaa', marginRight:8 }}>— מדיווחי הפעיל החודש</span></div>
-              <div style={{ fontWeight:700, color:'#1f7a45' }}>{selectedReport.expensesTotal.toLocaleString()} ₪</div>
-            </div>
-          )}
-          <div style={{ display:'flex', justifyContent:'space-between', marginTop:10, fontWeight:700, fontSize:15 }}>
-            <span>סה"כ</span>
-            <span style={{ color:'#6c5ce7' }}>{(selectedReport.grandTotal ?? selectedReport.total).toLocaleString()} ₪</span>
-          </div>
-
-          {/* קשרים שלא זוכו + הסיבה — שקיפות (לא משפיע על הסכום) */}
-          {selectedReport.unpaid?.length > 0 && (
-            <div style={{ marginTop:18 }}>
-              <div style={{ fontSize:13, fontWeight:700, color:'#c0392b', marginBottom:8 }}>
-                קשרים שלא זוכו בתשלום ({selectedReport.unpaid.length})
-              </div>
-              {selectedReport.unpaid.map((item, i) => (
-                <div key={i} style={{ display:'flex', justifyContent:'space-between', gap:12, padding:'7px 0', borderBottom:'0.5px solid #f0f0f0', fontSize:12.5 }}>
-                  <div>
-                    <span style={{ fontWeight:700 }}>{item.contactName || 'לקוח'}</span>
-                    <span style={{ color:'#aaa', marginRight:6 }}>— {item.desc}</span>
-                    <span style={{ color:'#bbb', marginRight:6 }}>({item.date})</span>
-                  </div>
-                  <div style={{ color:'#c0392b', whiteSpace:'nowrap' }}>{item.reason || 'לא מזכה'}</div>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       )}
 

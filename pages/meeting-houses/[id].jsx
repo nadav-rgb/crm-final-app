@@ -126,7 +126,7 @@ export default function MeetingHouseDetailPage() {
       id: `manual_assignment_${house.id}_${parsedId}_${Date.now()}`,
       type: 'assignment',
       title: 'שובצת לבית מפגש',
-      body: `שובצת לבית מפגש ${house.houseNumber} ב${house.settlement || house.city}. ההודעה נוצרה בדמו מתוך פעולת שיבוץ ידנית.`,
+      body: `שובצת לבית מפגש ${house.houseNumber} ב${house.settlement || house.city}.`,
       user_id: parsedId,
       project_id: 1,
       priority: 'high',
@@ -138,7 +138,7 @@ export default function MeetingHouseDetailPage() {
         id: `manager_assignment_${house.id}_${parsedId}_${currentUser.id}_${Date.now()}`,
         type: 'assignment',
         title: 'שיבוץ פעיל נשמר',
-        body: `שיבצת פעיל לבית מפגש ${house.houseNumber}. בדמו זה יוצר התראה פנימית לפעיל.`,
+        body: `שיבצת פעיל לבית מפגש ${house.houseNumber}. נשלחה אליו התראה על השיבוץ.`,
         user_id: currentUser.id,
         project_id: 1,
         priority: 'normal',
@@ -175,8 +175,8 @@ export default function MeetingHouseDetailPage() {
     createDemoNotification({
       id: `manager_run_reminders_${house.id}_${Date.now()}`,
       type: 'system',
-      title: 'הרצת תזכורות דמו הסתיימה',
-      body: `עודכנו ${result.changedCount} משימות דיווח ונוצרו ${result.notificationsCount} התראות דמו.`,
+      title: 'שליחת התזכורות הסתיימה',
+      body: `עודכנו ${result.changedCount} משימות דיווח ונשלחו ${result.notificationsCount} התראות.`,
       user_id: currentUser?.id,
       project_id: 1,
       priority: result.changedCount ? 'high' : 'normal',
@@ -200,7 +200,7 @@ export default function MeetingHouseDetailPage() {
           <Info label="סטטוס" value={house.status} />
 
           <button type="button" onClick={() => setSeriesSummary(summarizeMeetingHouseSeriesDemo(house, reportsForHouse))} style={{ marginTop:18, border:'none', borderRadius:10, padding:'9px 12px', background:'#f0effe', color:'#6c5ce7', fontWeight:800, cursor:'pointer', fontFamily:'inherit' }}>
-            צפה בסיכום AI דמו חכם לכל הסדרה
+            צפה בסיכום חכם לכל הסדרה
           </button>
 
           {seriesSummary && (
@@ -215,7 +215,7 @@ export default function MeetingHouseDetailPage() {
           </div>
 
           <button type="button" onClick={runReminderDemoForHouse} disabled={waitingReports.length === 0} style={{ marginBottom:14, border:'none', borderRadius:10, padding:'9px 12px', background:waitingReports.length ? '#ffe8c2' : '#eee', color:waitingReports.length ? '#8a5300' : '#999', fontWeight:900, cursor:waitingReports.length ? 'pointer' : 'not-allowed', fontFamily:'inherit' }}>
-            הרץ תזכורות דמו לדיווחים חסרים
+            שלח תזכורות לדיווחים חסרים
           </button>
 
           {reportsForHouse.length > 0 && (
@@ -342,7 +342,7 @@ export default function MeetingHouseDetailPage() {
       {/* AI Summary — מוצג אוטומטית כשכל 4 המפגשים הסתיימו */}
       {house.status === 'completed' && (
         <div style={{ marginTop: 18, background: '#fff', border: '0.5px solid rgba(108,92,231,0.2)', borderRadius: 16, padding: 20, boxShadow: '0 1px 4px rgba(108,92,231,0.06)' }}>
-          <div style={{ fontSize: 15, fontWeight: 800, color: '#6c5ce7', marginBottom: 14 }}>✨ סיכום AI לארבעת המפגשים</div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: '#6c5ce7', marginBottom: 14 }}>✨ סיכום לארבעת המפגשים</div>
           <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', fontSize: 13, color: '#333', lineHeight: 1.75, margin: 0 }}>
             {generateMeetingNotesAiSummaryDemo(house) || 'לא הוזנו הערות למפגשים.'}
           </pre>

@@ -143,7 +143,7 @@ function MeetingRow({ meeting, report }) {
             onClick={() => setShowAi(v => !v)}
             style={{ border: 'none', borderRadius: 8, padding: '5px 10px', background: '#f0effe', color: '#6c5ce7', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, marginTop: 4 }}
           >
-            {showAi ? 'סגור סיכום AI' : '✨ סיכום AI למפגש'}
+            {showAi ? 'סגור סיכום' : '✨ סיכום למפגש'}
           </button>
           {showAi && (
             <pre style={{ marginTop: 8, whiteSpace: 'pre-wrap', background: '#fffaf5', border: '0.5px solid #eee', borderRadius: 10, padding: '10px 12px', fontFamily: 'inherit', fontSize: 12, color: '#333', lineHeight: 1.7 }}>
@@ -213,7 +213,7 @@ function CompletedDetailModal({ house, baseMeetings, onClose, activistName }) {
 
         {/* Full AI Summary */}
         <div style={{ background: '#f8f7ff', border: '0.5px solid rgba(108,92,231,0.2)', borderRadius: 14, padding: 16 }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: '#6c5ce7', marginBottom: 10 }}>✨ סיכום AI לכל הסדרה</div>
+          <div style={{ fontSize: 13, fontWeight: 800, color: '#6c5ce7', marginBottom: 10 }}>✨ סיכום לכל הסדרה</div>
           <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', fontSize: 12, color: '#333', lineHeight: 1.75, margin: 0 }}>
             {aiSummary || 'לא הוזנו הערות למפגשים.'}
           </pre>

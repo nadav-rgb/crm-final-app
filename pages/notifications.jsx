@@ -46,7 +46,7 @@ export default function NotificationsPage() {
   }
 
   return (
-    <DesktopLayout title="התראות" subtitle="דמו להתראות פנימיות במערכת">
+    <DesktopLayout title="התראות" subtitle="שיבוץ, תזכורות דיווח, תשלומים והתרעות לרכז">
       <div style={{ maxWidth: 900, margin: '0 auto' }}>
         <div style={{ background:'#fff', border:'0.5px solid rgba(0,0,0,0.08)', borderRadius:16, padding:18, marginBottom:16 }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12 }}>
@@ -59,7 +59,7 @@ export default function NotificationsPage() {
             )}
           </div>
           <div style={{ fontSize:13, color:'#777', lineHeight:1.7 }}>
-            זהו דמו בלבד: ההתראות מוצגות בתוך המערכת, בלי Push אמיתי, בלי SMS ובלי WhatsApp. המטרה היא להראות את זרימת השיבוץ, התזכורות וההתרעות לרכז.
+            כאן מרוכזות ההתראות שלך: שיבוץ לבית מפגש, תזכורות למילוי דיווח, דיווחי תשלום והתרעות לרכז. ההתראות נשמרות בענן ומסונכרנות בין המכשירים.
           </div>
           <div style={{ marginTop:12, fontSize:13, color:'#6c5ce7', fontWeight:800 }}>
             {unreadCount} התראות חדשות מתוך {notifications.length}
