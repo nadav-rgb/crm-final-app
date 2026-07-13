@@ -5,6 +5,7 @@ import DesktopLayout from '../components/DesktopLayout';
 import { useAuth } from '../lib/AuthStore';
 import { useCrm } from '../lib/CrmStore';
 import { getPushStatus, registerPushSubscription } from '../lib/pushClient';
+import { isNativeApp, getNativePushPermission, enableNativePush } from '../lib/nativePush';
 import { authHeader } from '../lib/apiAuth';
 import {
   getNotificationsForUser,
@@ -17,20 +18,35 @@ import {
 // (מחוות משתמש) — דפדפנים חוסמים בקשות אוטומטיות בטעינת דף, וזו הסיבה
 // שחלק גדול מהפעילים מעולם לא נרשמו להתראות.
 function DeviceNotificationCard({ currentUser }) {
+  const native = isNativeApp(); // אפליקציית Capacitor — משתמש ב-FCM נייטיבי, לא ב-web-push
   const [status, setStatus]   = useState(null);   // null = בטעינה
   const [busy, setBusy]       = useState(false);
   const [message, setMessage] = useState('');
 
-  const refresh = useCallback(() => { getPushStatus().then(setStatus); }, []);
+  const refresh = useCallback(() => {
+    if (native) {
+      getNativePushPermission().then(permission => setStatus({ supported: true, native: true, permission }));
+    } else {
+      getPushStatus().then(setStatus);
+    }
+  }, [native]);
   useEffect(() => { refresh(); }, [refresh]);
 
   async function handleEnable() {
     setBusy(true); setMessage('');
-    const sub = await registerPushSubscription(String(currentUser.id));
-    await refresh();
-    setMessage(sub
-      ? '✅ ההתראות הופעלו במכשיר הזה'
-      : 'לא הצלחנו להפעיל — בדוק שההרשאה לא נחסמה בדפדפן ונסה שוב');
+    if (native) {
+      const permission = await enableNativePush(String(currentUser.id));
+      await refresh();
+      setMessage(permission === 'granted'
+        ? '✅ ההתראות הופעלו במכשיר הזה'
+        : 'לא הצלחנו להפעיל — בדוק שההרשאה לא נחסמה בהגדרות המכשיר ונסה שוב');
+    } else {
+      const sub = await registerPushSubscription(String(currentUser.id));
+      await refresh();
+      setMessage(sub
+        ? '✅ ההתראות הופעלו במכשיר הזה'
+        : 'לא הצלחנו להפעיל — בדוק שההרשאה לא נחסמה בדפדפן ונסה שוב');
+    }
     setBusy(false);
   }
 
@@ -50,7 +66,9 @@ function DeviceNotificationCard({ currentUser }) {
 
   if (!status) return null;
 
-  const active = status.supported && status.permission === 'granted' && status.subscribed;
+  const active = native
+    ? status.permission === 'granted'
+    : status.supported && status.permission === 'granted' && status.subscribed;
   let content;
   if (active) {
     content = (
@@ -59,6 +77,22 @@ function DeviceNotificationCard({ currentUser }) {
         <button onClick={handleTest} disabled={busy}
           style={{ background:'#f1efff', border:'1px solid rgba(108,92,231,0.25)', borderRadius:10, padding:'7px 14px', fontSize:13, color:'#6c5ce7', fontWeight:800, cursor:'pointer', fontFamily:'inherit' }}>
           שלח התראת ניסיון
+        </button>
+      </>
+    );
+  } else if (native && (status.permission === 'denied')) {
+    content = (
+      <div style={{ fontSize:13, color:'#b0483f', lineHeight:1.7 }}>
+        🚫 ההתראות חסומות לאפליקציה בהגדרות המכשיר. כדי לאפשר: הגדרות המכשיר ← אפליקציות ← מקרבים ← התראות ← אפשר, ואז חזור לכאן.
+      </div>
+    );
+  } else if (native) {
+    content = (
+      <>
+        <div style={{ fontSize:13, color:'#555' }}>התראות כבויות במכשיר זה — הפעל כדי לקבל תזכורות ועדכונים גם כשהאפליקציה סגורה.</div>
+        <button onClick={handleEnable} disabled={busy}
+          style={{ background:'#6c5ce7', border:'none', borderRadius:10, padding:'9px 18px', fontSize:13, color:'#fff', fontWeight:800, cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap' }}>
+          {busy ? 'מפעיל…' : '🔔 הפעל התראות במכשיר זה'}
         </button>
       </>
     );
