@@ -199,12 +199,17 @@ export default function MeetingHouseDetailPage() {
           <Info label="שם המנחה" value={house.facilitatorName} />
           <Info label="סטטוס" value={house.status} />
 
-          <button type="button" onClick={() => setSeriesSummary(summarizeMeetingHouseSeriesDemo(house, reportsForHouse))} style={{ marginTop:18, border:'none', borderRadius:10, padding:'9px 12px', background:'#f0effe', color:'#6c5ce7', fontWeight:800, cursor:'pointer', fontFamily:'inherit' }}>
-            צפה בסיכום חכם לכל הסדרה
-          </button>
+          {/* סיכום חכם לכל הסדרה — מידע ניהולי (דגלים לרכז וכו'); מוסתר מפעילים. */}
+          {currentUser?.role !== 'activist' && (
+            <>
+              <button type="button" onClick={() => setSeriesSummary(summarizeMeetingHouseSeriesDemo(house, reportsForHouse))} style={{ marginTop:18, border:'none', borderRadius:10, padding:'9px 12px', background:'#f0effe', color:'#6c5ce7', fontWeight:800, cursor:'pointer', fontFamily:'inherit' }}>
+                צפה בסיכום חכם לכל הסדרה
+              </button>
 
-          {seriesSummary && (
-            <pre style={{ marginTop:12, whiteSpace:'pre-wrap', background:'#fffaf5', border:'0.5px solid #eee', borderRadius:12, padding:12, fontFamily:'inherit', fontSize:13, color:'#333', lineHeight:1.7 }}>{seriesSummary}</pre>
+              {seriesSummary && (
+                <pre style={{ marginTop:12, whiteSpace:'pre-wrap', background:'#fffaf5', border:'0.5px solid #eee', borderRadius:12, padding:12, fontFamily:'inherit', fontSize:13, color:'#333', lineHeight:1.7 }}>{seriesSummary}</pre>
+              )}
+            </>
           )}
 
           <div style={{ marginTop:22, fontSize:16, fontWeight:800, color:'#2d1f5e', marginBottom:12 }}>סטטוס דיווחי פעילים</div>
@@ -339,8 +344,8 @@ export default function MeetingHouseDetailPage() {
         )}
       </div>
 
-      {/* AI Summary — מוצג אוטומטית כשכל 4 המפגשים הסתיימו */}
-      {house.status === 'completed' && (
+      {/* סיכום מצטבר — מוצג אוטומטית כשכל 4 המפגשים הסתיימו. מידע ניהולי, מוסתר מפעילים. */}
+      {house.status === 'completed' && currentUser?.role !== 'activist' && (
         <div style={{ marginTop: 18, background: '#fff', border: '0.5px solid rgba(108,92,231,0.2)', borderRadius: 16, padding: 20, boxShadow: '0 1px 4px rgba(108,92,231,0.06)' }}>
           <div style={{ fontSize: 15, fontWeight: 800, color: '#6c5ce7', marginBottom: 14 }}>✨ סיכום לארבעת המפגשים</div>
           <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', fontSize: 13, color: '#333', lineHeight: 1.75, margin: 0 }}>
