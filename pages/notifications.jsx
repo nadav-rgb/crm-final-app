@@ -1,15 +1,102 @@
 // pages/notifications.jsx
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import DesktopLayout from '../components/DesktopLayout';
 import { useAuth } from '../lib/AuthStore';
 import { useCrm } from '../lib/CrmStore';
+import { getPushStatus, registerPushSubscription } from '../lib/pushClient';
+import { authHeader } from '../lib/apiAuth';
 import {
   getNotificationsForUser,
   getNotificationTypeLabel,
   markNotificationAsRead,
   markAllNotificationsAsRead,
 } from '../lib/notificationDemo';
+
+// חיווי + הפעלת התראות במכשיר הנוכחי. הבקשה להרשאה יוצאת רק מלחיצת כפתור
+// (מחוות משתמש) — דפדפנים חוסמים בקשות אוטומטיות בטעינת דף, וזו הסיבה
+// שחלק גדול מהפעילים מעולם לא נרשמו להתראות.
+function DeviceNotificationCard({ currentUser }) {
+  const [status, setStatus]   = useState(null);   // null = בטעינה
+  const [busy, setBusy]       = useState(false);
+  const [message, setMessage] = useState('');
+
+  const refresh = useCallback(() => { getPushStatus().then(setStatus); }, []);
+  useEffect(() => { refresh(); }, [refresh]);
+
+  async function handleEnable() {
+    setBusy(true); setMessage('');
+    const sub = await registerPushSubscription(String(currentUser.id));
+    await refresh();
+    setMessage(sub
+      ? '✅ ההתראות הופעלו במכשיר הזה'
+      : 'לא הצלחנו להפעיל — בדוק שההרשאה לא נחסמה בדפדפן ונסה שוב');
+    setBusy(false);
+  }
+
+  async function handleTest() {
+    setBusy(true); setMessage('');
+    try {
+      const res = await fetch('/api/push/test', { method: 'POST', headers: { ...(await authHeader()) } });
+      const data = await res.json().catch(() => ({}));
+      setMessage(res.ok && data.sent > 0
+        ? `📨 נשלחה התראת ניסיון ל-${data.devices || 1} מכשירים — בדוק שקיבלת תוך כמה שניות`
+        : 'שליחת הניסיון נכשלה — נסה להפעיל מחדש את ההתראות');
+    } catch {
+      setMessage('שליחת הניסיון נכשלה — בדוק את החיבור לרשת');
+    }
+    setBusy(false);
+  }
+
+  if (!status) return null;
+
+  const active = status.supported && status.permission === 'granted' && status.subscribed;
+  let content;
+  if (active) {
+    content = (
+      <>
+        <div style={{ fontSize:14, fontWeight:800, color:'#27ae60' }}>✅ התראות פעילות במכשיר זה</div>
+        <button onClick={handleTest} disabled={busy}
+          style={{ background:'#f1efff', border:'1px solid rgba(108,92,231,0.25)', borderRadius:10, padding:'7px 14px', fontSize:13, color:'#6c5ce7', fontWeight:800, cursor:'pointer', fontFamily:'inherit' }}>
+          שלח התראת ניסיון
+        </button>
+      </>
+    );
+  } else if (!status.supported && status.isIOS && !status.standalone) {
+    content = (
+      <div style={{ fontSize:13, color:'#555', lineHeight:1.7 }}>
+        📱 <b>באייפון:</b> כדי לקבל התראות יש להוסיף את המערכת למסך הבית — לחץ על כפתור השיתוף בספארי ← "הוסף למסך הבית", פתח את האפליקציה מהמסך הבית וחזור לדף זה.
+      </div>
+    );
+  } else if (!status.supported) {
+    content = <div style={{ fontSize:13, color:'#888' }}>הדפדפן במכשיר זה לא תומך בהתראות.</div>;
+  } else if (status.permission === 'denied') {
+    content = (
+      <div style={{ fontSize:13, color:'#b0483f', lineHeight:1.7 }}>
+        🚫 ההתראות חסומות למערכת בדפדפן זה. כדי לאפשר: לחץ על סמל המנעול ליד שורת הכתובת ← הרשאות ← התראות ← אפשר, ואז רענן את הדף.
+      </div>
+    );
+  } else {
+    content = (
+      <>
+        <div style={{ fontSize:13, color:'#555' }}>התראות כבויות במכשיר זה — הפעל כדי לקבל תזכורות ועדכונים גם כשהמערכת סגורה.</div>
+        <button onClick={handleEnable} disabled={busy}
+          style={{ background:'#6c5ce7', border:'none', borderRadius:10, padding:'9px 18px', fontSize:13, color:'#fff', fontWeight:800, cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap' }}>
+          {busy ? 'מפעיל…' : '🔔 הפעל התראות במכשיר זה'}
+        </button>
+      </>
+    );
+  }
+
+  return (
+    <div style={{ background:'#fff', border:'0.5px solid rgba(0,0,0,0.08)', borderRadius:16, padding:18, marginBottom:16 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap' }}>
+        {content}
+      </div>
+      {message && <div style={{ marginTop:10, fontSize:13, fontWeight:700, color:'#6c5ce7' }}>{message}</div>}
+    </div>
+  );
+}
 
 function formatDateTime(value) {
   if (!value) return '—';
@@ -48,6 +135,7 @@ export default function NotificationsPage() {
   return (
     <DesktopLayout title="התראות" subtitle="שיבוץ, תזכורות דיווח, תשלומים והתרעות לרכז">
       <div style={{ maxWidth: 900, margin: '0 auto' }}>
+        {currentUser && <DeviceNotificationCard currentUser={currentUser} />}
         <div style={{ background:'#fff', border:'0.5px solid rgba(0,0,0,0.08)', borderRadius:16, padding:18, marginBottom:16 }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12 }}>
             <div style={{ fontSize:16, fontWeight:800, color:'#2d1f5e', marginBottom:6 }}>מרכז ההתראות</div>

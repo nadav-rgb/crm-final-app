@@ -1,11 +1,79 @@
 // pages/activists/[id].jsx
+import { useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { interactionsLast30, getActivistPerformance, timeInSystem } from '../../lib/activistStats';
 import { useCrm } from '../../lib/CrmStore';
 import { useAuth } from '../../lib/AuthStore';
+import { authHeader } from '../../lib/apiAuth';
 import getReminders from '../../lib/getReminders';
 import DesktopLayout from '../../components/DesktopLayout';
+
+// שליחת התראה יזומה לפעיל (רכז/ראש-פרויקט/מנכ"ל). נשלחת גם למכשירים (push)
+// וגם לפעמון (bell:true) — כך שההודעה מגיעה גם לפעיל בלי מכשיר רשום.
+function SendNotificationBox({ activist }) {
+  const [open, setOpen]       = useState(false);
+  const [title, setTitle]     = useState('');
+  const [body, setBody]       = useState('');
+  const [sending, setSending] = useState(false);
+  const [result, setResult]   = useState('');
+
+  async function handleSend() {
+    if (!title.trim() || !body.trim()) { setResult('יש למלא כותרת ותוכן'); return; }
+    setSending(true); setResult('');
+    try {
+      const res = await fetch('/api/push/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+        body: JSON.stringify({
+          activistId: String(activist.id),
+          title: title.trim(),
+          body: body.trim(),
+          url: '/notifications',
+          bell: true,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setResult(`השליחה נכשלה (${data.error || res.status})`);
+      } else if (data.sent > 0) {
+        setResult(`✅ נשלח: ${data.sent} מכשירים + הפעמון במערכת`);
+        setTitle(''); setBody('');
+      } else {
+        setResult('✅ נשמר בפעמון. לפעיל אין מכשיר רשום להתראות — ההודעה תופיע לו בכניסה הבאה למערכת');
+        setTitle(''); setBody('');
+      }
+    } catch {
+      setResult('השליחה נכשלה — בדוק את החיבור לרשת');
+    }
+    setSending(false);
+  }
+
+  const inputStyle = { width:'100%', border:'1px solid rgba(0,0,0,0.12)', borderRadius:10, padding:'9px 12px', fontSize:13, fontFamily:'inherit', color:'#333', outline:'none', boxSizing:'border-box' };
+
+  return (
+    <div style={{ background:'#fff', borderRadius:16, padding:'16px 20px', border:'0.5px solid rgba(0,0,0,0.07)', boxShadow:'0 1px 4px rgba(0,0,0,0.04)', marginBottom:12 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:10 }}>
+        <div style={{ fontSize:14, fontWeight:800, color:'#2d1f5e' }}>🔔 שליחת התראה לפעיל</div>
+        <button onClick={() => { setOpen(o => !o); setResult(''); }}
+          style={{ background:open?'#f5f5f5':'#6c5ce7', border:'none', borderRadius:10, padding:'7px 16px', fontSize:12, color:open?'#666':'#fff', fontWeight:800, cursor:'pointer', fontFamily:'inherit' }}>
+          {open ? 'סגור' : 'שלח התראה'}
+        </button>
+      </div>
+      {open && (
+        <div style={{ marginTop:12, display:'flex', flexDirection:'column', gap:8 }}>
+          <input value={title} onChange={e => setTitle(e.target.value)} placeholder="כותרת (למשל: תזכורת חשובה)" style={inputStyle} maxLength={80} />
+          <textarea value={body} onChange={e => setBody(e.target.value)} placeholder="תוכן ההודעה…" rows={3} style={{ ...inputStyle, resize:'vertical' }} maxLength={400} />
+          <button onClick={handleSend} disabled={sending}
+            style={{ alignSelf:'flex-start', background:'#6c5ce7', border:'none', borderRadius:10, padding:'9px 22px', fontSize:13, color:'#fff', fontWeight:800, cursor:sending?'wait':'pointer', fontFamily:'inherit', opacity:sending?0.7:1 }}>
+            {sending ? 'שולח…' : 'שלח עכשיו'}
+          </button>
+        </div>
+      )}
+      {result && <div style={{ marginTop:10, fontSize:13, fontWeight:700, color: result.startsWith('✅') ? '#27ae60' : '#b0483f', lineHeight:1.6 }}>{result}</div>}
+    </div>
+  );
+}
 
 const PROJECT_NAMES = { 1: 'אחדות יהודית', 2: 'נעים להכיר', 3: 'שבת מכל הסיבות', 4: 'נפש יהודי' };
 
@@ -19,7 +87,8 @@ export default function ActivistDetail() {
   const router = useRouter();
   const { id, from, contactId } = router.query;
   const { contacts, interactions, activists } = useCrm();
-  const { can, filterProject } = useAuth();
+  const { can, filterProject, currentUser } = useAuth();
+  const canSendNotification = ['coord', 'head', 'ceo'].includes(currentUser?.role);
 
   // רק רכז/ראש-פרויקט/מנכ"ל יכולים לצפות בפרטי פעיל אחר (תואם ל-can.seeActivists בעמוד הרשימה).
   if (!can.seeActivists) {
@@ -68,6 +137,8 @@ export default function ActivistDetail() {
 
         {/* עמודה שמאל — פרטים + פעילות אחרונה */}
         <div>
+          {canSendNotification && <SendNotificationBox activist={activist} />}
+
           {/* פרטים אישיים */}
           <div style={{ background: '#fff', borderRadius: 16, padding: 20, border: '0.5px solid rgba(0,0,0,0.07)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', marginBottom: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 18 }}>

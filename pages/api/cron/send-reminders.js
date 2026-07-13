@@ -1,13 +1,10 @@
-// pages/api/cron/send-reminders.js — Vercel Cron: runs every minute, sends due push notifications
+// pages/api/cron/send-reminders.js — Vercel Cron: runs every minute.
+// 1) קובע תזכורות למפגשי היום בצד השרת (ensureRemindersForDate) — בלי תלות בפתיחת דף.
+// 2) שולח את התזכורות שהגיע זמנן (web-push לכל המכשירים + FCM לאפליקציה).
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { sendFcmToActivist } from '../../../lib/fcmAdmin';
-import webpush from 'web-push';
-
-webpush.setVapidDetails(
-  process.env.VAPID_MAILTO,
-  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
-  process.env.VAPID_PRIVATE_KEY
-);
+import { sendWebPushToActivist } from '../../../lib/webPushSend';
+import { ensureRemindersForDate, israelToday } from '../../../lib/meetingReminderScheduler';
 
 const MESSAGES = {
   activist_1: {
@@ -36,6 +33,18 @@ export default async function handler(req, res) {
 
   const supabase = getSupabaseAdmin();
 
+  // קביעת תזכורות למפגשי היום — כשל כאן לא מפיל את שליחת התזכורות שכבר קיימות.
+  // ?date=YYYY-MM-DD (מוגן באותו CRON_SECRET) — הרצה ידנית לתאריך אחר, לתפעול ודיבוג.
+  const dateOverride = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.date || '')) ? req.query.date : null;
+  let scheduled = 0;
+  try {
+    const r = await ensureRemindersForDate(supabase, dateOverride || israelToday());
+    scheduled = r.scheduled || 0;
+    if (r.error) console.error('ensureRemindersForDate:', r.error);
+  } catch (e) {
+    console.error('ensureRemindersForDate failed:', e.message);
+  }
+
   const { data: reminders, error } = await supabase
     .from('meeting_reminders')
     .select('*')
@@ -43,7 +52,7 @@ export default async function handler(req, res) {
     .lte('remind_at', new Date().toISOString());
 
   if (error) return res.status(500).json({ error: error.message });
-  if (!reminders?.length) return res.status(200).json({ sent: 0 });
+  if (!reminders?.length) return res.status(200).json({ sent: 0, scheduled });
 
   let sent = 0;
 
@@ -53,31 +62,13 @@ export default async function handler(req, res) {
       : reminder.activist_id;
 
     const msg = MESSAGES[reminder.type];
+    const payload = { ...msg, url: '/base-meetings' };
 
-    const { data: subs } = await supabase
-      .from('push_subscriptions')
-      .select('subscription')
-      .eq('activist_id', targetId);
-
-    if (subs?.length) {
-      for (const { subscription } of subs) {
-        try {
-          await webpush.sendNotification(
-            subscription,
-            JSON.stringify({ ...msg, url: '/base-meetings' })
-          );
-          sent++;
-        } catch (e) {
-          // Subscription expired — remove it
-          if (e.statusCode === 410) {
-            await supabase.from('push_subscriptions').delete().eq('activist_id', targetId);
-          }
-        }
-      }
-    }
+    const web = await sendWebPushToActivist(supabase, targetId, payload);
+    sent += web.sent;
 
     // FCM נייטיב לאפליקציה (no-op אם לא מוגדר FCM_SERVICE_ACCOUNT)
-    const fcm = await sendFcmToActivist(supabase, targetId, { ...msg, url: '/base-meetings' });
+    const fcm = await sendFcmToActivist(supabase, targetId, payload);
     sent += fcm.sent || 0;
 
     await supabase
@@ -86,5 +77,5 @@ export default async function handler(req, res) {
       .eq('id', reminder.id);
   }
 
-  return res.status(200).json({ sent });
+  return res.status(200).json({ sent, scheduled });
 }

@@ -1,4 +1,6 @@
 // pages/api/push/subscribe.js — saves push subscription to Supabase
+// תומך בכמה מכשירים לכל משתמש: כל endpoint (מכשיר/דפדפן) הוא שורה נפרדת.
+// רישום חוזר מאותו מכשיר מחליף רק את השורה של אותו endpoint — לא את שאר המכשירים.
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { requireAuth } from '../meeting-houses/_auth';
 
@@ -9,7 +11,7 @@ export default async function handler(req, res) {
   if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
 
   const { activistId, subscription } = req.body;
-  if (!activistId || !subscription) {
+  if (!activistId || !subscription?.endpoint) {
     return res.status(400).json({ error: 'Missing fields' });
   }
 
@@ -20,12 +22,25 @@ export default async function handler(req, res) {
 
   const supabase = getSupabaseAdmin();
 
-  // Replace any existing subscription for this activist (new device/browser)
-  await supabase.from('push_subscriptions').delete().eq('activist_id', activistId);
+  // פרטי מכשיר לדיבוג ("איזה מכשיר זה?") — נשמרים בתוך ה-jsonb; מוסרים לפני שליחה בפועל.
+  const enriched = {
+    ...subscription,
+    _meta: {
+      user_agent: String(req.headers['user-agent'] || '').slice(0, 300),
+      registered_at: new Date().toISOString(),
+      activist_name: auth.profile.name || '',
+    },
+  };
+
+  // מחליף רק את הרשומה של המכשיר הזה (אותו endpoint) — אצל כל משתמש שהוא
+  // (מכשיר שעבר בין משתמשים שייך למי שמחובר בו עכשיו).
+  await supabase.from('push_subscriptions')
+    .delete()
+    .eq('subscription->>endpoint', subscription.endpoint);
 
   const { error } = await supabase.from('push_subscriptions').insert({
-    activist_id: activistId,
-    subscription,
+    activist_id: String(activistId),
+    subscription: enriched,
   });
 
   if (error) return res.status(500).json({ error: error.message });

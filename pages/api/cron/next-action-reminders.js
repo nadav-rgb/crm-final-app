@@ -6,13 +6,7 @@
 // אין צורך בשינוי סכמה: משתמשים בטבלת notifications הקיימת.
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { sendFcmToActivist } from '../../../lib/fcmAdmin';
-import webpush from 'web-push';
-
-webpush.setVapidDetails(
-  process.env.VAPID_MAILTO,
-  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
-  process.env.VAPID_PRIVATE_KEY
-);
+import { sendWebPushToActivist } from '../../../lib/webPushSend';
 
 // "היום" + השעה לפי שעון ישראל (UTC+3).
 function israelNow() {
@@ -67,23 +61,9 @@ export default async function handler(req, res) {
 
     processed++;
 
-    // web-push (דפדפן)
-    const { data: subs } = await supabase
-      .from('push_subscriptions')
-      .select('subscription')
-      .eq('activist_id', targetId);
-    if (subs?.length) {
-      for (const { subscription } of subs) {
-        try {
-          await webpush.sendNotification(subscription, JSON.stringify({ title, body, url }));
-          sent++;
-        } catch (e) {
-          if (e.statusCode === 410) {
-            await supabase.from('push_subscriptions').delete().eq('activist_id', targetId);
-          }
-        }
-      }
-    }
+    // web-push לכל מכשירי הפעיל (מנוי מת נמחק נקודתית בתוך ה-helper)
+    const web = await sendWebPushToActivist(supabase, targetId, { title, body, url });
+    sent += web.sent;
 
     // FCM (אפליקציית Capacitor) — no-op אם לא מוגדר
     const fcm = await sendFcmToActivist(supabase, targetId, { title, body, url });
