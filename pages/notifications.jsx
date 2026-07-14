@@ -208,7 +208,8 @@ export default function NotificationsPage() {
                 </div>
                 <div style={{ fontSize:11, color:'#aaa', whiteSpace:'nowrap' }}>{formatDateTime(n.created_at)}</div>
               </div>
-              <div style={{ fontSize:13, color:'#555', lineHeight:1.7 }}>{n.body}</div>
+              {/* pre-wrap — גוף התראה מרובה-שורות (למשל סיכום AI) נשמר עם שבירות שורה */}
+              <div style={{ fontSize:13, color:'#555', lineHeight:1.7, whiteSpace:'pre-wrap' }}>{n.body}</div>
             </div>
           ))}
 

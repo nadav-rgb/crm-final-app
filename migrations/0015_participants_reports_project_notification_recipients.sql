@@ -24,13 +24,19 @@ update public.base_meeting_reports r
 update public.base_meeting_reports set project_id = 1 where project_id is null;
 
 -- (ג) נמעני-התראות: security definer עוקף את בידוד profiles (שבגללו כיום שאילתת
--- המנהלים מסשן של פעיל מחזירה ריק והתראות-מנהל מתות). חושף רק code/name/role של בעלי-תפקיד.
+-- המנהלים מסשן של פעיל מחזירה ריק והתראות-מנהל מתות). חושף רק code/name/role של בעלי-תפקיד,
+-- ורק לחבר בפרויקט המבוקש (או מנכ"ל) — שלא ניתן יהיה למנות בעלי-תפקיד של פרויקטים זרים.
 create or replace function public.app_notification_recipients(target_project int)
 returns table(activist_code int, name text, role text)
 language sql stable security definer set search_path = public as $$
   select activist_code, name, role
     from public.profiles
    where activist_code is not null
+     -- שומר סף: הקורא חייב להיות חבר בפרויקט המבוקש (או מנכ"ל)
+     and (
+       app_current_role() = 'ceo'
+       or target_project = any(coalesce(app_current_project_ids(), array[]::int[]))
+     )
      and (
        role = 'ceo'
        or (role in ('coord','head','finance')

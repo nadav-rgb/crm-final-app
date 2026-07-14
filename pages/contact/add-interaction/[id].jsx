@@ -112,6 +112,8 @@ export default function AddInteractionPage() {
       set('quality', '');
       // שאלת המשך לא רלוונטית לשבת (כל שבת מעל 15 דקות) — נקבע אוטומטית "מעל המינימום"
       set('long_enough', 'yes');
+      // מונה נקי — שלא ידלוף ערך שהוקלד קודם במצב רב-משתתפים
+      set('participant_count', '');
     } else {
       // איפוס ערכים אוטומטיים בעת יציאה משבת
       if (wasShabbat) { set('long_enough', null); set('participant_count', ''); }
@@ -123,17 +125,21 @@ export default function AddInteractionPage() {
   // מפגש רב משתתפים — קומפוננטה נפרדת. מאחורי הקלעים זהו קשר פרונטלי באיכות "רב משתתפים"
   // (מלגה קבועה 300 ₪ עם תקרה חודשית — ראה lib/paymentCalc.js), כדי לשמר את מנוע התשלום.
   function toggleMulti(on) {
-    setForm(prev => ({
-      ...prev,
-      multi:   on,
-      type:    on ? 'פרונטלי' : '',
-      quality: on ? CONFIG.interactionQualityMulti : '',
-      // שורה ריקה ראשונה כבר פתוחה — שהפעיל יראה מיד את הרשימה, בלי לנחש
-      participant_clients:  on ? [''] : [],
-      participant_external: on ? [''] : [],
-      // אם עברו לכאן משבת — מאפסים את המשך שנקבע אוטומטית, שלא ידלג על שאלת המשך
-      long_enough: prev.type === 'אירוח שבת' ? null : prev.long_enough,
-    }));
+    setForm(prev => {
+      if (prev.multi === on) return prev; // לחיצה חוזרת על המצב הפעיל — לא מוחקים שורות שהוזנו
+      return {
+        ...prev,
+        multi:   on,
+        type:    on ? 'פרונטלי' : '',
+        quality: on ? CONFIG.interactionQualityMulti : '',
+        // שורה ריקה ראשונה כבר פתוחה — שהפעיל יראה מיד את הרשימה, בלי לנחש
+        participant_clients:  on ? [''] : [],
+        participant_external: on ? [''] : [],
+        // אם עברו לכאן משבת — מאפסים ערכים אוטומטיים של שבת (משך + מונה לקוחות)
+        long_enough:       prev.type === 'אירוח שבת' ? null : prev.long_enough,
+        participant_count: prev.type === 'אירוח שבת' ? ''   : prev.participant_count,
+      };
+    });
     setErrors({});
   }
 

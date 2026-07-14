@@ -63,10 +63,12 @@ export default function MyActivitiesPage() {
         title: i.contact_name || 'לקוח',
       }));
     baseMeetings
-      .filter(m => Number(m.activist_id) === Number(currentUser.id) && m.submitted && m.date && new Date(m.date) >= start)
+      // מפגש בלי תאריך מתוזמן (date:'') עדיין נספר — לפי תאריך השליחה (submitted_at)
+      .map(m => ({ ...m, _when: m.date || (m.submitted_at ? String(m.submitted_at).slice(0, 10) : '') }))
+      .filter(m => Number(m.activist_id) === Number(currentUser.id) && m.submitted && m._when && new Date(m._when) >= start)
       .forEach(m => items.push({
         key: `b-${m.id}`, kind: 'baseMeeting',
-        date: m.date, time: m.start_time || '',
+        date: m._when, time: m.start_time || '',
         title: m.meeting_place_city
           ? `בית מפגש ${m.meeting_place_city}${m.meeting_place_number ? ` ${m.meeting_place_number}` : ''}`
           : `מפגש בסיס${m.meeting_number ? ` מס' ${m.meeting_number}` : ''}`,
