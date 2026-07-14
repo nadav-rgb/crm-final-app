@@ -126,8 +126,16 @@ export default function BaseMeetingsPage() {
     if (currentUser?.role === 'activist') return Number(meeting.activist_id) === Number(currentUser?.id);
     if (currentUser?.role === 'ceo') return true;
     if (currentUser?.role === 'coord') {
+      const myProjects = (Array.isArray(currentUser.project_ids) && currentUser.project_ids.length > 0
+        ? currentUser.project_ids
+        : (currentUser.project_id ? [currentUser.project_id] : [])).map(Number);
+      if (meeting.project_id != null) return myProjects.includes(Number(meeting.project_id));
+      // fallback לשורות ישנות בלי project_id — חפיפת פרויקטים מול הפעיל
       const act = activists.find(a => Number(a.id) === Number(meeting.activist_id));
-      return act?.project_id === currentUser?.project_id;
+      const actProjects = Array.isArray(act?.project_ids) && act.project_ids.length > 0
+        ? act.project_ids
+        : (act?.project_id ? [act.project_id] : []);
+      return actProjects.some(pid => myProjects.includes(Number(pid)));
     }
     if (['head', 'finance'].includes(currentUser?.role) && Number(currentUser?.project_id) === 1) return true;
     return Number(meeting.activist_id) === Number(currentUser?.id);
