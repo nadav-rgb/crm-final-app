@@ -429,6 +429,8 @@ p  { font-size: 14px; color: var(--text-secondary); font-weight: 400; }
   font-size: 16px;
   pointer-events: none;
 }
+/* שהטקסט לא ייכנס מתחת לאייקון החיפוש (RTL — האייקון מימין) */
+.search-wrap .form-input { padding-right: 38px; }
 
 /* ══ Empty state ════════════════════════════════ */
 .empty-state {

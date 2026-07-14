@@ -89,11 +89,10 @@ export default function ContactsPage() {
     >
       {/* שורת כלים */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center' }}>
-        <div style={{ position: 'relative', flex: 1 }}>
-          <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#bbb', fontSize: 16 }}>⌕</span>
-          <input type="text" placeholder="חיפוש לקוח..."
-            value={search} onChange={e => setSearch(e.target.value)}
-            style={{ paddingRight: 36 }} />
+        <div className="search-wrap" style={{ flex: 1, marginBottom: 0 }}>
+          <span className="search-icon">⌕</span>
+          <input type="text" className="form-input" placeholder="חיפוש לקוח..."
+            value={search} onChange={e => setSearch(e.target.value)} />
         </div>
 
         {/* מצב תצוגה */}
@@ -211,18 +210,23 @@ function GridCard({ contact, can, viewMode }) {
 
 // ── שורת רשימה ───────────────────────────────────────────────
 function ListRow({ contact, can, last, viewMode }) {
+  const router = useRouter();
+  const href = `/contact/${contact.id}?from=contacts&view=${viewMode}`;
   const borderColors = { 'קשר חי': '#27ae60', 'קשר מתמשך': '#3498db', 'דורש חידוש': '#f39c12', 'על סף ניתוק': '#e74c3c' };
   const borderColor  = can.seeSensitiveData ? (borderColors[contact.status] ?? '#e0e0e0') : '#e0e0e0';
   const projName     = PROJECT_NAMES[contact.project_id] ?? '—';
 
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 12,
-      padding: '11px 16px',
-      borderBottom: last ? 'none' : '0.5px solid #f5f5f5',
-      borderRight: `3px solid ${borderColor}`,
-      transition: 'background 0.15s ease',
-    }}
+    <div
+      onClick={() => router.push(href)}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 12,
+        padding: '11px 16px',
+        borderBottom: last ? 'none' : '0.5px solid #f5f5f5',
+        borderRight: `3px solid ${borderColor}`,
+        transition: 'background 0.15s ease',
+        cursor: 'pointer',
+      }}
       onMouseEnter={e => e.currentTarget.style.background = '#fafafa'}
       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
     >
@@ -255,17 +259,20 @@ function ListRow({ contact, can, last, viewMode }) {
       <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
         {can.addContact && (
           <Link href={`/contact/add-interaction/${contact.id}`} className="btn"
+            onClick={e => e.stopPropagation()}
             style={{ textDecoration: 'none', fontSize: 12, padding: '6px 12px' }}>
             + קשר
           </Link>
         )}
         {can.callContact && (
           <a href={`tel:${contact.phone}`} className="btn"
+            onClick={e => e.stopPropagation()}
             style={{ textDecoration: 'none', fontSize: 12, padding: '6px 12px', color: '#27ae60', borderColor: '#27ae60' }}>
             📞
           </a>
         )}
-        <Link href={`/contact/${contact.id}?from=contacts&view=${viewMode}`} className="btn btn-primary"
+        <Link href={href} className="btn btn-primary"
+          onClick={e => e.stopPropagation()}
           style={{ textDecoration: 'none', fontSize: 12, padding: '6px 20px', minWidth: 80, textAlign: 'center' }}>
           צפייה →
         </Link>
