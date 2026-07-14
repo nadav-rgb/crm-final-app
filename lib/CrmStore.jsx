@@ -66,7 +66,7 @@ function persistBaseMeetings(nextReports) {
 const INTERACTION_COLUMNS = [
   'id', 'contact_id', 'activist_id', 'project_id', 'contact_name', 'type', 'quality',
   'duration_minutes', 'outcome', 'date', 'time', 'notes', 'description', 'ai_summary',
-  'next_action', 'next_action_date',
+  'next_action', 'next_action_date', 'participants',
 ];
 
 function toInteractionRow(interaction) {
@@ -354,7 +354,7 @@ export function CrmProvider({ children }) {
     return () => { active = false; };
   }, [currentUser, authLoading]);
 
-  function addInteraction({ id, contact_id, activist_id, type, quality, duration_minutes, outcome, date, time, notes, description, ai_summary, next_action, next_action_date, mitzvot_level }) {
+  function addInteraction({ id, contact_id, activist_id, type, quality, duration_minutes, outcome, date, time, notes, description, ai_summary, next_action, next_action_date, mitzvot_level, participants }) {
     const contact = contacts.find(c => c.id === contact_id);
     const newInteraction = {
       id:               id ?? Date.now(),
@@ -374,6 +374,8 @@ export function CrmProvider({ children }) {
       next_action:      next_action ?? null,
       next_action_date: next_action_date ?? null,
       ...(mitzvot_level !== undefined && mitzvot_level !== null ? { mitzvot_level } : {}),
+      // רק כשיש משתתפים — קשר רגיל לא שולח את המפתח (בטוח גם אם מיגרציה 0015 טרם רצה)
+      ...(participants !== undefined && participants !== null ? { participants } : {}),
     };
     setInteractions(prev => [newInteraction, ...prev]);
 

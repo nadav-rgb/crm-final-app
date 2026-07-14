@@ -19,6 +19,7 @@ const EMPTY = {
   notes: '', description: '', ai_summary: '',
   next_action: '', next_action_date: '',
   multi: false, participant_count: '', // מפגש רב משתתפים — קומפוננטה נפרדת
+  participant_clients: [], participant_external: [], // שמות משתתפים — רב משתתפים (עדכונים אימיוטביליים בלבד!)
 };
 
 export default function AddInteractionPage() {
@@ -74,6 +75,10 @@ export default function AddInteractionPage() {
   // "רב משתתפים" עבר לקומפוננטה נפרדת (toggleMulti) — לא מוצג עוד כאיכות רגילה כדי למנוע כפילות.
   const qualityOptions = CONFIG.interactionQuality;
   const QUALITY_LABELS = { [CONFIG.interactionQualityMulti]: 'מפגש רב משתתפים' };
+  // בחירת משתתפים מהלקוחות של הפעיל — בלי הלקוח שעליו מדווחים, ממוין עברית
+  const clientOptions = contacts
+    .filter(c => c.id !== contactId)
+    .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'he'));
   const payableCheck = (isAchdut && form.type && (form.quality || isShabbat) && form.long_enough)
     ? calcInteractionPayment(
         { type: form.type, quality: form.quality, duration_minutes: duration },
@@ -110,8 +115,22 @@ export default function AddInteractionPage() {
       multi:   on,
       type:    on ? 'פרונטלי' : '',
       quality: on ? CONFIG.interactionQualityMulti : '',
+      // שורה ריקה ראשונה כבר פתוחה — שהפעיל יראה מיד את הרשימה, בלי לנחש
+      participant_clients:  on ? [''] : [],
+      participant_external: on ? [''] : [],
     }));
     setErrors({});
+  }
+
+  // עוזרי שורות משתתפים — תמיד יוצרים מערך חדש (לא לגעת ב-EMPTY המשותף)
+  function setParticipantRow(field, idx, value) {
+    setForm(prev => { const rows = [...prev[field]]; rows[idx] = value; return { ...prev, [field]: rows }; });
+  }
+  function addParticipantRow(field) {
+    setForm(prev => ({ ...prev, [field]: [...prev[field], ''] }));
+  }
+  function removeParticipantRow(field, idx) {
+    setForm(prev => ({ ...prev, [field]: prev[field].filter((_, i) => i !== idx) }));
   }
 
   function handleVoiceTranscript(text) {
@@ -152,9 +171,19 @@ export default function AddInteractionPage() {
       messages.push({ kind: 'warn', text: `שים לב: עברת את גג המפגשים המאושר לחודש זה עבור סוג פעילות זה. הקשר יישמר אך לא יזכה בתשלום.` });
     }
 
-    // מפגש רב משתתפים — משמרים את מספר המשתתפים בתוך ההערות (אין עמודה ייעודית ב-interactions).
+    // איסוף משתתפים למבנה מובנה (עמודת participants) — שורות ריקות מסוננות, שמות לא חובה
+    const participantClients = form.participant_clients
+      .filter(v => v !== '')
+      .map(v => { const c = contacts.find(x => String(x.id) === String(v)); return { id: c?.id ?? Number(v), name: c?.name ?? '' }; });
+    const participantExternal = form.participant_external.map(s => s.trim()).filter(Boolean);
+    const participantsData = form.multi
+      ? { count: Number(form.participant_count) || null, clients: participantClients, external: participantExternal }
+      : null;
+
+    // שיקוף לתוך notes — המונה והשמות נראים בכל מקום שמציג הערות, בלי UI נוסף
+    const participantNames = [...participantClients.map(p => p.name), ...participantExternal].filter(Boolean);
     const notesFinal = form.multi
-      ? `👥 מפגש רב משתתפים · ${form.participant_count} משתתפים${form.notes.trim() ? `\n${form.notes.trim()}` : ''}`
+      ? `👥 מפגש רב משתתפים · ${form.participant_count} משתתפים${participantNames.length ? ` · משתתפים: ${participantNames.join(', ')}` : ''}${form.notes.trim() ? `\n${form.notes.trim()}` : ''}`
       : form.notes.trim();
 
     const interactionPayload = {
@@ -172,6 +201,7 @@ export default function AddInteractionPage() {
       ai_summary:       form.ai_summary.trim(),
       next_action:      form.next_action.trim(),
       next_action_date: form.next_action_date,
+      ...(participantsData ? { participants: participantsData } : {}),
     };
 
     addInteraction(interactionPayload);
@@ -310,6 +340,41 @@ export default function AddInteractionPage() {
                 placeholder="כמה משתתפים היו במפגש?" value={form.participant_count}
                 onChange={e => set('participant_count', e.target.value)} />
               {errors.participant_count && <span className="error-msg">{errors.participant_count}</span>}
+
+              {/* משתתפים מהלקוחות שלך — שורות בחירה מהרשימה */}
+              <div style={{ marginTop: 14 }}>
+                <label className="form-label">משתתפים מהלקוחות שלך <span style={{ color: '#999', fontWeight: 400 }}>(לא חובה)</span></label>
+                {form.participant_clients.map((val, idx) => (
+                  <div key={idx} style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+                    <select className="form-select" value={val}
+                      onChange={e => setParticipantRow('participant_clients', idx, e.target.value)}>
+                      <option value="">בחר לקוח מהרשימה...</option>
+                      {clientOptions
+                        .filter(c => String(c.id) === String(val) || !form.participant_clients.includes(String(c.id)))
+                        .map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                    <button type="button" aria-label="הסר משתתף" onClick={() => removeParticipantRow('participant_clients', idx)}
+                      style={{ border: '1.5px solid #e8e8e8', background: '#fafafa', color: '#c0392b', borderRadius: 10, width: 34, height: 34, cursor: 'pointer', fontSize: 15, lineHeight: 1, flexShrink: 0 }}>✕</button>
+                  </div>
+                ))}
+                <button type="button" onClick={() => addParticipantRow('participant_clients')}
+                  style={{ border: '1.5px dashed #6c5ce7', background: '#f0effe', color: '#6c5ce7', borderRadius: 10, padding: '8px 14px', cursor: 'pointer', fontWeight: 700, fontSize: 13, fontFamily: 'inherit' }}>+ הוסף משתתף</button>
+              </div>
+
+              {/* משתתפים נוספים שאינם ברשימת הלקוחות — טקסט חופשי */}
+              <div style={{ marginTop: 14 }}>
+                <label className="form-label">משתתפים נוספים (לא מהלקוחות) <span style={{ color: '#999', fontWeight: 400 }}>(לא חובה)</span></label>
+                {form.participant_external.map((val, idx) => (
+                  <div key={idx} style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+                    <input type="text" className="form-input" placeholder="שם המשתתף" value={val}
+                      onChange={e => setParticipantRow('participant_external', idx, e.target.value)} />
+                    <button type="button" aria-label="הסר משתתף" onClick={() => removeParticipantRow('participant_external', idx)}
+                      style={{ border: '1.5px solid #e8e8e8', background: '#fafafa', color: '#c0392b', borderRadius: 10, width: 34, height: 34, cursor: 'pointer', fontSize: 15, lineHeight: 1, flexShrink: 0 }}>✕</button>
+                  </div>
+                ))}
+                <button type="button" onClick={() => addParticipantRow('participant_external')}
+                  style={{ border: '1.5px dashed #6c5ce7', background: '#f0effe', color: '#6c5ce7', borderRadius: 10, padding: '8px 14px', cursor: 'pointer', fontWeight: 700, fontSize: 13, fontFamily: 'inherit' }}>+ הוסף משתתף</button>
+              </div>
             </div>
           )}
         </div>
