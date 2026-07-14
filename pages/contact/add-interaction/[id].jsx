@@ -79,6 +79,11 @@ export default function AddInteractionPage() {
   const clientOptions = contacts
     .filter(c => c.id !== contactId)
     .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'he'));
+  // תווית תיאור לפי סוג קשר — override map (דפוס QUALITY_LABELS)
+  const DESCRIPTION_LABELS       = { 'אירוח שבת': 'תיאור חוויות השבת' };
+  const DESCRIPTION_PLACEHOLDERS = { 'אירוח שבת': 'ספר על השבת — מי התארח, איך הייתה האווירה, מה במיוחד ריגש...' };
+  const descriptionLabel       = DESCRIPTION_LABELS[form.type] ?? 'תיאור המפגש';
+  const descriptionPlaceholder = DESCRIPTION_PLACEHOLDERS[form.type] ?? 'תאר את המפגש בפירוט — מי הלקוח, מה דובר, מה הפוטנציאל...';
   const payableCheck = (isAchdut && form.type && (form.quality || isShabbat) && form.long_enough)
     ? calcInteractionPayment(
         { type: form.type, quality: form.quality, duration_minutes: duration },
@@ -100,11 +105,19 @@ export default function AddInteractionPage() {
   }
 
   function handleTypeChange(t) {
+    const wasShabbat = form.type === 'אירוח שבת';
     set('type', t);
-    // אירוח שבת — אין איכות קשר (תעריף קבוע); מנקים בחירה קודמת
-    if (t === 'אירוח שבת') set('quality', '');
-    // "רב משתתפים" רלוונטי רק לפרונטלי — מנקים אם עברו לסוג אחר
-    else if (t !== 'פרונטלי' && form.quality === CONFIG.interactionQualityMulti) set('quality', '');
+    if (t === 'אירוח שבת') {
+      // אירוח שבת — אין איכות קשר (תעריף קבוע); מנקים בחירה קודמת
+      set('quality', '');
+      // שאלת המשך לא רלוונטית לשבת (כל שבת מעל 15 דקות) — נקבע אוטומטית "מעל המינימום"
+      set('long_enough', 'yes');
+    } else {
+      // איפוס ערכים אוטומטיים בעת יציאה משבת
+      if (wasShabbat) { set('long_enough', null); set('participant_count', ''); }
+      // "רב משתתפים" רלוונטי רק לפרונטלי — מנקים אם עברו לסוג אחר
+      if (t !== 'פרונטלי' && form.quality === CONFIG.interactionQualityMulti) set('quality', '');
+    }
   }
 
   // מפגש רב משתתפים — קומפוננטה נפרדת. מאחורי הקלעים זהו קשר פרונטלי באיכות "רב משתתפים"
@@ -118,6 +131,8 @@ export default function AddInteractionPage() {
       // שורה ריקה ראשונה כבר פתוחה — שהפעיל יראה מיד את הרשימה, בלי לנחש
       participant_clients:  on ? [''] : [],
       participant_external: on ? [''] : [],
+      // אם עברו לכאן משבת — מאפסים את המשך שנקבע אוטומטית, שלא ידלג על שאלת המשך
+      long_enough: prev.type === 'אירוח שבת' ? null : prev.long_enough,
     }));
     setErrors({});
   }
@@ -145,8 +160,10 @@ export default function AddInteractionPage() {
     } else {
       if (!form.type)                            e.type         = 'נא לבחור סוג קשר';
       if (!form.quality && !isShabbat)           e.quality      = 'נא לבחור איכות קשר';
+      if (isShabbat && (!form.participant_count || Number(form.participant_count) < 1))
+                                                 e.participant_count = 'נא לציין כמה לקוחות היו אצלך בשבת';
     }
-    if (!form.description?.trim())               e.description  = 'תיאור המפגש הוא שדה חובה';
+    if (!form.description?.trim())               e.description  = `${descriptionLabel} הוא שדה חובה`;
     if (!form.date)                              e.date         = 'נא לבחור תאריך';
     if (form.date > TODAY)                       e.date         = 'תאריך לא יכול להיות בעתיד';
     if (isAchdut && !form.long_enough)           e.long_enough  = 'נא לציין משך הקשר';
@@ -178,13 +195,18 @@ export default function AddInteractionPage() {
     const participantExternal = form.participant_external.map(s => s.trim()).filter(Boolean);
     const participantsData = form.multi
       ? { count: Number(form.participant_count) || null, clients: participantClients, external: participantExternal }
-      : null;
+      : isShabbat
+        ? { count: Number(form.participant_count) || null, clients: [], external: [] }
+        : null;
 
     // שיקוף לתוך notes — המונה והשמות נראים בכל מקום שמציג הערות, בלי UI נוסף
     const participantNames = [...participantClients.map(p => p.name), ...participantExternal].filter(Boolean);
+    const baseNotes = form.notes.trim();
     const notesFinal = form.multi
-      ? `👥 מפגש רב משתתפים · ${form.participant_count} משתתפים${participantNames.length ? ` · משתתפים: ${participantNames.join(', ')}` : ''}${form.notes.trim() ? `\n${form.notes.trim()}` : ''}`
-      : form.notes.trim();
+      ? `👥 מפגש רב משתתפים · ${form.participant_count} משתתפים${participantNames.length ? ` · משתתפים: ${participantNames.join(', ')}` : ''}${baseNotes ? `\n${baseNotes}` : ''}`
+      : isShabbat
+        ? `🍷 אירוח שבת · ${form.participant_count} לקוחות${baseNotes ? `\n${baseNotes}` : ''}`
+        : baseNotes;
 
     const interactionPayload = {
       id:               Date.now(),
@@ -413,8 +435,26 @@ export default function AddInteractionPage() {
         </div>
         )}
 
-        {/* משך זמן — אחדות יהודית בלבד */}
-        {isAchdut && (
+        {/* אירוח שבת — כמה לקוחות התארחו (שאלת המשך מיותרת בשבת; נקבעת אוטומטית) */}
+        {isShabbat && (
+          <div style={card}>
+            <label className="form-label">כמה לקוחות היו אצלך בשבת? <span style={{ color: '#e24b4a' }}>*</span></label>
+            <input type="number" min="1" className={`form-input ${errors.participant_count ? 'form-error' : ''}`}
+              placeholder="מספר הלקוחות שהתארחו אצלך" value={form.participant_count}
+              onChange={e => set('participant_count', e.target.value)} />
+            {errors.participant_count && <span className="error-msg">{errors.participant_count}</span>}
+            {payableCheck && (
+              <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 10, fontSize: 13, fontWeight: 700, background: payableCheck.payable ? '#edfaf1' : '#f5f5f5', color: payableCheck.payable ? '#27ae60' : '#888' }}>
+                {payableCheck.payable
+                  ? `✓ קשר מזכה בתשלום — ${payableCheck.amount} ₪`
+                  : `✗ ${payableCheck.reason || 'לא מזכה בתשלום'}`}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* משך זמן — אחדות יהודית בלבד; לא בשבת (נקבע אוטומטית, כל שבת מעל המינימום) */}
+        {isAchdut && !isShabbat && (
           <div style={card}>
             <label className="form-label">משך זמן הקשר <span style={{ color: '#e24b4a' }}>*</span></label>
             <div style={{ display: 'flex', gap: 10 }}>
@@ -451,11 +491,11 @@ export default function AddInteractionPage() {
           {errors.date && <span className="error-msg">{errors.date}</span>}
         </div>
 
-        {/* תיאור המפגש */}
+        {/* תיאור המפגש (באירוח שבת: תיאור חוויות השבת) */}
         <div style={card}>
-          <label className="form-label">תיאור המפגש <span style={{ color: '#e24b4a' }}>*</span></label>
+          <label className="form-label">{descriptionLabel} <span style={{ color: '#e24b4a' }}>*</span></label>
           <textarea className={`form-textarea ${errors.description ? 'form-error' : ''}`} rows={4}
-            placeholder="תאר את המפגש בפירוט — מי הלקוח, מה דובר, מה הפוטנציאל..."
+            placeholder={descriptionPlaceholder}
             value={form.description} onChange={e => set('description', e.target.value)} />
           {errors.description && <span className="error-msg">{errors.description}</span>}
           <VoiceInput onTranscript={handleVoiceTranscript} />
