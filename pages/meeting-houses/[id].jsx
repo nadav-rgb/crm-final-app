@@ -219,9 +219,12 @@ export default function MeetingHouseDetailPage() {
             <MiniStat label="ממתינים" value={waitingReports.length} />
           </div>
 
-          <button type="button" onClick={runReminderDemoForHouse} disabled={waitingReports.length === 0} style={{ marginBottom:14, border:'none', borderRadius:10, padding:'9px 12px', background:waitingReports.length ? '#ffe8c2' : '#eee', color:waitingReports.length ? '#8a5300' : '#999', fontWeight:900, cursor:waitingReports.length ? 'pointer' : 'not-allowed', fontFamily:'inherit' }}>
-            שלח תזכורות לדיווחים חסרים
-          </button>
+          {/* שליחת תזכורות — כלי ניהול לרכז ומעלה; פעיל משובץ לא רואה */}
+          {can.seeMeetingHouses && (
+            <button type="button" onClick={runReminderDemoForHouse} disabled={waitingReports.length === 0} style={{ marginBottom:14, border:'none', borderRadius:10, padding:'9px 12px', background:waitingReports.length ? '#ffe8c2' : '#eee', color:waitingReports.length ? '#8a5300' : '#999', fontWeight:900, cursor:waitingReports.length ? 'pointer' : 'not-allowed', fontFamily:'inherit' }}>
+              שלח תזכורות לדיווחים חסרים
+            </button>
+          )}
 
           {reportsForHouse.length > 0 && (
             <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:18 }}>
