@@ -8,7 +8,7 @@ import { useAuth } from '../../../lib/AuthStore';
 import { calcInteractionPayment, PAID_PROJECT_IDS } from '../../../lib/paymentCalc';
 import DesktopLayout from '../../../components/DesktopLayout';
 import { summarizeInteractionText } from '../../../lib/aiService';
-import { createPaymentInteractionNotifications, createDemoNotification } from '../../../lib/notificationDemo';
+import { createPaymentInteractionNotifications, createInteractionSummaryNotifications, createDemoNotification } from '../../../lib/notificationDemo';
 import VoiceInput from '../../../components/VoiceInput';
 
 const TODAY = new Date().toISOString().split('T')[0];
@@ -25,14 +25,13 @@ export default function AddInteractionPage() {
   const router    = useRouter();
   const { id }    = router.query;
   const contactId = Number(id);
-  const { contacts, interactions, addInteraction, paymentConfig } = useCrm();
+  const { contacts, interactions, addInteraction, updateInteraction, paymentConfig } = useCrm();
   const { currentUser, activeProject } = useAuth();
   const contact = contacts.find(c => c.id === contactId);
 
   const [form,      setForm]      = useState(EMPTY);
   const [errors,    setErrors]    = useState({});
   const [success,   setSuccess]   = useState(false);
-  const [aiLoading, setAiLoading] = useState(false);
   const [toast,     setToast]     = useState(null); // התראת תקרה/בונוס
 
   if (!contact) {
@@ -120,24 +119,6 @@ export default function AddInteractionPage() {
     set('description', updated);
   }
 
-  async function handleAiSummary() {
-    if (!form.description) {
-      setErrors(prev => ({ ...prev, description: 'כדי להפעיל סיכום צריך קודם לכתוב תיאור מפגש' }));
-      return;
-    }
-    setAiLoading(true);
-    try {
-      const summary = await summarizeInteractionText(form.description, {
-        contactName: contact.name, type: form.type, quality: form.quality,
-      });
-      set('ai_summary', summary);
-    } catch (e) {
-      setErrors(prev => ({ ...prev, description: `שגיאה: ${e.message}` }));
-    } finally {
-      setAiLoading(false);
-    }
-  }
-
   function validate() {
     const e = {};
     if (form.multi) {
@@ -194,6 +175,16 @@ export default function AddInteractionPage() {
     };
 
     addInteraction(interactionPayload);
+
+    // סיכום AI אוטומטי — מיועד לרכז בלבד (הפעיל לא רואה אותו). fire-and-forget:
+    // לא חוסם את השמירה, וכשל AI מאבד רק את הסיכום — הקשר כבר נשמר.
+    summarizeInteractionText(interactionPayload.description, {
+      contactName: contact.name, type: form.type, quality: form.quality,
+    }).then(summary => {
+      if (!summary) return;
+      updateInteraction(interactionPayload.id, { ai_summary: summary });
+      createInteractionSummaryNotifications({ activistName: currentUser?.name, contact, summary });
+    }).catch(() => {});
 
     if (isAchdut && payableCheck) {
       createPaymentInteractionNotifications({
@@ -403,15 +394,6 @@ export default function AddInteractionPage() {
             value={form.description} onChange={e => set('description', e.target.value)} />
           {errors.description && <span className="error-msg">{errors.description}</span>}
           <VoiceInput onTranscript={handleVoiceTranscript} />
-          <button type="button" onClick={handleAiSummary} disabled={aiLoading}
-            style={{ marginTop: 10, border: 'none', borderRadius: 10, padding: '9px 12px', background: aiLoading ? '#e8e8f8' : '#f0effe', color: '#6c5ce7', fontWeight: 800, cursor: aiLoading ? 'default' : 'pointer', fontFamily: 'inherit' }}>
-            {aiLoading ? 'מסכם...' : 'סכם'}
-          </button>
-          {form.ai_summary && (
-            <pre style={{ marginTop: 10, whiteSpace: 'pre-wrap', background: '#fff', border: '0.5px solid #e8e8e8', borderRadius: 12, padding: '12px', fontFamily: 'inherit', fontSize: 13, color: '#333', lineHeight: 1.7 }}>
-              {form.ai_summary}
-            </pre>
-          )}
         </div>
 
         {/* פעולה הבאה — חובה תמיד */}

@@ -509,6 +509,18 @@ export function CrmProvider({ children }) {
     upsertReportsToSupabase([submittedReport]);
   }
 
+  // עדכון ממוקד של דוח קיים (למשל ai_summary אחרי שליחה). update ולא upsert בכוונה —
+  // אם ה-insert המקורי נכשל, זה no-op שקט במקום ליצור שורה חלקית.
+  async function updateBaseMeetingReport(reportId, fields) {
+    if (!fields || Object.keys(fields).length === 0) return { error: null };
+    const row = {};
+    REPORT_COLUMNS.forEach(key => { if (fields[key] !== undefined) row[key] = fields[key]; });
+    const supabase = getSupabaseClient();
+    const { error } = await supabase.from('base_meeting_reports').update(row).eq('id', reportId);
+    if (error) { console.error('Failed to update base meeting report', error); return { error }; }
+    setBaseMeetings(prev => prev.map(m => String(m.id) === String(reportId) ? { ...m, ...row } : m));
+    return { error: null };
+  }
 
   function upsertBaseMeetingReports(reports = []) {
     setBaseMeetings(prev => {
@@ -545,7 +557,7 @@ export function CrmProvider({ children }) {
     <CrmContext.Provider value={{
       contacts, interactions, activists, messages, baseMeetings, BASE_MEETING_QUESTIONS,
       mitzvotBonuses, newParticipantBonuses, paymentConfig, expenses, tours,
-      addInteraction, updateInteraction, deleteInteraction, addContact, updateContact, deleteContact, updateMitzvot, addMessage, submitBaseMeeting, upsertBaseMeetingReports, advanceBaseMeetingReminders,
+      addInteraction, updateInteraction, deleteInteraction, addContact, updateContact, deleteContact, updateMitzvot, addMessage, submitBaseMeeting, updateBaseMeetingReport, upsertBaseMeetingReports, advanceBaseMeetingReminders,
       PROJECT_NAMES,
     }}>
       {children}

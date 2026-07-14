@@ -4,6 +4,7 @@ import DesktopLayout from '../components/DesktopLayout';
 import { useCrm } from '../lib/CrmStore';
 import { useAuth } from '../lib/AuthStore';
 import { summarizeBaseMeetingDemo } from '../lib/aiDemo';
+import { summarizeReportText } from '../lib/aiService';
 import VoiceInput from '../components/VoiceInput';
 import { createBaseMeetingSubmittedNotifications } from '../lib/notificationDemo';
 import { getMeetingHouses } from '../lib/meetingHousesStorage';
@@ -89,7 +90,7 @@ function structuredToText(sa) {
 }
 
 export default function BaseMeetingsPage() {
-  const { baseMeetings, submitBaseMeeting, activists } = useCrm();
+  const { baseMeetings, submitBaseMeeting, updateBaseMeetingReport, activists } = useCrm();
   const { currentUser } = useAuth();
   const [houses, setHouses] = useState([]);
 
@@ -193,15 +194,32 @@ export default function BaseMeetingsPage() {
 
   function handleVoiceTranscript(text) {
     setField('general_notes', (form.general_notes ? form.general_notes + '\n' : '') + text);
-    setVoiceAiSummary(summarizeBaseMeetingDemo(text, selected || {}));
+    // סיכומים מיועדים לרכז בלבד — פעיל לא רואה סיכום גם בהקלטה
+    if (currentUser?.role !== 'activist') setVoiceAiSummary(summarizeBaseMeetingDemo(text, selected || {}));
   }
 
   function openAiSummary(meeting) {
+    // מעדיפים את הסיכום החכם שנשמר בשליחה; סיכום-דמו רק כ-fallback לדוחות ישנים
+    if (meeting.ai_summary) { setAiSummary({ meeting, text: meeting.ai_summary }); return; }
     const text = meeting.structured_answers
       ? structuredToText(meeting.structured_answers)
       : meeting.answers;
     if (!text) return;
     setAiSummary({ meeting, text: summarizeBaseMeetingDemo(text, meeting) });
+  }
+
+  // אחרי שליחת דיווח: סיכום AI + התראה לרכזים/מנהלים — fire-and-forget, לא מעכב את הפעיל.
+  // כישלון AI ⇒ ההתראה יוצאת בלי סיכום; הדיווח עצמו כבר נשמר.
+  async function finalizeSubmission(meeting, textForAi) {
+    let summary = null;
+    try {
+      summary = await summarizeReportText(textForAi, {
+        meeting_place_city: meeting.meeting_place_city,
+        activist_name: meeting.activist_name || currentUser?.name,
+      });
+      if (summary) await updateBaseMeetingReport(meeting.id, { ai_summary: summary });
+    } catch (e) { /* כשל AI — ממשיכים בלי סיכום */ }
+    createBaseMeetingSubmittedNotifications({ meeting, activistName: currentUser?.name, aiSummary: summary });
   }
 
   function handleSubmit() {
@@ -213,7 +231,7 @@ export default function BaseMeetingsPage() {
       participant_count: Number(form.participant_count),
       structured_answers: sa,
     });
-    createBaseMeetingSubmittedNotifications({ meeting: selected, activistName: currentUser?.name });
+    finalizeSubmission(selected, textForAi); // fire-and-forget: סיכום AI + התראה לרכזים
     // Cancel pending reminders — report was submitted
     authHeader().then(h =>
       fetch('/api/reminders/cancel', {
@@ -300,10 +318,12 @@ export default function BaseMeetingsPage() {
                     <>{meeting.answers.slice(0,120)}{meeting.answers.length>120?'...':''}</>
                   )}
                   <div style={{ display:'flex', gap:8, marginTop:8, flexWrap:'wrap' }}>
-                    <button type="button" onClick={e=>{ e.stopPropagation(); openAiSummary(meeting); }}
-                      style={{ border:'none', borderRadius:8, padding:'6px 10px', background:'#f0effe', color:'#6c5ce7', fontWeight:800, cursor:'pointer', fontFamily:'inherit', fontSize:12 }}>
-                      סיכום
-                    </button>
+                    {currentUser?.role !== 'activist' && (
+                      <button type="button" onClick={e=>{ e.stopPropagation(); openAiSummary(meeting); }}
+                        style={{ border:'none', borderRadius:8, padding:'6px 10px', background:'#f0effe', color:'#6c5ce7', fontWeight:800, cursor:'pointer', fontFamily:'inherit', fontSize:12 }}>
+                        סיכום
+                      </button>
+                    )}
                     {sa && (
                       <button type="button" onClick={e=>{ e.stopPropagation(); setFullReport(meeting); }}
                         style={{ border:'none', borderRadius:8, padding:'6px 10px', background:'#eef7ff', color:'#2d7ad6', fontWeight:800, cursor:'pointer', fontFamily:'inherit', fontSize:12 }}>
@@ -464,7 +484,7 @@ export default function BaseMeetingsPage() {
                   rows={3} placeholder="הערות נוספות, תצפיות, בקשות מיוחדות..."
                   style={{ ...inputStyle(false), resize:'vertical', minHeight:72, fontFamily:'Rubik,sans-serif' }} />
                 <VoiceInput onTranscript={handleVoiceTranscript} />
-                {voiceAiSummary && (
+                {voiceAiSummary && currentUser?.role !== 'activist' && (
                   <div style={{ marginTop:10, background:'#f8f7ff', border:'0.5px solid rgba(108,92,231,0.2)', borderRadius:12, padding:'12px 14px' }}>
                     <div style={{ fontSize:11, fontWeight:700, color:'#6c5ce7', marginBottom:6, textTransform:'uppercase', letterSpacing:'0.05em' }}>סיכום — מהקלטה</div>
                     <pre style={{ whiteSpace:'pre-wrap', fontFamily:'inherit', fontSize:12, color:'#333', lineHeight:1.75, margin:0 }}>{voiceAiSummary}</pre>

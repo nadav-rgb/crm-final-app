@@ -327,7 +327,7 @@ export default function ContactDetail() {
                     </div>
 
                     {/* תגיות: איכות / משך / תוצאה */}
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: i.description || i.ai_summary || i.next_action || i.notes ? 8 : 0 }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: i.description || (i.ai_summary && currentUser?.role !== 'activist') || i.next_action || i.notes ? 8 : 0 }}>
                       {i.quality && <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: '#f0effe', color: '#6c5ce7', fontWeight: 600 }}>{i.quality}</span>}
                       {durationLabel && <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: '#eef6ee', color: '#3b6d11', fontWeight: 600 }}>{durationLabel}</span>}
                       {i.outcome && <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: '#f5f5f5', color: '#777', fontWeight: 600 }}>{i.outcome}</span>}
@@ -335,7 +335,8 @@ export default function ContactDetail() {
 
                     {i.description && <div style={{ fontSize: 13, color: '#333', lineHeight: 1.6, marginBottom: 6 }}>{i.description}</div>}
 
-                    {i.ai_summary && (
+                    {/* סיכום AI — מיועד לרכז/מנהל בלבד; פעילים לא רואים סיכומים */}
+                    {i.ai_summary && currentUser?.role !== 'activist' && (
                       <div style={{ fontSize: 12, color: '#444', background: '#faf9ff', border: '0.5px solid #ece9fb', borderRadius: 10, padding: '8px 10px', marginBottom: 6, whiteSpace: 'pre-wrap' }}>
                         <span style={{ fontWeight: 700, color: '#6c5ce7' }}>סיכום: </span>{i.ai_summary}
                       </div>
