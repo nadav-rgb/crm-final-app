@@ -8,7 +8,7 @@ import Link from 'next/link';
 import {
   Home, User, Users, Calendar, UserPlus,
   ClipboardList, Star, CreditCard, Bell, BellRing, Receipt, Compass,
-  MessageSquare, Building2, FolderOpen,
+  MessageSquare, Building2, FolderOpen, Activity,
 } from 'lucide-react';
 import MobileBottomNav from '../components/MobileBottomNav';
 import { inProject, inAnyPaidProject } from '../lib/projectUtils';
@@ -219,6 +219,9 @@ export default function LandingPage() {
           )}
           <SideItem icon={<Users {...ICO} />} label="לקוחות" open={open} onClick={() => router.push('/contacts')} />
 
+          {can.addContact && (
+            <SideItem icon={<Activity {...ICO} />} label="הפעילויות שלי" open={open} onClick={() => router.push('/my-activities')} />
+          )}
           {can.addContact && inAnyPaidProject(currentUser) && (
             <SideItem icon={<Calendar     {...ICO} />} label="פעולות היום"    open={open} onClick={() => router.push('/today')} />
           )}

@@ -8,7 +8,7 @@ import {
   MoreHorizontal, User, Calendar, UserPlus,
   Star, CreditCard, BellRing, MessageSquare,
   Building2, CheckCircle, BarChart2, LogOut,
-  LayoutDashboard, Receipt, Compass,
+  LayoutDashboard, Receipt, Compass, Activity,
 } from 'lucide-react';
 
 const BG = 'linear-gradient(180deg, rgba(42,24,112,0.97) 0%, rgba(58,36,155,0.94) 52%, rgba(35,20,100,0.97) 100%)';
@@ -36,6 +36,7 @@ export default function MobileBottomNav() {
   const drawerItems = [
     can.seeSensitiveData && { href: '/',                          icon: <User         {...ICO} />, label: 'אזור אישי' },
     (can.addContact && inAnyPaidProject(currentUser)) && { href: '/my-dashboard', icon: <LayoutDashboard {...ICO} />, label: 'הדשבורד שלי' },
+    can.addContact && { href: '/my-activities',                   icon: <Activity     {...ICO} />, label: 'הפעילויות שלי' },
     (can.addContact && inAnyPaidProject(currentUser)) && { href: '/today', icon: <Calendar {...ICO} />, label: 'פעולות היום' },
     can.addContact && { href: '/contacts/add',                    icon: <UserPlus     {...ICO} />, label: 'הוסף לקוח' },
     can.seeActivists && { href: '/activists',                     icon: <Star         {...ICO} />, label: 'פעילים' },
