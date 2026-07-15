@@ -56,7 +56,7 @@ export default function MyActivitiesPage() {
     interactions
       .filter(i => i.activist_id === currentUser.id && i.date && new Date(i.date) >= start)
       .forEach(i => items.push({
-        key: `i-${i.id}`, kind: 'interaction',
+        key: `i-${i.id}`, kind: 'interaction', rawId: i.id, contactId: i.contact_id,
         date: i.date, time: i.time || '',
         type: i.type, quality: i.quality, outcome: i.outcome,
         duration: i.duration_minutes,
@@ -67,7 +67,7 @@ export default function MyActivitiesPage() {
       .map(m => ({ ...m, _when: m.date || (m.submitted_at ? String(m.submitted_at).slice(0, 10) : '') }))
       .filter(m => Number(m.activist_id) === Number(currentUser.id) && m.submitted && m._when && new Date(m._when) >= start)
       .forEach(m => items.push({
-        key: `b-${m.id}`, kind: 'baseMeeting',
+        key: `b-${m.id}`, kind: 'baseMeeting', rawId: m.id,
         date: m._when, time: m.start_time || '',
         title: m.meeting_place_city
           ? `בית מפגש ${m.meeting_place_city}${m.meeting_place_number ? ` ${m.meeting_place_number}` : ''}`
@@ -126,7 +126,7 @@ export default function MyActivitiesPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
           {feed.length === 0
             ? <div className="empty-state" style={{ gridColumn: '1/-1' }}>אין פעילויות בתקופה זו</div>
-            : feed.map(item => <ActivityCard key={item.key} item={item} />)
+            : feed.map(item => <ActivityCard key={item.key} item={item} router={router} />)
           }
         </div>
       )}
@@ -136,12 +136,19 @@ export default function MyActivitiesPage() {
         <div style={{ background: '#fff', borderRadius: 16, border: '0.5px solid rgba(0,0,0,0.07)', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
           {feed.length === 0
             ? <div className="empty-state">אין פעילויות בתקופה זו</div>
-            : feed.map((item, idx) => <ActivityRow key={item.key} item={item} last={idx === feed.length - 1} />)
+            : feed.map((item, idx) => <ActivityRow key={item.key} item={item} last={idx === feed.length - 1} router={router} />)
           }
         </div>
       )}
     </DesktopLayout>
   );
+}
+
+// קישור לפרטים המלאים: קשר → דף הלקוח (גלילה לכרטיס); מפגש בסיס → מודל "דיווח מלא" ב-/base-meetings
+function detailHref(item) {
+  return item.kind === 'interaction'
+    ? `/contact/${item.contactId}?openInteraction=${item.rawId}`
+    : `/base-meetings?open=${item.rawId}`;
 }
 
 function Pill({ text, color = '#6c5ce7', bg = 'rgba(108,92,231,0.08)' }) {
@@ -153,11 +160,12 @@ function Pill({ text, color = '#6c5ce7', bg = 'rgba(108,92,231,0.08)' }) {
 }
 
 // ── כרטיס ריבוע ──────────────────────────────────────────────
-function ActivityCard({ item }) {
+function ActivityCard({ item, router }) {
   const isMeeting = item.kind === 'baseMeeting';
   const accent = isMeeting ? BRAND : (OUTCOME_COLORS[item.outcome] ?? '#3498db');
   return (
-    <div style={{ background: '#fff', borderRadius: 14, padding: '14px 16px', border: '0.5px solid rgba(0,0,0,0.07)', borderRight: `3px solid ${accent}`, boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+    <div onClick={() => router.push(detailHref(item))}
+      style={{ background: '#fff', borderRadius: 14, padding: '14px 16px', border: '0.5px solid rgba(0,0,0,0.07)', borderRight: `3px solid ${accent}`, boxShadow: '0 1px 4px rgba(0,0,0,0.04)', cursor: 'pointer' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
         <span style={{ fontSize: 12, fontWeight: 700, color: isMeeting ? BRAND : '#6c5ce7' }}>
           {isMeeting ? '🏠 מפגש בסיס' : `${TYPE_ICONS[item.type] ?? '💬'} ${item.type ?? 'קשר'}`}
@@ -177,17 +185,20 @@ function ActivityCard({ item }) {
 }
 
 // ── שורת רשימה ───────────────────────────────────────────────
-function ActivityRow({ item, last }) {
+function ActivityRow({ item, last, router }) {
   const isMeeting = item.kind === 'baseMeeting';
   const accent = isMeeting ? BRAND : (OUTCOME_COLORS[item.outcome] ?? '#3498db');
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 12,
-      padding: '11px 16px',
-      borderBottom: last ? 'none' : '0.5px solid #f5f5f5',
-      borderRight: `3px solid ${accent}`,
-      transition: 'background 0.15s ease',
-    }}
+    <div
+      onClick={() => router.push(detailHref(item))}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 12,
+        padding: '11px 16px',
+        borderBottom: last ? 'none' : '0.5px solid #f5f5f5',
+        borderRight: `3px solid ${accent}`,
+        transition: 'background 0.15s ease',
+        cursor: 'pointer',
+      }}
       onMouseEnter={e => e.currentTarget.style.background = '#fafafa'}
       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
     >

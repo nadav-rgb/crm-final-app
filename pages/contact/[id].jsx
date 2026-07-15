@@ -12,6 +12,8 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../../lib/AuthStore';
 import { getMeetingHouses } from '../../lib/meetingHousesStorage';
 import { fetchMeetingHousesFromSupabase } from '../../lib/meetingHousesSupabase';
+import { PAID_PROJECT_IDS } from '../../lib/paymentCalc';
+import { createInteractionEditedNotification } from '../../lib/notificationDemo';
 
 export default function ContactDetail() {
   const router = useRouter();
@@ -27,6 +29,22 @@ export default function ContactDetail() {
   const [editingInterId, setEditingInterId] = useState(null);
   const [interForm, setInterForm]           = useState(null);
   const [confirmDelInterId, setConfirmDelInterId] = useState(null);
+  const [highlightInterId, setHighlightInterId] = useState(null); // הדגשה זמנית לקשר שנפתח מ"הפעילויות שלי"
+
+  // גלילה + הדגשה זמנית לקשר ספציפי — הגעה מ-/my-activities עם ?openInteraction=<id>.
+  // מנקה את הפרמטר מיד אחרי הגלילה — אחרת כל עדכון interactions ברקע (למשל סיכום AI שמתעדכן
+  // אחרי שכבר עברנו לדף הזה) יפעיל שוב גלילה+הדגשה בלי שהמשתמש עשה כלום.
+  useEffect(() => {
+    const targetId = router.query.openInteraction;
+    if (!targetId) return;
+    setHighlightInterId(Number(targetId));
+    const el = document.getElementById(`interaction-${targetId}`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const t = setTimeout(() => setHighlightInterId(null), 2000);
+    const { openInteraction, ...restQuery } = router.query;
+    router.replace({ pathname: router.pathname, query: restQuery }, undefined, { shallow: true });
+    return () => clearTimeout(t);
+  }, [router.query.openInteraction, interactions]);
 
   // בתי מפגש אמיתיים — לבחירת "בית מפגש משויך" בעריכת הלקוח (במקום טקסט חופשי בלבד).
   const [houses, setHouses]   = useState([]);
@@ -126,15 +144,26 @@ export default function ContactDetail() {
   async function saveEditInteraction() {
     setBusy(true);
     const durNum = Number(interForm.duration_minutes);
+    const newDuration = interForm.duration_minutes !== '' && Number.isFinite(durNum) ? durNum : null;
+    const original = interactions.find(x => x.id === editingInterId);
     await updateInteraction(editingInterId, {
       type:              interForm.type,
       quality:           interForm.quality,
-      duration_minutes:  interForm.duration_minutes !== '' && Number.isFinite(durNum) ? durNum : null,
+      duration_minutes:  newDuration,
       date:              interForm.date,
       outcome:           interForm.outcome,
       description:       interForm.description?.trim() || '',
       notes:             interForm.notes?.trim() || '',
     });
+    // שדה שמשפיע על גובה התשלום השתנה — הדשבורד כבר מחשב חי; רק מודיעים לפעיל
+    const paymentFieldChanged = original && (
+      original.type !== interForm.type ||
+      original.quality !== interForm.quality ||
+      Number(original.duration_minutes ?? 0) !== Number(newDuration ?? 0)
+    );
+    if (paymentFieldChanged && PAID_PROJECT_IDS.includes(contact.project_id) && currentUser) {
+      createInteractionEditedNotification({ activist: currentUser, contact });
+    }
     setBusy(false);
     setEditingInterId(null);
   }
@@ -310,7 +339,11 @@ export default function ContactDetail() {
                   const durationLabel = i.duration_minutes == null ? null
                     : i.duration_minutes >= 15 ? 'מעל 15 דקות' : 'פחות מ-15 דקות';
                   return (
-                  <div key={i.id} style={{ background: '#fff', borderRadius: 12, padding: '12px 14px', marginBottom: 8, border: '0.5px solid #e0e0e0' }}>
+                  <div key={i.id} id={`interaction-${i.id}`}
+                    style={{ background: '#fff', borderRadius: 12, padding: '12px 14px', marginBottom: 8,
+                      border: `0.5px solid ${highlightInterId === i.id ? '#6c5ce7' : '#e0e0e0'}`,
+                      boxShadow: highlightInterId === i.id ? '0 0 0 3px rgba(108,92,231,0.18)' : 'none',
+                      transition: 'box-shadow 0.3s ease, border-color 0.3s ease' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                       <strong style={{ fontSize: 14 }}>{i.type}</strong>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

@@ -1,5 +1,6 @@
 // pages/base-meetings.jsx — דיווח מפגשי בסיס
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/router';
 import DesktopLayout from '../components/DesktopLayout';
 import { useCrm } from '../lib/CrmStore';
 import { useAuth } from '../lib/AuthStore';
@@ -92,6 +93,7 @@ function structuredToText(sa) {
 export default function BaseMeetingsPage() {
   const { baseMeetings, submitBaseMeeting, updateBaseMeetingReport, activists } = useCrm();
   const { currentUser } = useAuth();
+  const router = useRouter();
   const [houses, setHouses] = useState([]);
 
   useEffect(() => {
@@ -149,6 +151,17 @@ export default function BaseMeetingsPage() {
   const [voiceAiSummary, setVoiceAiSummary] = useState(null);
   const [fullReport,     setFullReport]     = useState(null); // מודאל צפייה בדיווח המובנה המלא
 
+  // ניווט עמוק מ"הפעילויות שלי" (?open=<reportId>) — פותח את מודל "דיווח מלא" לדיווח הספציפי.
+  // מנקה את הפרמטר מיד אחרי הפתיחה — אחרת כל עדכון baseMeetings/houses (כולל שמירת עריכה!)
+  // משנה את expandedBaseMeetings ומפעיל את ה-effect מחדש, שפותח את המודל שוב בכוח אחרי שהמשתמש כבר סגר/שמר.
+  useEffect(() => {
+    const targetId = router.query.open;
+    if (!targetId || expandedBaseMeetings.length === 0) return;
+    const match = expandedBaseMeetings.find(m => String(m.id) === String(targetId));
+    if (match) setFullReport(match);
+    router.replace('/base-meetings', undefined, { shallow: true });
+  }, [router.query.open, expandedBaseMeetings]);
+
   // רישום push עבר ל-PushRegistrationMount הגלובלי (_app.jsx) — נרשם בכל התחברות, לא רק כאן.
 
   // Schedule reminders for today's pending meetings — הרכז מחושב בצד השרת (ראה api/reminders/schedule).
@@ -192,6 +205,15 @@ export default function BaseMeetingsPage() {
     setVoiceAiSummary(null);
   }
 
+  // עריכת דיווח שכבר נשלח וננעל — טוען את התשובות הקיימות חזרה לטופס. selected.submitted===true
+  // הוא הסימן ל-handleSubmit שמדובר בעדכון ולא בדיווח ראשוני.
+  function handleEditSubmitted(meeting) {
+    setSelected(meeting);
+    setForm(meeting.structured_answers || EMPTY_FORM);
+    setFullReport(null);
+    setSaved(false);
+  }
+
   function handleVoiceTranscript(text) {
     setField('general_notes', (form.general_notes ? form.general_notes + '\n' : '') + text);
     // סיכומים מיועדים לרכז בלבד — פעיל לא רואה סיכום גם בהקלטה
@@ -226,6 +248,18 @@ export default function BaseMeetingsPage() {
     if (!isFormValid(form)) return;
     const sa = { ...form, participant_count: Number(form.participant_count) };
     const textForAi = structuredToText(sa);
+
+    if (selected.submitted) {
+      // עריכת דיווח קיים — רק מעדכן את התשובות; לא יוצר התראת "דיווח התקבל" ולא מסכם מחדש
+      updateBaseMeetingReport(selected.id, {
+        structured_answers: sa,
+        answers: textForAi,
+        participant_count: Number(form.participant_count),
+      });
+      setSelected(null);
+      return;
+    }
+
     submitBaseMeeting(selected.id, textForAi, {
       ...selected,
       participant_count: Number(form.participant_count),
@@ -330,6 +364,10 @@ export default function BaseMeetingsPage() {
                         צפה בדיווח מלא
                       </button>
                     )}
+                    <button type="button" onClick={e=>{ e.stopPropagation(); handleEditSubmitted(meeting); }}
+                      style={{ border:'none', borderRadius:8, padding:'6px 10px', background:'#fff4df', color:'#b06b00', fontWeight:800, cursor:'pointer', fontFamily:'inherit', fontSize:12 }}>
+                      ✏️ עריכה
+                    </button>
                   </div>
                 </div>
               )}
@@ -361,7 +399,7 @@ export default function BaseMeetingsPage() {
             {/* Modal title */}
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:4 }}>
               <div style={{ fontSize:18, fontWeight:800, color:'#2d1f5e' }}>
-                {MEETING_NUMBER_LABELS[selected.meeting_number]}
+                {selected.submitted ? '✏️ עריכת דיווח' : MEETING_NUMBER_LABELS[selected.meeting_number]}
               </div>
               <button onClick={()=>setSelected(null)} style={{ background:'none', border:'none', fontSize:20, cursor:'pointer', color:'#bbb', lineHeight:1, padding:4 }}>✕</button>
             </div>
@@ -502,7 +540,7 @@ export default function BaseMeetingsPage() {
               </button>
               <button onClick={handleSubmit} disabled={!canSubmit}
                 style={{ flex:2, padding:'11px', borderRadius:12, border:'none', background: canSubmit ? 'linear-gradient(135deg,#6c5ce7,#a29bfe)' : '#ddd', color: canSubmit ? '#fff' : '#999', fontSize:13, fontWeight:700, cursor: canSubmit ? 'pointer' : 'not-allowed', fontFamily:'Rubik,sans-serif', transition:'background 0.18s' }}>
-                שלח ונעל דיווח
+                {selected.submitted ? 'שמור שינויים' : 'שלח ונעל דיווח'}
               </button>
             </div>
           </div>
@@ -533,7 +571,10 @@ export default function BaseMeetingsPage() {
             <pre style={{ whiteSpace:'pre-wrap', background:'#f8fbff', border:'0.5px solid #e6eef7', borderRadius:12, padding:14, fontFamily:'inherit', lineHeight:1.8, fontSize:13, color:'#333' }}>
               {fullReport.structured_answers ? structuredToText(fullReport.structured_answers) : (fullReport.answers || 'אין נתונים')}
             </pre>
-            <button onClick={()=>setFullReport(null)} style={{ marginTop:12, border:'none', borderRadius:10, padding:'9px 18px', background:'#2d7ad6', color:'#fff', fontWeight:800, cursor:'pointer', fontFamily:'inherit' }}>סגור</button>
+            <div style={{ display:'flex', gap:8, marginTop:12 }}>
+              <button onClick={()=>setFullReport(null)} style={{ flex:1, border:'none', borderRadius:10, padding:'9px 18px', background:'#2d7ad6', color:'#fff', fontWeight:800, cursor:'pointer', fontFamily:'inherit' }}>סגור</button>
+              <button onClick={()=>handleEditSubmitted(fullReport)} style={{ flex:1, border:'none', borderRadius:10, padding:'9px 18px', background:'#fff4df', color:'#b06b00', fontWeight:800, cursor:'pointer', fontFamily:'inherit' }}>✏️ עריכה</button>
+            </div>
           </div>
         </div>
       )}
