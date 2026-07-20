@@ -1,11 +1,11 @@
 // pages/tours.jsx — סיורים ("נעים להכיר"). מקביל לבתי מפגש: יצירה (רכז), שיבוץ פעיל
 // עם push+התראה, מדריך (פעיל שלנו מהרשימה או מדריך חיצוני בטקסט), משפחה מארחת (תמיד פעיל).
 import { useEffect, useState } from 'react';
+import Head from 'next/head';
 import DesktopLayout from '../components/DesktopLayout';
 import { useAuth } from '../lib/AuthStore';
 import { useCrm } from '../lib/CrmStore';
-import { fetchToursFromSupabase, upsertTourApi, updateTourAssignmentsApi, submitTourReportApi } from '../lib/toursSupabase';
-import { sendAssignmentPushApi } from '../lib/meetingHousesSupabase';
+import { fetchToursFromSupabase, upsertTourApi, submitTourReportApi, notifyTourCreatedApi } from '../lib/toursSupabase';
 import { createDemoNotification } from '../lib/notificationDemo';
 import { inProject } from '../lib/projectUtils';
 import { formatDateHe } from '../lib/formatDate';
@@ -51,6 +51,9 @@ const REPORT_LABELS = {
   general_notes: 'הערות כלליות',
 };
 
+const MONTH_NAMES_HE = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
+const WEEKDAY_NAMES_HE = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'];
+
 export default function ToursPage() {
   const { can, currentUser } = useAuth();
   const { activists } = useCrm();
@@ -62,6 +65,10 @@ export default function ToursPage() {
   const [reportingTour, setReportingTour] = useState(null); // הסיור שממלאים עליו דיווח
   const [reportForm, setReportForm] = useState(EMPTY_REPORT);
   const [viewingReport, setViewingReport] = useState(null);  // צפייה בדיווח שהוגש
+  const [viewMode, setViewMode] = useState('list'); // 'list' | 'calendar'
+  const today = new Date();
+  const [calendarMonth, setCalendarMonth] = useState({ year: today.getFullYear(), month: today.getMonth() });
+  const [selectedDay, setSelectedDay] = useState(null); // 'YYYY-MM-DD' שנבחר בלוח השנה
 
   // יצירה/שיבוץ — רק רכז/הנהלה שחברים בנעים להכיר (או מנכ"ל).
   // הדס=כן; נדב=כן; שמעון (אחדות בלבד)=לא.
@@ -122,83 +129,14 @@ export default function ToursPage() {
     setBusy(false);
     if (!saved) { setErrors({ submit: 'שמירת הסיור נכשלה — נסה שוב' }); return; }
 
-    // התראה + push למשפחה המארחת ולמדריך (אם הוא פעיל שלנו)
-    const dateStr = formatDateHe(saved.date);
-    const notifyRoles = [
-      { id: saved.hostActivistId, roleLabel: 'המשפחה המארחת' },
-      ...(saved.guideActivistId ? [{ id: saved.guideActivistId, roleLabel: 'המדריך' }] : []),
-    ];
-    for (const { id: aid, roleLabel } of notifyRoles) {
-      sendAssignmentPushApi({
-        activistId: aid,
-        title: 'שובצת לסיור',
-        body: `נקבעת בתור ${roleLabel} בסיור ${saved.tourNumber} ב${saved.settlement} בתאריך ${dateStr}.`,
-        url: '/tours',
-      });
-      createDemoNotification({
-        id: `tour_role_${saved.id}_${aid}`,
-        type: 'assignment',
-        title: 'שובצת לסיור',
-        body: `נקבעת בתור ${roleLabel} בסיור ${saved.tourNumber} ב${saved.settlement} בתאריך ${dateStr}.`,
-        user_id: aid,
-        project_id: 2,
-        priority: 'high',
-        created_at: new Date().toISOString(),
-        link: '/tours',
-      });
-    }
+    // התראות (פעמון + push) לכל הנמענים — בצד השרת (admin, עוקף RLS): משפחה מארחת, מדריך,
+    // וניהול "נעים להכיר" (מנכ"ל + רכזים/ראשי-פרויקט — כולל הדס לוי ונדב). ראה pages/api/tours/notify.js.
+    // (בעבר נוצרו בצד-לקוח ונכשלו לכל נמען שאינו יוצר הסיור, בגלל RLS על notifications.)
+    await notifyTourCreatedApi(saved.id);
 
     setForm(EMPTY_FORM);
     setCreating(false);
     load();
-  }
-
-  async function handleAssign(tour, activistId) {
-    const aid = Number(activistId);
-    if (!aid) return;
-    const next = [...new Set([...(tour.assignedActivists || []), aid])];
-    const updated = await updateTourAssignmentsApi(tour.id, next);
-    if (!updated) return;
-    setTours(prev => prev.map(t => t.id === tour.id ? updated : t));
-
-    const dateStr = formatDateHe(tour.date);
-    // Push אמיתי לטלפון (no-op בטוח אם הפעיל לא רשום להתראות)
-    sendAssignmentPushApi({
-      activistId: aid,
-      title: 'שובצת לסיור',
-      body: `שובצת לסיור ${tour.tourNumber} ב${tour.settlement} בתאריך ${dateStr}.`,
-      url: '/tours',
-    });
-    createDemoNotification({
-      id: `tour_assignment_${tour.id}_${aid}_${Date.now()}`,
-      type: 'assignment',
-      title: 'שובצת לסיור',
-      body: `שובצת לסיור ${tour.tourNumber} ב${tour.settlement} בתאריך ${dateStr}.`,
-      user_id: aid,
-      project_id: 2,
-      priority: 'high',
-      created_at: new Date().toISOString(),
-      link: '/tours',
-    });
-    if (currentUser) {
-      createDemoNotification({
-        id: `tour_assignment_manager_${tour.id}_${aid}_${Date.now()}`,
-        type: 'assignment',
-        title: 'שיבוץ נשמר',
-        body: `שיבצת את ${activistName(aid) ?? 'פעיל'} לסיור ${tour.tourNumber} ב${tour.settlement}.`,
-        user_id: currentUser.id,
-        project_id: 2,
-        priority: 'normal',
-        created_at: new Date().toISOString(),
-        link: '/tours',
-      });
-    }
-  }
-
-  async function handleUnassign(tour, activistId) {
-    const next = (tour.assignedActivists || []).filter(a => Number(a) !== Number(activistId));
-    const updated = await updateTourAssignmentsApi(tour.id, next);
-    if (updated) setTours(prev => prev.map(t => t.id === tour.id ? updated : t));
   }
 
   function setReportField(key, value) {
@@ -252,12 +190,30 @@ export default function ToursPage() {
     <DesktopLayout
       title="סיורים"
       subtitle={`${visibleTours.length} סיורים · נעים להכיר`}
-      actions={canManage ? (
-        <button onClick={() => setCreating(v => !v)}
-          style={{ border: 'none', borderRadius: 10, padding: '9px 15px', fontFamily: 'inherit', fontWeight: 700, cursor: 'pointer', background: '#6c5ce7', color: '#fff', fontSize: 13 }}>
-          {creating ? 'סגור' : '+ סיור חדש'}
-        </button>
-      ) : undefined}
+      actions={
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div style={{ display: 'flex', background: '#f5f4fb', borderRadius: 10, padding: 3 }}>
+            {[{ v: 'list', l: '📋 רשימה' }, { v: 'calendar', l: '📅 לוח שנה' }].map(({ v, l }) => (
+              <button key={v} type="button" onClick={() => setViewMode(v)}
+                style={{
+                  border: 'none', borderRadius: 8, padding: '7px 13px', fontFamily: 'inherit', fontSize: 12.5, cursor: 'pointer',
+                  fontWeight: viewMode === v ? 700 : 400,
+                  background: viewMode === v ? '#fff' : 'transparent',
+                  color: viewMode === v ? '#6c5ce7' : '#888',
+                  boxShadow: viewMode === v ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+                }}>
+                {l}
+              </button>
+            ))}
+          </div>
+          {canManage && (
+            <button onClick={() => setCreating(v => !v)}
+              style={{ border: 'none', borderRadius: 10, padding: '9px 15px', fontFamily: 'inherit', fontWeight: 700, cursor: 'pointer', background: '#6c5ce7', color: '#fff', fontSize: 13 }}>
+              {creating ? 'סגור' : '+ סיור חדש'}
+            </button>
+          )}
+        </div>
+      }
     >
       {/* טופס יצירת סיור */}
       {creating && (
@@ -338,28 +294,83 @@ export default function ToursPage() {
       )}
 
       {/* רשימת סיורים */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 14 }}>
-        {visibleTours.length === 0 ? (
-          <div style={{ gridColumn: '1/-1', textAlign: 'center', color: '#ccc', padding: 48, fontSize: 14 }}>
-            אין סיורים עדיין{can.seeMeetingHouses ? ' — צור סיור חדש בכפתור למעלה' : ''}
+      {viewMode === 'list' ? (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 14 }}>
+          {visibleTours.length === 0 ? (
+            <div style={{ gridColumn: '1/-1', textAlign: 'center', color: '#ccc', padding: 48, fontSize: 14 }}>
+              אין סיורים עדיין{can.seeMeetingHouses ? ' — צור סיור חדש בכפתור למעלה' : ''}
+            </div>
+          ) : visibleTours.map(tour => {
+            const uid = Number(currentUser?.id);
+            const related = (tour.assignedActivists ?? []).some(a => Number(a) === uid) ||
+                            Number(tour.guideActivistId) === uid || Number(tour.hostActivistId) === uid;
+            return (
+              <TourCard key={tour.id} tour={tour}
+                activistName={activistName}
+                canReport={(canManage || related) && tour.status !== 'completed'}
+                onReport={() => { setReportForm(EMPTY_REPORT); setReportingTour(tour); }}
+                onViewReport={() => setViewingReport(tour)} />
+            );
+          })}
+        </div>
+      ) : (
+        <ToursCalendar
+          tours={visibleTours}
+          calendarMonth={calendarMonth}
+          setCalendarMonth={setCalendarMonth}
+          selectedDay={selectedDay}
+          setSelectedDay={setSelectedDay}
+          activistName={activistName}
+        />
+      )}
+
+      {/* מודאל פרטי יום נבחר בלוח השנה */}
+      {selectedDay && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.42)', zIndex: 9000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+          onClick={() => setSelectedDay(null)}>
+          <div style={{ background: '#fff', borderRadius: 18, padding: 22, maxWidth: 460, width: '100%', maxHeight: '82vh', overflowY: 'auto', boxShadow: '0 24px 80px rgba(0,0,0,0.25)' }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: '#2d1f5e', marginBottom: 14 }}>{formatDateHe(selectedDay)}</div>
+            {(() => {
+              const dayTours = visibleTours.filter(t => t.date === selectedDay);
+              if (dayTours.length === 0) {
+                return <div style={{ color: '#ccc', fontSize: 13, textAlign: 'center', padding: '20px 0' }}>אין סיורים ביום זה</div>;
+              }
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {dayTours.map(t => {
+                    const statusInfo = STATUS_LABELS[t.status] || STATUS_LABELS.upcoming;
+                    return (
+                      <div key={t.id} style={{ border: '0.5px solid rgba(0,0,0,0.08)', borderRadius: 12, padding: '12px 14px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+                          <div style={{ fontWeight: 700, fontSize: 14 }}>סיור {t.tourNumber} · {t.settlement}</div>
+                          <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 20, fontWeight: 700, background: statusInfo.bg, color: statusInfo.color }}>
+                            {statusInfo.label}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: 12.5, color: '#888', lineHeight: 1.8 }}>
+                          {t.startTime && <div>🕒 שעה: {t.startTime}</div>}
+                          <div>🧭 מדריך: {t.guideActivistId ? (activistName(t.guideActivistId) ?? t.guideName) : (t.guideName || '—')}</div>
+                          <div>🏠 משפחה מארחת: {activistName(t.hostActivistId) ?? '—'}</div>
+                          {t.notes && <div>📝 {t.notes}</div>}
+                        </div>
+                        {t.status === 'completed' && t.report && (
+                          <button onClick={() => { setSelectedDay(null); setViewingReport(t); }} className="btn"
+                            style={{ width: '100%', marginTop: 10, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, color: '#3b6d11', borderColor: '#639922' }}>
+                            ✓ צפה בדיווח
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+            <button className="btn" style={{ width: '100%', marginTop: 14, cursor: 'pointer', fontFamily: 'inherit' }}
+              onClick={() => setSelectedDay(null)}>סגור</button>
           </div>
-        ) : visibleTours.map(tour => {
-          const uid = Number(currentUser?.id);
-          const related = (tour.assignedActivists ?? []).some(a => Number(a) === uid) ||
-                          Number(tour.guideActivistId) === uid || Number(tour.hostActivistId) === uid;
-          return (
-            <TourCard key={tour.id} tour={tour}
-              activists={naimActivists}
-              activistName={activistName}
-              canManage={canManage}
-              canReport={(canManage || related) && tour.status !== 'completed'}
-              onReport={() => { setReportForm(EMPTY_REPORT); setReportingTour(tour); }}
-              onViewReport={() => setViewingReport(tour)}
-              onAssign={aid => handleAssign(tour, aid)}
-              onUnassign={aid => handleUnassign(tour, aid)} />
-          );
-        })}
-      </div>
+        </div>
+      )}
 
       {/* מודאל דיווח אחרי סיור */}
       {reportingTour && (
@@ -485,10 +496,8 @@ export default function ToursPage() {
   );
 }
 
-function TourCard({ tour, activists, activistName, canManage, canReport, onReport, onViewReport, onAssign, onUnassign }) {
-  const [selectedId, setSelectedId] = useState('');
+function TourCard({ tour, activistName, canReport, onReport, onViewReport }) {
   const statusInfo = STATUS_LABELS[tour.status] || STATUS_LABELS.upcoming;
-  const available = activists.filter(a => !(tour.assignedActivists || []).some(x => Number(x) === Number(a.id)));
 
   return (
     <div style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)', borderRadius: 16, padding: 18, boxShadow: '0 1px 5px rgba(0,0,0,0.04)' }}>
@@ -516,24 +525,6 @@ function TourCard({ tour, activists, activistName, canManage, canReport, onRepor
         ))}
       </table>
 
-      {/* פעילים משובצים */}
-      <div style={{ fontSize: 12, color: '#999', marginBottom: 6 }}>פעילים משובצים</div>
-      {(tour.assignedActivists || []).length === 0 ? (
-        <div style={{ fontSize: 13, color: '#ccc', marginBottom: 10 }}>טרם שובצו פעילים</div>
-      ) : (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-          {tour.assignedActivists.map(aid => (
-            <span key={aid} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#f0effe', color: '#534ab7', borderRadius: 20, padding: '4px 12px', fontSize: 12.5, fontWeight: 600 }}>
-              {activistName(aid) ?? `פעיל ${aid}`}
-              {canManage && (
-                <button onClick={() => onUnassign(aid)} title="הסר"
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8a7cd8', fontSize: 13, lineHeight: 1, padding: 0 }}>✕</button>
-              )}
-            </span>
-          ))}
-        </div>
-      )}
-
       {/* דיווח אחרי סיור */}
       {canReport && (
         <button onClick={onReport} className="btn btn-primary"
@@ -548,21 +539,191 @@ function TourCard({ tour, activists, activistName, canManage, canReport, onRepor
         </button>
       )}
 
-      {/* שיבוץ — רכז בלבד, כל עוד הסיור לא הסתיים */}
-      {canManage && tour.status !== 'completed' && available.length > 0 && (
-        <div style={{ display: 'flex', gap: 8 }}>
-          <select value={selectedId} onChange={e => setSelectedId(e.target.value)}
-            style={{ flex: 1, padding: '8px 10px', borderRadius: 10, border: '1.5px solid #e8e8e8', fontSize: 13, fontFamily: 'Rubik,sans-serif', background: '#fafafa' }}>
-            <option value="">בחר פעיל לשיבוץ…</option>
-            {available.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
-          <button onClick={() => { if (selectedId) { onAssign(selectedId); setSelectedId(''); } }}
-            disabled={!selectedId}
-            style={{ border: 'none', borderRadius: 10, padding: '8px 16px', fontFamily: 'inherit', fontWeight: 700, cursor: selectedId ? 'pointer' : 'default', background: selectedId ? '#6c5ce7' : '#e8e8e8', color: selectedId ? '#fff' : '#aaa', fontSize: 13 }}>
-            שבץ
+    </div>
+  );
+}
+
+// פורמטרים לתאריך העברי (ICU מובנה ב-Intl — בלי ספרייה חיצונית)
+const hebrewDayFormatter   = new Intl.DateTimeFormat('he-u-ca-hebrew-nu-latn', { day: 'numeric' });
+const hebrewMonthYearFormatter = new Intl.DateTimeFormat('he-u-ca-hebrew-nu-latn', { month: 'long', year: 'numeric' });
+const HEBREW_NUMERALS = { // המרת יום עברי למספרי-אותיות (א, ב...) — קריא יותר מ"14"
+  1: 'א', 2: 'ב', 3: 'ג', 4: 'ד', 5: 'ה', 6: 'ו', 7: 'ז', 8: 'ח', 9: 'ט', 10: 'י',
+  11: 'יא', 12: 'יב', 13: 'יג', 14: 'יד', 15: 'טו', 16: 'טז', 17: 'יז', 18: 'יח', 19: 'יט', 20: 'כ',
+  21: 'כא', 22: 'כב', 23: 'כג', 24: 'כד', 25: 'כה', 26: 'כו', 27: 'כז', 28: 'כח', 29: 'כט', 30: 'ל',
+};
+
+// אות/אותיות → תצוגה מסורתית עם גרש/גרשיים (י״ד, ט״ו, כ׳)
+function toGematria(letters) {
+  if (!letters) return '';
+  if (letters.length === 1) return letters + '׳';
+  return letters.slice(0, -1) + '״' + letters.slice(-1);
+}
+
+function hebrewDayLabel(date) {
+  const n = Number(hebrewDayFormatter.format(date));
+  return toGematria(HEBREW_NUMERALS[n] || String(n));
+}
+
+const CAL_SERIF = "'Frank Ruhl Libre', 'Rubik', serif";
+const CAL_STATUS = { upcoming: '#6d4eca', completed: '#2f9e7f' };
+
+// לוח שנה חודשי — "פנקס עברי": נייר חם, ספרות סריף, גוני זהב לשבת, תצוגה גרגוריאני+עברי
+function ToursCalendar({ tours, calendarMonth, setCalendarMonth, selectedDay, setSelectedDay, activistName }) {
+  const { year, month } = calendarMonth;
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+
+  const toursByDay = {};
+  tours.forEach(t => {
+    if (!t.date) return;
+    (toursByDay[t.date] ??= []).push(t);
+  });
+
+  const firstOfMonth = new Date(year, month, 1);
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const startWeekday = firstOfMonth.getDay(); // 0=ראשון
+
+  const cells = [];
+  for (let i = 0; i < startWeekday; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  // כותרת עברית של החודש — מציג את כל החודשים העבריים שחלים בטווח החודש הגרגוריאני (לרוב 1-2)
+  const hebMonthLabel = (() => {
+    const startLabel = hebrewMonthYearFormatter.format(new Date(year, month, 1));
+    const endLabel = hebrewMonthYearFormatter.format(new Date(year, month, daysInMonth));
+    return startLabel === endLabel ? startLabel : `${startLabel.split(' ')[0]}–${endLabel}`;
+  })();
+
+  function changeMonth(delta) {
+    let m = month + delta, y = year;
+    if (m < 0) { m = 11; y -= 1; }
+    if (m > 11) { m = 0; y += 1; }
+    setCalendarMonth({ year: y, month: m });
+  }
+
+  function dayStr(d) {
+    return `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  }
+
+  const navBtnStyle = {
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    width: 38, height: 38, borderRadius: '50%', cursor: 'pointer', flexShrink: 0,
+    border: '1px solid rgba(58,36,155,0.14)', background: '#fff', color: '#3a249b',
+    transition: 'all .16s ease',
+  };
+  function navHover(e, on) {
+    e.currentTarget.style.background = on ? '#3a249b' : '#fff';
+    e.currentTarget.style.color = on ? '#fff' : '#3a249b';
+    e.currentTarget.style.transform = on ? 'scale(1.07)' : 'none';
+    e.currentTarget.style.boxShadow = on ? '0 6px 16px -6px rgba(58,36,155,0.5)' : 'none';
+  }
+
+  return (
+    <>
+      <Head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@500;700;900&display=swap" rel="stylesheet" />
+      </Head>
+      <style jsx global>{`
+        @keyframes toursCalUp { from { opacity: 0; transform: translateY(10px) scale(.96); } to { opacity: 1; transform: none; } }
+      `}</style>
+
+      <div style={{
+        position: 'relative', maxWidth: 760, background: '#fffdf9', borderRadius: 24, overflow: 'hidden',
+        border: '1px solid rgba(58,36,155,0.10)',
+        boxShadow: '0 30px 60px -30px rgba(42,24,112,0.38), 0 8px 22px -16px rgba(42,24,112,0.22)',
+      }}>
+        {/* פס עליון בספוק — זהב→סגול */}
+        <div style={{ height: 4, background: 'linear-gradient(90deg, #c9a24b, #6d4eca 55%, #3a249b)' }} />
+
+        {/* כותרת — direction:ltr כדי לשלוט בכיוון החיצים: קודם(אחורה)=ימין✦חץ ימינה, הבא(קדימה)=שמאל✦חץ שמאלה */}
+        <div style={{ direction: 'ltr', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '22px 24px 14px' }}>
+          <button type="button" onClick={() => changeMonth(1)} aria-label="החודש הבא" style={navBtnStyle}
+            onMouseEnter={e => navHover(e, true)} onMouseLeave={e => navHover(e, false)}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M15 6l-6 6 6 6" /></svg>
+          </button>
+
+          <div style={{ textAlign: 'center', direction: 'rtl' }}>
+            <div style={{ fontFamily: CAL_SERIF, fontWeight: 900, fontSize: 27, color: '#2a1870', letterSpacing: '-0.5px', lineHeight: 1.15 }}>
+              {MONTH_NAMES_HE[month]} <span style={{ color: '#9184c8', fontWeight: 500 }}>{year}</span>
+            </div>
+            <div style={{ fontSize: 12.5, color: '#a695d4', marginTop: 3, fontWeight: 600, letterSpacing: '0.6px' }}>{hebMonthLabel}</div>
+          </div>
+
+          <button type="button" onClick={() => changeMonth(-1)} aria-label="החודש הקודם" style={navBtnStyle}
+            onMouseEnter={e => navHover(e, true)} onMouseLeave={e => navHover(e, false)}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
           </button>
         </div>
-      )}
-    </div>
+
+        <div style={{ padding: '0 20px 22px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', marginBottom: 4 }}>
+            {WEEKDAY_NAMES_HE.map((w, i) => (
+              <div key={w} style={{ textAlign: 'center', fontSize: 12, color: i === 6 ? '#b8891f' : '#b3a9d6', fontWeight: 700, letterSpacing: '0.5px', padding: '6px 0' }}>{w}</div>
+            ))}
+          </div>
+          <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, rgba(58,36,155,0.14), transparent)', marginBottom: 10 }} />
+
+          <div key={`${year}-${month}`} style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 7 }}>
+            {cells.map((d, idx) => {
+              if (d === null) return <div key={idx} />;
+              const ds = dayStr(d);
+              const dayTours = toursByDay[ds] || [];
+              const hasTours = dayTours.length > 0;
+              const isToday = ds === todayStr;
+              const isShabbat = idx % 7 === 6;
+              const hasUpcoming = dayTours.some(t => t.status !== 'completed');
+              const accent = hasUpcoming ? CAL_STATUS.upcoming : CAL_STATUS.completed;
+              const gregDate = new Date(year, month, d);
+              return (
+                <button key={idx} type="button" onClick={() => hasTours && setSelectedDay(ds)} disabled={!hasTours}
+                  style={{
+                    position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'stretch',
+                    minHeight: 80, padding: '7px 9px 8px', borderRadius: 14, textAlign: 'right', overflow: 'hidden',
+                    border: isToday ? '1.5px solid #6d4eca' : `1px solid ${hasTours ? 'rgba(109,78,202,0.18)' : 'rgba(0,0,0,0.05)'}`,
+                    background: hasTours
+                      ? (hasUpcoming ? 'linear-gradient(158deg, #ece5fb, #fbfaff)' : 'linear-gradient(158deg, #e4f3ea, #fafefb)')
+                      : (isShabbat ? '#fbf5e9' : '#fffdf9'),
+                    cursor: hasTours ? 'pointer' : 'default', fontFamily: 'inherit',
+                    boxShadow: hasTours ? `0 6px 18px -10px ${accent}` : 'none',
+                    transition: 'transform .16s cubic-bezier(.22,1,.36,1), box-shadow .16s',
+                    animation: 'toursCalUp .5s cubic-bezier(.22,1,.36,1) both',
+                    animationDelay: `${Math.min(idx * 12, 300)}ms`,
+                  }}
+                  onMouseEnter={e => { if (hasTours) { e.currentTarget.style.transform = 'translateY(-3px)'; e.currentTarget.style.boxShadow = `0 14px 26px -12px ${accent}`; } }}
+                  onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = hasTours ? `0 6px 18px -10px ${accent}` : 'none'; }}>
+
+                  {hasTours && <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: accent }} />}
+
+                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 4 }}>
+                    <span style={{ fontFamily: CAL_SERIF, fontWeight: isToday ? 900 : 700, fontSize: 19, lineHeight: 1, color: isToday ? '#3a249b' : (isShabbat ? '#8a6a1e' : '#33285e') }}>{d}</span>
+                    <span style={{ fontSize: 10.5, fontWeight: 700, color: isShabbat ? '#c19a45' : '#b0a5d4' }}>{hebrewDayLabel(gregDate)}</span>
+                  </div>
+
+                  {hasTours ? (
+                    <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(255,255,255,0.72)', border: `1px solid ${accent}33`, borderRadius: 8, padding: '3px 7px' }}>
+                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: accent, flexShrink: 0, boxShadow: `0 0 0 3px ${accent}22` }} />
+                      <span style={{ fontSize: 10.5, fontWeight: 700, color: '#4a3f7a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {dayTours.length === 1 ? `סיור ${dayTours[0].tourNumber}` : `${dayTours.length} סיורים`}
+                      </span>
+                    </div>
+                  ) : isToday ? (
+                    <span style={{ marginTop: 'auto', fontSize: 9.5, fontWeight: 800, color: '#6d4eca', letterSpacing: '0.5px' }}>היום</span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+
+          <div style={{ display: 'flex', gap: 18, marginTop: 18, fontSize: 12, color: '#9a90bf', borderTop: '1px solid rgba(58,36,155,0.08)', paddingTop: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ width: 9, height: 9, borderRadius: '50%', background: CAL_STATUS.upcoming }} /> מתוכנן</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ width: 9, height: 9, borderRadius: '50%', background: CAL_STATUS.completed }} /> התקיים</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ width: 10, height: 10, borderRadius: 3, background: '#fbf5e9', border: '1px solid #e6d4a8' }} /> שבת</div>
+          </div>
+        </div>
+      </div>
+    </>
   );
 }
