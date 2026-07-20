@@ -159,18 +159,8 @@ export default function ToursPage() {
     if (!updated) return;
     setTours(prev => prev.map(t => t.id === updated.id ? updated : t));
     setReportingTour(null);
-    // התראה לרכזת: הדיווח הוגש והסיור הסתיים (שכר המדריך נכנס לתשלומים)
-    createDemoNotification({
-      id: `tour_report_${updated.id}`,
-      type: 'system',
-      title: 'דיווח סיור הוגש',
-      body: `הוגש דיווח על סיור ${updated.tourNumber} ב${updated.settlement} — הסיור סומן כהתקיים.`,
-      user_id: null, role: 'coord',
-      project_id: 2,
-      priority: 'normal',
-      created_at: new Date().toISOString(),
-      link: '/tours',
-    });
+    // התראת "דיווח סיור הוגש" לרכזים נכתבת בצד-שרת (api/tours/report.js, admin key).
+    // כאן לא ניתן: broadcast (user_id:null) לא נכתב ל-Supabase כלל, וכתיבה מהדפדפן לנמען אחר לא נשמרת.
   }
 
   if (!can.seeMeetingHouses && currentUser?.role !== 'activist') {
