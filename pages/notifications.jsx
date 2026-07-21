@@ -66,6 +66,36 @@ function DeviceNotificationCard({ currentUser }) {
     setBusy(false);
   }
 
+  // בדיקה מקומית — מציגה התראה ישירות מה-Service Worker, בלי שרת ובלי FCM.
+  // מפרידה בין שתי תקלות שנראות זהות למשתמש ("לא קיבלתי כלום"):
+  //   מוצגת    ⇒ המכשיר יודע להציג התראות; הבעיה בערוץ ההעברה (רשת/סינון/מנוי)
+  //   לא מוצגת ⇒ ההתראות חסומות ברמת המכשיר/הדפדפן — שום תיקון בשרת לא יעזור
+  async function handleLocalTest() {
+    setBusy(true); setMessage('');
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (!reg) { setMessage('לא נמצא Service Worker במכשיר הזה — נסה להפעיל התראות מחדש'); setBusy(false); return; }
+      await reg.showNotification('🧪 בדיקה מקומית', {
+        body: 'אם אתה רואה את זה — המכשיר יודע להציג התראות. הבעיה היא בהעברה מהשרת.',
+        dir: 'rtl', lang: 'he',
+        data: { url: '/notifications' },
+      });
+      setMessage('נשלחה בקשה להצגת התראה מקומית. אם היא לא הופיעה — ההתראות חסומות ברמת המכשיר או הדפדפן.');
+    } catch (e) {
+      setMessage(`הצגת ההתראה המקומית נכשלה: ${e?.message || e}`);
+    }
+    setBusy(false);
+  }
+
+  // כפתור הבדיקה המקומית זמין בכל מצב שבו ההרשאה ניתנה — גם כשהמכשיר לא רשום בשרת,
+  // כי שם בדיוק צריך לדעת אם הבעיה בהצגה או בהעברה.
+  const localTestButton = status?.permission === 'granted' && !native ? (
+    <button onClick={handleLocalTest} disabled={busy}
+      style={{ background:'#fff', border:'1px solid rgba(0,0,0,0.15)', borderRadius:10, padding:'7px 14px', fontSize:12.5, color:'#555', fontWeight:700, cursor:'pointer', fontFamily:'inherit' }}>
+      🧪 בדיקה מקומית (בלי שרת)
+    </button>
+  ) : null;
+
   if (!status) return null;
 
   // "פעיל" = גם הדפדפן רשום וגם *השרת* מכיר את המכשיר. בלי התנאי השני הוצג וי ירוק
@@ -149,6 +179,14 @@ function DeviceNotificationCard({ currentUser }) {
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap' }}>
         {content}
       </div>
+      {localTestButton && (
+        <div style={{ marginTop:12, paddingTop:12, borderTop:'1px solid rgba(0,0,0,0.07)', display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
+          {localTestButton}
+          <span style={{ fontSize:11.5, color:'#999', lineHeight:1.6 }}>
+            מציג התראה ישירות מהמכשיר. אם היא מופיעה אבל התראת הניסיון הרגילה לא — הבעיה בהעברה מהשרת (רשת או סינון), לא במכשיר.
+          </span>
+        </div>
+      )}
       {message && <div style={{ marginTop:10, fontSize:13, fontWeight:700, color:'#6c5ce7' }}>{message}</div>}
     </div>
   );
