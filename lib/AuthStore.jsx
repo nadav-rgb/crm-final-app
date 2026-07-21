@@ -12,6 +12,7 @@ const USERNAME_TO_EMAIL = {
   'נדב לבון':         'nadav@achdut-crm.test',
   'שמעון קורלנסקי':   'korlansky@achdut-crm.test',
   'הדס לוי':          'hadaslevi@achdut-crm.test',   // רכזת נעים להכיר (project 2 בלבד)
+  'הרבנית אילני':     'ilani@achdut-crm.test',       // רכזת אחדות יהודית (project 1 בלבד)
   // === פעילים (אחדות יהודית) ===
   'אלעזר באום':       'mekarvim01@achdut-crm.test',
   'בנימין קליימן':    'mekarvim02@achdut-crm.test',
