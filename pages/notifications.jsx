@@ -17,6 +17,27 @@ import {
 // חיווי + הפעלת התראות במכשיר הנוכחי. הבקשה להרשאה יוצאת רק מלחיצת כפתור
 // (מחוות משתמש) — דפדפנים חוסמים בקשות אוטומטיות בטעינת דף, וזו הסיבה
 // שחלק גדול מהפעילים מעולם לא נרשמו להתראות.
+// מתרגם את תשובת api/push/test לאבחון קריא. עד היום ההודעה הייתה "נשלח / נכשל" בלבד,
+// ושני כשלים שונים לגמרי (אין מכשיר רשום / FCM לא מוגדר בשרת) נראו זהים למשתמש.
+const FCM_REASONS = {
+  fcm_not_configured: 'חסרה הגדרת FCM_SERVICE_ACCOUNT בשרת — לכן האפליקציה לא מקבלת התראות כלל',
+  no_tokens: 'אין מכשיר אפליקציה רשום',
+  auth_failed: 'הגדרת ה-FCM בשרת שגויה (אימות מול Google נכשל)',
+};
+
+function describeTestResult(d) {
+  const lines = [];
+  lines.push(`🖥️ דפדפן: נשלח ל-${d.web || 0} מתוך ${d.webDevices || 0} מכשירים רשומים`);
+  const appLine = `📱 אפליקציה: נשלח ל-${d.fcm || 0} מתוך ${d.appDevices || 0} מכשירים רשומים`;
+  lines.push(d.fcmReason ? `${appLine} — ${FCM_REASONS[d.fcmReason] || d.fcmReason}` : appLine);
+  if ((d.sent || 0) === 0) {
+    lines.push('לא נשלחה אף התראה. אם יש מכשירים רשומים — התקלה בשרת, לא במכשיר.');
+  } else {
+    lines.push('אם נשלח אבל לא קיבלת תוך כמה שניות — ההודעה נחסמת בדרך (רשת או סינון תוכן).');
+  }
+  return lines.join('\n');
+}
+
 function DeviceNotificationCard({ currentUser }) {
   const native = isNativeApp(); // אפליקציית Capacitor — משתמש ב-FCM נייטיבי, לא ב-web-push
   const [status, setStatus]   = useState(null);   // null = בטעינה
@@ -57,9 +78,7 @@ function DeviceNotificationCard({ currentUser }) {
     try {
       const res = await fetch('/api/push/test', { method: 'POST', headers: { ...(await authHeader()) } });
       const data = await res.json().catch(() => ({}));
-      setMessage(res.ok && data.sent > 0
-        ? `📨 נשלחה התראת ניסיון ל-${data.devices || 1} מכשירים — בדוק שקיבלת תוך כמה שניות`
-        : 'שליחת הניסיון נכשלה — נסה להפעיל מחדש את ההתראות');
+      setMessage(res.ok ? describeTestResult(data) : 'שליחת הניסיון נכשלה — נסה להפעיל מחדש את ההתראות');
     } catch {
       setMessage('שליחת הניסיון נכשלה — בדוק את החיבור לרשת');
     }
@@ -187,7 +206,11 @@ function DeviceNotificationCard({ currentUser }) {
           </span>
         </div>
       )}
-      {message && <div style={{ marginTop:10, fontSize:13, fontWeight:700, color:'#6c5ce7' }}>{message}</div>}
+      {message && (
+        <div style={{ marginTop:10, fontSize:13, fontWeight:700, color:'#6c5ce7', whiteSpace:'pre-line', lineHeight:1.7 }}>
+          {message}
+        </div>
+      )}
     </div>
   );
 }
