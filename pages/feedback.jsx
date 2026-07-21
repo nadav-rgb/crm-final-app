@@ -23,26 +23,43 @@ export default function FeedbackPage() {
   const [mine,   setMine]   = useState([]);
   const [review, setReview] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState(null);   // הודעת שגיאה גלויה למשתמש
+  const [needsSetup, setNeedsSetup] = useState(false); // הטבלה עדיין לא קיימת ב-Supabase
+
+  // PGRST205 = הטבלה לא קיימת ב-schema cache. מבדילים אותה משגיאה רגילה כדי להציג
+  // הנחיה תפעולית ברורה במקום "משהו נכשל" — זו טעות התקנה, לא תקלת משתמש.
+  function classify(err) {
+    if (!err) return false;
+    if (err.code === 'PGRST205' || /feedback_reports/.test(err.message || '')) {
+      setNeedsSetup(true);
+      setError(null);
+    } else {
+      setError(err.message || 'שגיאה לא ידועה');
+    }
+    return true;
+  }
 
   async function loadMine() {
     if (!currentUser?.id) return;
     const supabase = getSupabaseClient();
-    const { data } = await supabase
+    const { data, error: err } = await supabase
       .from('feedback_reports')
       .select('*')
       .eq('reporter_id', currentUser.id)
       .order('created_at', { ascending: false });
+    if (classify(err)) return;
     setMine(data || []);
   }
 
   async function loadReview() {
     if (!canReview) return;
     const supabase = getSupabaseClient();
-    const { data } = await supabase
+    const { data, error: err } = await supabase
       .from('feedback_reports')
       .select('*')
       .order('status', { ascending: true }) // open קודם
       .order('created_at', { ascending: false });
+    if (classify(err)) return;
     setReview(data || []);
   }
 
@@ -58,8 +75,9 @@ export default function FeedbackPage() {
   async function handleSubmit() {
     if (!message.trim() || !currentUser?.id) return;
     setSending(true);
+    setError(null);
     const supabase = getSupabaseClient();
-    const { error } = await supabase.from('feedback_reports').insert({
+    const { error: err } = await supabase.from('feedback_reports').insert({
       reporter_id: currentUser.id,
       reporter_name: currentUser.name,
       project_id: currentUser.project_id ?? null,
@@ -67,28 +85,46 @@ export default function FeedbackPage() {
       message: message.trim(),
     });
     setSending(false);
-    if (!error) {
-      setMessage('');
-      setSent(true);
-      setTimeout(() => setSent(false), 3000);
-      await Promise.all([loadMine(), loadReview()]);
-    }
+    if (err) { classify(err); return; }   // הטקסט נשאר בתיבה — שלא יאבד למשתמש
+    setMessage('');
+    setSent(true);
+    setTimeout(() => setSent(false), 3000);
+    await Promise.all([loadMine(), loadReview()]);
   }
 
   async function toggleStatus(item) {
     const supabase = getSupabaseClient();
     const nextStatus = item.status === 'open' ? 'reviewed' : 'open';
-    const { error } = await supabase
+    const { error: err } = await supabase
       .from('feedback_reports')
       .update({ status: nextStatus, reviewed_at: nextStatus === 'reviewed' ? new Date().toISOString() : null })
       .eq('id', item.id);
-    if (!error) {
-      setReview(prev => prev.map(r => r.id === item.id ? { ...r, status: nextStatus } : r));
-    }
+    if (err) { classify(err); return; }
+    setReview(prev => prev.map(r => r.id === item.id ? { ...r, status: nextStatus } : r));
   }
 
   return (
     <DesktopLayout title="תקלות והצעות" subtitle="דווחו על באגים, תקיעות או רעיונות לשיפור — נעבור על זה יחד כל כמה ימים">
+      {/* הטבלה טרם נוצרה ב-Supabase — הנחיה תפעולית למנהל, לא שגיאה סתומה לפעיל */}
+      {needsSetup && (
+        <div style={{ background:'#fff8ec', border:'0.5px solid rgba(243,156,18,0.35)', borderRight:'3px solid #f39c12', borderRadius:12, padding:'14px 16px', marginBottom:18, maxWidth:640 }}>
+          <div style={{ fontSize:13.5, fontWeight:800, color:'#b06b00', marginBottom:6 }}>העמוד עדיין לא מחובר לבסיס הנתונים</div>
+          <div style={{ fontSize:12.5, color:'#7a5200', lineHeight:1.7 }}>
+            {canReview ? (
+              <>נדרשת הרצה חד-פעמית של <code style={{ background:'#fff', padding:'1px 5px', borderRadius:4 }}>migrations/0016_feedback_reports.sql</code> ב-SQL Editor של Supabase. עד אז לא ניתן לשמור דיווחים.</>
+            ) : (
+              <>יש תקלה זמנית בהגדרות המערכת. אנא עדכנו את הרכז — הדיווחים לא נשמרים כרגע.</>
+            )}
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div style={{ background:'#fdecea', border:'0.5px solid rgba(226,75,74,0.3)', borderRight:'3px solid #e24b4a', borderRadius:12, padding:'12px 16px', marginBottom:18, maxWidth:640, fontSize:12.5, color:'#a63230', lineHeight:1.6 }}>
+          <strong>הפעולה נכשלה.</strong> {error}
+        </div>
+      )}
+
       {/* טופס דיווח */}
       <div style={{ background:'#fff', border:'0.5px solid rgba(0,0,0,0.07)', borderRadius:16, padding:'20px 22px', marginBottom:22, maxWidth:640 }}>
         <div style={{ fontSize:15, fontWeight:800, color:'#2d1f5e', marginBottom:14 }}>דיווח חדש</div>
