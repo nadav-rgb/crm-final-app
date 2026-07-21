@@ -79,10 +79,11 @@ function toInteractionRow(interaction) {
 
 async function insertInteractionToSupabase(interaction) {
   const row = toInteractionRow(interaction);
-  if (row.id === undefined || row.id === null) return;
+  if (row.id === undefined || row.id === null) return { error: new Error('Missing interaction id') };
   const supabase = getSupabaseClient();
   const { error } = await supabase.from('interactions').insert(row);
   if (error) console.error('Failed to insert interaction', error);
+  return { error: error || null };
 }
 
 // העמודות הקיימות בטבלת contacts ב-Supabase — סינון לפני כתיבה (משמיט מפתחות זרים מהטופס)
@@ -354,7 +355,10 @@ export function CrmProvider({ children }) {
     return () => { active = false; };
   }, [currentUser, authLoading]);
 
-  function addInteraction({ id, contact_id, activist_id, type, quality, duration_minutes, outcome, date, time, notes, description, ai_summary, next_action, next_action_date, mitzvot_level, participants }) {
+  // async ומחזירה { error }: הקורא צריך לדעת מתי השורה באמת נחתה ב-Supabase לפני שהוא מפעיל
+  // התראות צד-שרת (api/interactions/notify קורא את השורה מה-DB — לפני ה-insert הוא יחזיר 404).
+  // עדכוני ה-state נשארים סינכרוניים לפני ה-await, כך שה-UI לא מושהה.
+  async function addInteraction({ id, contact_id, activist_id, type, quality, duration_minutes, outcome, date, time, notes, description, ai_summary, next_action, next_action_date, mitzvot_level, participants }) {
     const contact = contacts.find(c => c.id === contact_id);
     const newInteraction = {
       id:               id ?? Date.now(),
@@ -379,8 +383,9 @@ export function CrmProvider({ children }) {
     };
     setInteractions(prev => [newInteraction, ...prev]);
 
-    // כתיבה לענן — fire-and-forget (mitzvot_level מסונן ב-toInteractionRow)
-    insertInteractionToSupabase(newInteraction);
+    // כתיבה לענן — נמתנת (mitzvot_level מסונן ב-toInteractionRow). ה-state כבר עודכן למעלה,
+    // אז ההמתנה לא מורגשת ב-UI אבל מאפשרת לקורא לחכות לשורה לפני הפעלת התראות.
+    const insertResult = await insertInteractionToSupabase(newInteraction);
 
     const interactionDate = new Date(date);
     const today = new Date(); today.setHours(0,0,0,0);
@@ -406,6 +411,8 @@ export function CrmProvider({ children }) {
     if (next_action      !== undefined) contactFields.next_action      = next_action;
     if (next_action_date !== undefined) contactFields.next_action_date = next_action_date;
     updateContactFieldsInSupabase(contact_id, contactFields);
+
+    return insertResult;
   }
 
   // עריכת קשר שכבר דווח (לפני כן לא הייתה שום דרך לתקן/למחוק דיווח קיים).

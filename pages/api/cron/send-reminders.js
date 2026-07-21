@@ -64,6 +64,19 @@ export default async function handler(req, res) {
     const msg = MESSAGES[reminder.type];
     const payload = { ...msg, url: '/base-meetings' };
 
+    // שורת פעמון בנוסף ל-Push: Push שנדחה/נמחק מהמסך לא משאיר שום זכר באפליקציה,
+    // ואז תזכורת שהוחמצה נעלמת. client_id דטרמיניסטי — הרצה חוזרת לא מכפילה.
+    const { error: bellErr } = await supabase.from('notifications').upsert({
+      recipient_id: String(targetId),
+      client_id: `reminder__${reminder.id}`,
+      type: reminder.type === 'coordinator' ? 'missing_report' : 'base_report_reminder',
+      title: msg.title,
+      body: msg.body,
+      url: '/base-meetings',
+      priority: 'high',
+    }, { onConflict: 'client_id' });
+    if (bellErr) console.error('send-reminders bell upsert failed:', bellErr.message);
+
     const web = await sendWebPushToActivist(supabase, targetId, payload);
     sent += web.sent;
 

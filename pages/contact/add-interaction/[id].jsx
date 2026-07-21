@@ -8,7 +8,8 @@ import { useAuth } from '../../../lib/AuthStore';
 import { calcInteractionPayment, PAID_PROJECT_IDS } from '../../../lib/paymentCalc';
 import DesktopLayout from '../../../components/DesktopLayout';
 import { summarizeInteractionText } from '../../../lib/aiService';
-import { createPaymentInteractionNotifications, createInteractionSummaryNotifications, createDemoNotification } from '../../../lib/notificationDemo';
+import { createPaymentInteractionNotifications, createDemoNotification } from '../../../lib/notificationDemo';
+import { notifyInteractionApi } from '../../../lib/notifyApi';
 import VoiceInput from '../../../components/VoiceInput';
 
 const TODAY = new Date().toISOString().split('T')[0];
@@ -178,7 +179,7 @@ export default function AddInteractionPage() {
     return e;
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     const e = validate();
     if (Object.keys(e).length > 0) { setErrors(e); return; }
 
@@ -232,25 +233,39 @@ export default function AddInteractionPage() {
       ...(participantsData ? { participants: participantsData } : {}),
     };
 
-    addInteraction(interactionPayload);
+    // await: ההתראות בצד-שרת קוראות את השורה מה-DB, אז היא חייבת לנחות קודם.
+    // ה-state כבר עודכן בתוך addInteraction לפני ה-await — המסך לא ממתין.
+    const { error: saveError } = await addInteraction(interactionPayload);
 
     // סיכום AI אוטומטי — מיועד לרכז בלבד (הפעיל לא רואה אותו). fire-and-forget:
     // לא חוסם את השמירה, וכשל AI מאבד רק את הסיכום — הקשר כבר נשמר.
     summarizeInteractionText(interactionPayload.description, {
       contactName: contact.name, type: form.type, quality: form.quality,
-    }).then(summary => {
+    }).then(async summary => {
       if (!summary) return;
-      updateInteraction(interactionPayload.id, { ai_summary: summary });
-      createInteractionSummaryNotifications({ activistName: currentUser?.name, contact, summary });
+      // await + בדיקת שגיאה לפני ההתראה: השרת קורא את ai_summary מה-DB, אז אם השמירה
+      // לא נחתה (או שה-insert של הקשר עוד באוויר) ההתראה תצא ריקה או תיכשל ב-404.
+      const { error } = await updateInteraction(interactionPayload.id, { ai_summary: summary });
+      if (error) return;
+      notifyInteractionApi({ interactionId: interactionPayload.id, kind: 'summary' });
     }).catch(() => {});
 
     if (isAchdut && payableCheck) {
+      // התראה לפעיל עצמו (פעמון מקומי) — הוא כבר מול המסך, לא צריך Push.
       createPaymentInteractionNotifications({
         interaction: interactionPayload,
         contact,
         activist: currentUser,
         paymentResult: payableCheck,
       });
+      // התראה + Push לניהול הפרויקט — צד-שרת. רק אם השורה באמת נשמרה.
+      if (!saveError && payableCheck.payable && payableCheck.amount > 0) {
+        notifyInteractionApi({
+          interactionId: interactionPayload.id,
+          kind: 'payment',
+          amount: payableCheck.amount,
+        });
+      }
     }
 
     // התראת בונוס עומק-לקוח — 4 / 6 מפגשי לימוד מצטברים מול אותו לקוח (תואם למנוע התשלום).

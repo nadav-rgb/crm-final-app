@@ -12,6 +12,7 @@ import { buildBaseMeetingsFromHouses } from '../lib/baseMeetingUtils';
 import { getSupabaseClient } from '../lib/supabaseClient';
 import { getReminderStatus } from '../lib/reminderSchedulerDemo';
 import { authHeader } from '../lib/apiAuth';
+import { notifyBaseMeetingReportApi } from '../lib/notifyApi';
 
 const MEETING_NUMBER_LABELS = { 1:'מפגש ראשון 🌱', 2:'מפגש שני 🌿', 3:'מפגש שלישי 🌳', 4:'מפגש רביעי 🏆' };
 
@@ -241,15 +242,9 @@ export default function BaseMeetingsPage() {
       if (summary) await updateBaseMeetingReport(meeting.id, { ai_summary: summary });
     } catch (e) { /* כשל AI — ממשיכים בלי סיכום */ }
 
-    // התראה + Push אמיתי לטלפון/מחשב — צד-שרת (admin key), כי createBaseMeetingSubmittedNotifications
-    // כתב עד היום רק שורת פעמון בדפדפן ולא הפעיל Push בפועל לרכז.
-    authHeader().then(h =>
-      fetch('/api/base-meetings/notify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...h },
-        body: JSON.stringify({ reportId: meeting.id }),
-      })
-    ).catch(() => {});
+    // התראה + Push אמיתי לטלפון/מחשב — צד-שרת (admin key). הגרסה הקודמת כתבה מהדפדפן
+    // שורת פעמון בלבד ולא הפעילה Push בפועל לרכז.
+    notifyBaseMeetingReportApi(meeting.id);
   }
 
   function handleSubmit() {
