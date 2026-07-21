@@ -263,12 +263,20 @@ export default function BaseMeetingsPage() {
       return;
     }
 
-    submitBaseMeeting(selected.id, textForAi, {
-      ...selected,
+    // חייבים להמתין לכתיבה לפני finalizeSubmission: הוא שומר ai_summary ושולח את ההתראה
+    // לפי id הדוח, ושניהם נכשלים **בשקט** אם השורה עוד לא ב-DB (update no-op / 404).
+    // ה-UI עצמו לא ממתין — רק ההמשך. selected נשמר מקומית כי setSelected(null) רץ מיד.
+    const meeting = selected;
+    submitBaseMeeting(meeting.id, textForAi, {
+      ...meeting,
       participant_count: Number(form.participant_count),
       structured_answers: sa,
-    });
-    finalizeSubmission(selected, textForAi); // fire-and-forget: סיכום AI + התראה לרכזים
+    })
+      .then(({ error }) => {
+        if (error) { console.error('הדיווח לא נשמר — מדלג על סיכום AI והתראה', error); return; }
+        finalizeSubmission(meeting, textForAi); // סיכום AI + התראה לרכזים
+      })
+      .catch(err => console.error('שמירת הדיווח נכשלה', err));
     // Cancel pending reminders — report was submitted
     authHeader().then(h =>
       fetch('/api/reminders/cancel', {

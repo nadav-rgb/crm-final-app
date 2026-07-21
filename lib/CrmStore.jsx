@@ -43,13 +43,13 @@ function toReportRow(report) {
 
 async function upsertReportsToSupabase(reports) {
   const rows = reports.map(toReportRow).filter(r => r.id !== undefined && r.id !== null);
-  if (rows.length === 0) return;
+  if (rows.length === 0) return { error: null };
   const supabase = getSupabaseClient();
-  const data = null;
   const { error } = await supabase
     .from('base_meeting_reports')
     .upsert(rows, { onConflict: 'id' });
   if (error) console.error('Failed to upsert base meeting reports', error);
+  return { error: error || null };
 }
 
 function persistBaseMeetings(nextReports) {
@@ -499,7 +499,10 @@ export function CrmProvider({ children }) {
     return { error: null };
   }
 
-  function submitBaseMeeting(meetingId, answers, meetingData = {}) {
+  // async בכוונה: הקורא חייב לדעת שהדוח באמת נכתב ל-DB לפני שהוא ממשיך.
+  // pages/api/base-meetings/notify מחפש את השורה לפי id ומחזיר 404 אם היא עוד לא שם,
+  // ו-updateBaseMeetingReport (ai_summary) הוא update שקט — שניהם נכשלים בלי חיווי.
+  async function submitBaseMeeting(meetingId, answers, meetingData = {}) {
     const submittedReport = {
       ...meetingData,
       id: meetingId,
@@ -515,7 +518,7 @@ export function CrmProvider({ children }) {
         : [submittedReport, ...prev];
     });
 
-    upsertReportsToSupabase([submittedReport]);
+    return upsertReportsToSupabase([submittedReport]);
   }
 
   // עדכון ממוקד של דוח קיים (למשל ai_summary אחרי שליחה). update ולא upsert בכוונה —
