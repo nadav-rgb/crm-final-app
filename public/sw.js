@@ -7,7 +7,8 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     self.registration.showNotification(data.title || 'מקרבים', {
       body: data.body || '',
-      icon: '/favicon.ico',
+      // אין icon בכוונה: /favicon.ico לא קיים ב-public/, והפניה לאייקון שמחזיר 404
+      // עלולה להפיל את showNotification בחלק מגרסאות אנדרואיד. ברירת המחדל של הדפדפן תקינה.
       dir: 'rtl',
       lang: 'he',
       vibrate: [200, 100, 200, 100, 200],

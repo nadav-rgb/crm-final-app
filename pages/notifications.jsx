@@ -43,9 +43,11 @@ function DeviceNotificationCard({ currentUser }) {
     } else {
       const sub = await registerPushSubscription(String(currentUser.id));
       await refresh();
+      // כשל אפשרי משתי סיבות: ההרשאה נדחתה, או שהשמירה בשרת נכשלה (registerPushSubscription
+      // מחזיר null בשני המקרים). מנסחים כך שהמשתמש ידע לבדוק את שניהם.
       setMessage(sub
-        ? '✅ ההתראות הופעלו במכשיר הזה'
-        : 'לא הצלחנו להפעיל — בדוק שההרשאה לא נחסמה בדפדפן ונסה שוב');
+        ? '✅ ההתראות הופעלו והמכשיר נרשם בשרת'
+        : 'לא הצלחנו להפעיל — ייתכן שההרשאה נחסמה בדפדפן, או שהרישום בשרת נכשל. נסה שוב.');
     }
     setBusy(false);
   }
@@ -66,11 +68,31 @@ function DeviceNotificationCard({ currentUser }) {
 
   if (!status) return null;
 
+  // "פעיל" = גם הדפדפן רשום וגם *השרת* מכיר את המכשיר. בלי התנאי השני הוצג וי ירוק
+  // למכשיר שהשרת לא ידע על קיומו, ולכן לא קיבל שום התראה (ראה lib/pushClient.js).
   const active = native
     ? status.permission === 'granted'
-    : status.supported && status.permission === 'granted' && status.subscribed;
+    : status.supported && status.permission === 'granted' && status.subscribed && status.serverRegistered;
+
+  // המקרה המטעה: יש מנוי בדפדפן אבל הוא לא נשמר בשרת. הפעלה מחדש שולחת אותו שוב.
+  const localOnly = !native && status.supported && status.permission === 'granted'
+    && status.subscribed && !status.serverRegistered;
+
   let content;
-  if (active) {
+  if (localOnly) {
+    content = (
+      <>
+        <div style={{ fontSize:13, color:'#b06b00', lineHeight:1.7 }}>
+          ⚠️ <b>המכשיר הזה לא מחובר לשרת ההתראות.</b> הדפדפן מוכן, אבל הרישום לא נשמר —
+          לכן לא הגיעו לכאן התראות. לחיצה אחת מתקנת.
+        </div>
+        <button onClick={handleEnable} disabled={busy}
+          style={{ background:'#6c5ce7', border:'none', borderRadius:10, padding:'9px 18px', fontSize:13, color:'#fff', fontWeight:800, cursor:'pointer', fontFamily:'inherit', whiteSpace:'nowrap' }}>
+          {busy ? 'מחבר…' : '🔄 חבר את המכשיר הזה'}
+        </button>
+      </>
+    );
+  } else if (active) {
     content = (
       <>
         <div style={{ fontSize:14, fontWeight:800, color:'#27ae60' }}>✅ התראות פעילות במכשיר זה</div>
