@@ -80,7 +80,10 @@ export default function FeedbackPage() {
     const { error: err } = await supabase.from('feedback_reports').insert({
       reporter_id: currentUser.id,
       reporter_name: currentUser.name,
-      project_id: currentUser.project_id ?? null,
+      // project_id חייב ערך: מדיניות ה-SELECT של רכז היא project_id = any(הפרויקטים שלו),
+      // ו-null לעולם לא מתאים — דיווח כזה היה נעלם משקט מתור הסקירה. המנכ"ל הוא הפרופיל
+      // היחיד בלי project_id (וגם בלי project_ids), ולכן נופל לפרויקט הראשי.
+      project_id: currentUser.project_id ?? currentUser.project_ids?.[0] ?? 1,
       category,
       message: message.trim(),
     });

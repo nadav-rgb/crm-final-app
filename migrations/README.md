@@ -40,12 +40,16 @@
 | 0013_activist_isolation_rls | בידוד נתונים בין פעילים | ✅ הורץ |
 | 0014_bonus_cancellations | טבלת `bonus_cancellations` | ✅ הורץ |
 | 0015_participants_reports_project_notification_recipients | `interactions.participants` + RPC `app_notification_recipients` | ✅ הורץ |
-| **0016_feedback_reports** | **טבלת `feedback_reports` (עמוד `/feedback`)** | ⛔ **טרם הורץ** |
+| 0016_feedback_reports | טבלת `feedback_reports` (עמוד `/feedback`) | ✅ הורץ 2026-07-21 |
 
-### 0016 — מה תלוי בה
-עמוד `/feedback` ("תקלות והצעות") לא יכול לשמור או להציג דיווחים עד שהיא תרוץ.
-העמוד מזהה את המצב (`PGRST205`) ומציג הודעת-התקנה ברורה במקום להיכשל בשקט,
-אז אין נזק — פשוט אין פונקציונליות.
+### 0016 — אימות שבוצע (2026-07-21)
+- הטבלה קיימת עם כל 10 העמודות ✅
+- **RLS פעיל ונבדק אנונימית:** `SELECT` מחזיר `[]` (לא דולף שורות),
+  `INSERT` נדחה עם `42501 – new row violates row-level security policy` ✅
+- ⚠️ שים לב: מדיניות ה-`SELECT` של רכז היא `project_id = any(app_current_project_ids())`.
+  שורה עם `project_id = null` **לא תיראה לאף רכז**. לכן `pages/feedback.jsx` תמיד כותב
+  `project_id` (נפילה ל-`project_ids[0]` ואז ל-`1`) — המנכ"ל הוא הפרופיל היחיד ב-DB
+  בלי `project_id`, ובלי הנפילה הזו דיווח שלו היה נעלם בשקט מתור הסקירה.
 
 ## אימות אחרי הרצה
 ```sql

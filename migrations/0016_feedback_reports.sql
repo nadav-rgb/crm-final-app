@@ -1,4 +1,4 @@
--- migrations/0016_feedback_reports.sql
+-- migrations/0016_feedback_reports.sql — הורץ דרך ה-SQL Editor 2026-07-21.
 -- עמוד "תקלות והצעות": כל פעיל יכול לדווח על באג/תקיעה/הצעת שיפור. הרכזים/מנכ"ל סוקרים
 -- ומעדכנים סטטוס (open → reviewed). מבודד לפי project_id כמו שאר הטבלאות הרגישות (0013).
 
