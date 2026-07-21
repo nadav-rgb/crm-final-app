@@ -8,7 +8,7 @@ import {
   MoreHorizontal, User, Calendar, UserPlus,
   Star, CreditCard, BellRing, MessageSquare,
   Building2, CheckCircle, BarChart2, LogOut,
-  LayoutDashboard, Receipt, Compass, Activity,
+  LayoutDashboard, Receipt, Compass, Activity, AlertCircle,
 } from 'lucide-react';
 
 const BG = 'linear-gradient(180deg, rgba(42,24,112,0.97) 0%, rgba(58,36,155,0.94) 52%, rgba(35,20,100,0.97) 100%)';
@@ -44,6 +44,7 @@ export default function MobileBottomNav() {
     { href: '/expenses',                                          icon: <Receipt      {...ICO} />, label: 'דיווח הוצאות' },
     { href: '/notifications',                                     icon: <BellRing     {...ICO} />, label: 'התראות מערכת' },
     { href: '/chat',                                              icon: <MessageSquare {...ICO} />, label: 'צ׳אט פעילים' },
+    { href: '/feedback',                                          icon: <AlertCircle  {...ICO} />, label: 'תקלות והצעות' },
     ((can.seeMeetingHouses || currentUser?.role === 'activist') && (currentUser?.role === 'ceo' || inProject(currentUser, 2))) && { href: '/tours', icon: <Compass {...ICO} />, label: 'סיורים' },
     (can.seeMeetingHouses || currentUser?.role === 'activist') && { href: '/meeting-houses', icon: <Building2 {...ICO} />, label: 'בתי מפגש חדשים' },
     can.seeMeetingHouses && { href: '/meeting-houses/completed',  icon: <CheckCircle  {...ICO} />, label: 'בתי מפגש שהסתיימו' },
