@@ -7,7 +7,6 @@ import { useAuth } from '../lib/AuthStore';
 import { summarizeBaseMeetingDemo } from '../lib/aiDemo';
 import { summarizeReportText } from '../lib/aiService';
 import VoiceInput from '../components/VoiceInput';
-import { createBaseMeetingSubmittedNotifications } from '../lib/notificationDemo';
 import { getMeetingHouses } from '../lib/meetingHousesStorage';
 import { buildBaseMeetingsFromHouses } from '../lib/baseMeetingUtils';
 import { getSupabaseClient } from '../lib/supabaseClient';
@@ -241,7 +240,16 @@ export default function BaseMeetingsPage() {
       });
       if (summary) await updateBaseMeetingReport(meeting.id, { ai_summary: summary });
     } catch (e) { /* כשל AI — ממשיכים בלי סיכום */ }
-    createBaseMeetingSubmittedNotifications({ meeting, activistName: currentUser?.name, aiSummary: summary });
+
+    // התראה + Push אמיתי לטלפון/מחשב — צד-שרת (admin key), כי createBaseMeetingSubmittedNotifications
+    // כתב עד היום רק שורת פעמון בדפדפן ולא הפעיל Push בפועל לרכז.
+    authHeader().then(h =>
+      fetch('/api/base-meetings/notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...h },
+        body: JSON.stringify({ reportId: meeting.id }),
+      })
+    ).catch(() => {});
   }
 
   function handleSubmit() {
@@ -568,6 +576,25 @@ export default function BaseMeetingsPage() {
             <div style={{ fontSize:12, color:'#aaa', marginBottom:12 }}>
               {MEETING_NUMBER_LABELS[fullReport.meeting_number]} · בית מפגש {fullReport.meeting_place_number} — {fullReport.meeting_place_city}
             </div>
+
+            {/* פרטי המפגש — נדרשים לרכז כדי לזהות מי היה מעורב, לא רק תשובות הטופס */}
+            <div style={{ background:'#f8f7ff', borderRadius:12, padding:'12px 16px', marginBottom:14, border:'0.5px solid rgba(108,92,231,0.15)' }}>
+              <div style={{ fontSize:11, fontWeight:700, color:'#6c5ce7', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.06em' }}>פרטי המפגש</div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'4px 12px', fontSize:12 }}>
+                {[
+                  ['מארח', fullReport.host_name],
+                  ['מנחה', fullReport.facilitator_name],
+                  ['פעיל מדווח', fullReport.activist_name],
+                  ['תאריך', fullReport.date || 'טרם נקבע'],
+                ].map(([k,v])=>(
+                  <div key={k} style={{ display:'flex', gap:6 }}>
+                    <span style={{ color:'#aaa', flexShrink:0 }}>{k}:</span>
+                    <span style={{ fontWeight:600, color:'#333' }}>{v || '—'}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             <pre style={{ whiteSpace:'pre-wrap', background:'#f8fbff', border:'0.5px solid #e6eef7', borderRadius:12, padding:14, fontFamily:'inherit', lineHeight:1.8, fontSize:13, color:'#333' }}>
               {fullReport.structured_answers ? structuredToText(fullReport.structured_answers) : (fullReport.answers || 'אין נתונים')}
             </pre>

@@ -10,7 +10,7 @@ import { getNotificationsForUser, markNotificationAsRead, markAllNotificationsAs
 import {
   Home, User, Users, Calendar, UserPlus,
   ClipboardList, Star, CreditCard, Bell, BellRing, Receipt, Compass,
-  MessageSquare, Building2, CheckCircle,
+  MessageSquare, Building2, CheckCircle, AlertCircle,
   BarChart2, FolderOpen, LayoutDashboard, Activity,
 } from 'lucide-react';
 
@@ -175,6 +175,7 @@ export default function DesktopLayout({ children, title, subtitle, actions, back
           <NavItem href="/reminders"      icon={<Bell          {...ICO} />} label="תזכורות קשר"         open={open} active={router.pathname === '/reminders'}        onActivate={() => setOpen(true)} />
           <NavItem href="/notifications"  icon={<BellRing      {...ICO} />} label="התראות מערכת"        open={open} active={router.pathname === '/notifications'}    onActivate={() => setOpen(true)} />
           <NavItem href="/chat"           icon={<MessageSquare {...ICO} />} label="צ׳אט פעילים"         open={open} active={router.pathname === '/chat'}             onActivate={() => setOpen(true)} />
+          <NavItem href="/feedback"       icon={<AlertCircle   {...ICO} />} label="תקלות והצעות"        open={open} active={router.pathname === '/feedback'}         onActivate={() => setOpen(true)} />
           {(can.seeMeetingHouses || currentUser?.role === 'activist') && (currentUser?.role === 'ceo' || inProject(currentUser, 2)) && (
             <NavItem href="/tours"
               icon={<Compass {...ICO} />}

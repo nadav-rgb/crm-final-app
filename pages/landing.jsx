@@ -8,7 +8,7 @@ import Link from 'next/link';
 import {
   Home, User, Users, Calendar, UserPlus,
   ClipboardList, Star, CreditCard, Bell, BellRing, Receipt, Compass,
-  MessageSquare, Building2, FolderOpen, Activity,
+  MessageSquare, Building2, FolderOpen, Activity, AlertCircle,
 } from 'lucide-react';
 import MobileBottomNav from '../components/MobileBottomNav';
 import { inProject, inAnyPaidProject } from '../lib/projectUtils';
@@ -242,6 +242,7 @@ export default function LandingPage() {
           <SideItem icon={<Bell           {...ICO} />} label="תזכורות קשר"    open={open} onClick={() => router.push('/reminders')} />
           <SideItem icon={<BellRing       {...ICO} />} label="התראות מערכת"   open={open} onClick={() => router.push('/notifications')} />
           <SideItem icon={<MessageSquare  {...ICO} />} label="צ׳אט פעילים"    open={open} onClick={() => router.push('/chat')} />
+          <SideItem icon={<AlertCircle    {...ICO} />} label="תקלות והצעות"   open={open} onClick={() => router.push('/feedback')} />
           {(can.seeMeetingHouses || currentUser?.role === 'activist') && (currentUser?.role === 'ceo' || inProject(currentUser, 2)) && (
             <SideItem icon={<Compass      {...ICO} />} label="סיורים"         open={open} onClick={() => router.push('/tours')} />
           )}
