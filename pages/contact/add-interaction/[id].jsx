@@ -63,15 +63,17 @@ export default function AddInteractionPage() {
   // Live payment calculation
   const duration = form.long_enough === 'yes' ? QUALIFYING_DUR : form.long_enough === 'no' ? 5 : 0;
   const currentMonthKey = form.date?.slice(0, 7);
-  const previousContactMonthly = interactions.filter(i =>
-    i.contact_id === contactId &&
+  // "קשרים קודמים" חייב להיבנות בדיוק כמו במנוע (calcMonthlyPayment), אחרת הטופס מזהיר "חרגת"
+  // על קשר שהמנוע כן משלם עליו (דיווח מוטי גלעד, 2026-07-21). שני ההבדלים שהיו:
+  //   1. בלי סינון פרויקט — קשרים מפרויקט לא-מזכה נספרו לתוך התקרה.
+  //   2. בלי חיתוך כרונולוגי — קשר מאוחר יותר באותו חודש נספר כ"קודם".
+  const isPrevious = i =>
     i.activist_id === currentUser?.id &&
-    i.date?.slice(0, 7) === currentMonthKey
-  );
-  const previousActivistMonthly = interactions.filter(i =>
-    i.activist_id === currentUser?.id &&
-    i.date?.slice(0, 7) === currentMonthKey
-  );
+    PAID_PROJECT_IDS.includes(Number(i.project_id)) &&
+    i.date?.slice(0, 7) === currentMonthKey &&
+    i.date <= form.date; // הקשר החדש נכנס אחרון — קשרים באותו יום נספרים לפניו
+  const previousContactMonthly  = interactions.filter(i => isPrevious(i) && i.contact_id === contactId);
+  const previousActivistMonthly = interactions.filter(isPrevious);
   const isShabbat = form.type === 'אירוח שבת';
   // "רב משתתפים" עבר לקומפוננטה נפרדת (toggleMulti) — לא מוצג עוד כאיכות רגילה כדי למנוע כפילות.
   const qualityOptions = CONFIG.interactionQuality;
