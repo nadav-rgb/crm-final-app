@@ -5,7 +5,7 @@ import Head from 'next/head';
 import DesktopLayout from '../components/DesktopLayout';
 import { useAuth } from '../lib/AuthStore';
 import { useCrm } from '../lib/CrmStore';
-import { fetchToursFromSupabase, upsertTourApi, submitTourReportApi, notifyTourCreatedApi } from '../lib/toursSupabase';
+import { fetchToursFromSupabase, upsertTourApi, updateTourApi, submitTourReportApi, notifyTourCreatedApi } from '../lib/toursSupabase';
 import { createDemoNotification } from '../lib/notificationDemo';
 import { inProject } from '../lib/projectUtils';
 import { formatDateHe } from '../lib/formatDate';
@@ -59,6 +59,8 @@ export default function ToursPage() {
   const { activists } = useCrm();
   const [tours, setTours] = useState([]);
   const [creating, setCreating] = useState(false);
+  const [editingTour, setEditingTour] = useState(null); // הסיור שעורכים כרגע (null = יצירה)
+  const [saveNotice, setSaveNotice] = useState(null);   // סיכום אחרי עריכה: מה השתנה ולמי נשלח
   const [form, setForm] = useState(EMPTY_FORM);
   const [errors, setErrors] = useState({});
   const [busy, setBusy] = useState(false);
@@ -98,7 +100,35 @@ export default function ToursPage() {
     setErrors(prev => ({ ...prev, [field]: undefined }));
   }
 
-  async function handleCreate() {
+  // פתיחת הטופס במצב עריכה, ממולא מהסיור הקיים
+  function openEdit(tour) {
+    setEditingTour(tour);
+    setCreating(false);
+    setErrors({});
+    setSaveNotice(null);
+    setSelectedDay(null);
+    setForm({
+      tourNumber:      tour.tourNumber || '',
+      settlement:      tour.settlement || '',
+      date:            tour.date ? String(tour.date).slice(0, 10) : '',
+      startTime:       tour.startTime || '',
+      guideMode:       tour.guideActivistId ? 'activist' : 'external',
+      guideActivistId: tour.guideActivistId ? String(tour.guideActivistId) : '',
+      guideName:       tour.guideActivistId ? '' : (tour.guideName || ''),
+      hostActivistId:  tour.hostActivistId ? String(tour.hostActivistId) : '',
+      notes:           tour.notes || '',
+    });
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function closeForm() {
+    setCreating(false);
+    setEditingTour(null);
+    setForm(EMPTY_FORM);
+    setErrors({});
+  }
+
+  async function handleSave() {
     const e = {};
     if (!form.tourNumber.trim()) e.tourNumber = 'מספר סיור חובה';
     if (!form.settlement.trim()) e.settlement = 'יישוב חובה';
@@ -108,22 +138,45 @@ export default function ToursPage() {
     if (!form.hostActivistId)    e.host = 'נא לבחור משפחה מארחת';
     if (Object.keys(e).length > 0) { setErrors(e); return; }
 
-    setBusy(true);
     const guideActivist = form.guideMode === 'activist'
       ? guideOptions.find(a => Number(a.id) === Number(form.guideActivistId))
       : null;
-    const saved = await upsertTourApi({
-      id: `tour-${Date.now()}`,
-      tourNumber: form.tourNumber.trim(),
-      settlement: form.settlement.trim(),
-      date: form.date,
-      startTime: form.startTime,
-      guideName: guideActivist ? guideActivist.name : form.guideName.trim(),
+    const fields = {
+      tourNumber:      form.tourNumber.trim(),
+      settlement:      form.settlement.trim(),
+      date:            form.date,
+      startTime:       form.startTime,
+      guideName:       guideActivist ? guideActivist.name : form.guideName.trim(),
       guideActivistId: guideActivist ? Number(guideActivist.id) : null,
-      hostActivistId: Number(form.hostActivistId),
+      hostActivistId:  Number(form.hostActivistId),
+      notes:           form.notes.trim(),
+    };
+
+    setBusy(true);
+
+    // עריכה — השרת משווה לשורה הישנה ושולח לנוגעים בדבר *מה* השתנה.
+    // שולחים את הסיור המלא כדי לשמר id; השרת מתעלם משדות שאינם ניתנים לעריכה
+    // (status / assigned_activists / report) — תיקון פרטים לא דורס שיבוץ או דיווח.
+    if (editingTour) {
+      const result = await updateTourApi({ ...editingTour, ...fields });
+      setBusy(false);
+      if (!result) { setErrors({ submit: 'שמירת השינויים נכשלה — נסה שוב' }); return; }
+      setTours(prev => prev.map(t => (t.id === result.tour.id ? result.tour : t)));
+      setSaveNotice({
+        tourNumber: result.tour.tourNumber,
+        changes: result.changes,
+        notified: result.notified.length,
+      });
+      closeForm();
+      load();
+      return;
+    }
+
+    const saved = await upsertTourApi({
+      ...fields,
+      id: `tour-${Date.now()}`,
       assignedActivists: [],
       status: 'upcoming',
-      notes: form.notes.trim(),
       project_id: 2,
     });
     setBusy(false);
@@ -134,8 +187,7 @@ export default function ToursPage() {
     // (בעבר נוצרו בצד-לקוח ונכשלו לכל נמען שאינו יוצר הסיור, בגלל RLS על notifications.)
     await notifyTourCreatedApi(saved.id);
 
-    setForm(EMPTY_FORM);
-    setCreating(false);
+    closeForm();
     load();
   }
 
@@ -197,18 +249,55 @@ export default function ToursPage() {
             ))}
           </div>
           {canManage && (
-            <button onClick={() => setCreating(v => !v)}
+            <button onClick={() => { if (creating || editingTour) closeForm(); else { setEditingTour(null); setForm(EMPTY_FORM); setErrors({}); setCreating(true); } }}
               style={{ border: 'none', borderRadius: 10, padding: '9px 15px', fontFamily: 'inherit', fontWeight: 700, cursor: 'pointer', background: '#6c5ce7', color: '#fff', fontSize: 13 }}>
-              {creating ? 'סגור' : '+ סיור חדש'}
+              {(creating || editingTour) ? 'סגור' : '+ סיור חדש'}
             </button>
           )}
         </div>
       }
     >
-      {/* טופס יצירת סיור */}
-      {creating && (
+      {/* אישור אחרי עריכה — מה השתנה ולכמה אנשים נשלח עדכון */}
+      {saveNotice && (
+        <div style={{ background: '#edfaf1', border: '0.5px solid #a8dcbb', borderRadius: 14, padding: '13px 16px', marginBottom: 16, maxWidth: 620 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 700, color: '#1e7a45' }}>
+              ✓ סיור {saveNotice.tourNumber} עודכן
+            </div>
+            <button onClick={() => setSaveNotice(null)} aria-label="סגור"
+              style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#1e7a45', fontSize: 15, lineHeight: 1, padding: 0 }}>×</button>
+          </div>
+          {saveNotice.changes.length === 0 ? (
+            <div style={{ fontSize: 12.5, color: '#4a7d5e', marginTop: 5 }}>לא זוהה שינוי בפרטים — לא נשלחו התראות.</div>
+          ) : (
+            <>
+              <div style={{ fontSize: 12.5, color: '#4a7d5e', marginTop: 5, lineHeight: 1.75 }}>
+                {saveNotice.changes.map(c => (
+                  <div key={c.label}>• {c.label}: {c.from} ← {c.to}</div>
+                ))}
+              </div>
+              <div style={{ fontSize: 12.5, color: '#1e7a45', marginTop: 7, fontWeight: 600 }}>
+                {saveNotice.notified > 0
+                  ? `נשלח עדכון ל-${saveNotice.notified} נמענים (פעמון + התראה לנייד).`
+                  : 'לא נמצאו נמענים לעדכון.'}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* טופס יצירת/עריכת סיור */}
+      {(creating || editingTour) && (
         <div style={{ background: '#fffaf5', borderRadius: 16, padding: '18px 20px', marginBottom: 18, border: '0.5px solid rgba(108,92,231,0.25)', maxWidth: 620 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: '#2d1f5e', marginBottom: 14 }}>סיור חדש</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: '#2d1f5e', marginBottom: editingTour ? 4 : 14 }}>
+            {editingTour ? `עריכת סיור ${editingTour.tourNumber}` : 'סיור חדש'}
+          </div>
+          {editingTour && (
+            <div style={{ fontSize: 12.5, color: '#8b7fa8', marginBottom: 14, lineHeight: 1.6 }}>
+              המשפחה המארחת, המדריך, המשובצים והרכזים יקבלו התראה עם מה שהשתנה.
+              השיבוצים והדיווח (אם הוגש) לא ישתנו.
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
               <label className="form-label">מספר סיור <span style={{ color: '#e24b4a' }}>*</span></label>
@@ -224,7 +313,8 @@ export default function ToursPage() {
             </div>
             <div>
               <label className="form-label">תאריך <span style={{ color: '#e24b4a' }}>*</span></label>
-              <input type="date" className={`form-input ${errors.date ? 'form-error' : ''}`} min={TODAY}
+              {/* בעריכה אין min — סיור שכבר עבר חייב להיות ניתן לתיקון */}
+              <input type="date" className={`form-input ${errors.date ? 'form-error' : ''}`} min={editingTour ? undefined : TODAY}
                 value={form.date} onChange={e => set('date', e.target.value)} style={inputStyle} />
               {errors.date && <span className="error-msg">{errors.date}</span>}
             </div>
@@ -277,9 +367,16 @@ export default function ToursPage() {
             onChange={e => set('notes', e.target.value)} style={inputStyle} />
 
           {errors.submit && <div style={{ color: '#c0392b', fontSize: 13, marginBottom: 8 }}>{errors.submit}</div>}
-          <button className="btn btn-primary" style={{ width: '100%' }} onClick={handleCreate} disabled={busy}>
-            {busy ? 'שומר…' : 'צור סיור ושלח התראות'}
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {editingTour && (
+              <button className="btn" style={{ flex: 1, cursor: 'pointer', fontFamily: 'inherit' }}
+                onClick={closeForm} disabled={busy}>ביטול</button>
+            )}
+            <button className="btn btn-primary" style={{ flex: 2, cursor: 'pointer', fontFamily: 'inherit' }}
+              onClick={handleSave} disabled={busy}>
+              {busy ? 'שומר…' : (editingTour ? 'שמור שינויים ועדכן את המשובצים' : 'צור סיור ושלח התראות')}
+            </button>
+          </div>
         </div>
       )}
 
@@ -298,6 +395,8 @@ export default function ToursPage() {
               <TourCard key={tour.id} tour={tour}
                 activistName={activistName}
                 canReport={(canManage || related) && tour.status !== 'completed'}
+                canEdit={canManage}
+                onEdit={() => openEdit(tour)}
                 onReport={() => { setReportForm(EMPTY_REPORT); setReportingTour(tour); }}
                 onViewReport={() => setViewingReport(tour)} />
             );
@@ -344,6 +443,12 @@ export default function ToursPage() {
                           <div>🏠 משפחה מארחת: {activistName(t.hostActivistId) ?? '—'}</div>
                           {t.notes && <div>📝 {t.notes}</div>}
                         </div>
+                        {canManage && (
+                          <button onClick={() => openEdit(t)} className="btn"
+                            style={{ width: '100%', marginTop: 10, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, color: '#6c5ce7', borderColor: 'rgba(108,92,231,0.35)' }}>
+                            ✏️ ערוך פרטי סיור
+                          </button>
+                        )}
                         {t.status === 'completed' && t.report && (
                           <button onClick={() => { setSelectedDay(null); setViewingReport(t); }} className="btn"
                             style={{ width: '100%', marginTop: 10, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, color: '#3b6d11', borderColor: '#639922' }}>
@@ -486,19 +591,28 @@ export default function ToursPage() {
   );
 }
 
-function TourCard({ tour, activistName, canReport, onReport, onViewReport }) {
+function TourCard({ tour, activistName, canReport, canEdit, onEdit, onReport, onViewReport }) {
   const statusInfo = STATUS_LABELS[tour.status] || STATUS_LABELS.upcoming;
 
   return (
     <div style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)', borderRadius: 16, padding: 18, boxShadow: '0 1px 5px rgba(0,0,0,0.04)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10, gap: 8 }}>
         <div>
           <div style={{ fontSize: 16, fontWeight: 800 }}>סיור {tour.tourNumber}</div>
           <div style={{ fontSize: 13, color: '#888' }}>{tour.settlement}</div>
         </div>
-        <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, fontWeight: 700, background: statusInfo.bg, color: statusInfo.color }}>
-          {statusInfo.label}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexShrink: 0 }}>
+          {canEdit && (
+            <button onClick={onEdit} title="ערוך פרטי סיור"
+              style={{ border: '1px solid rgba(108,92,231,0.3)', background: '#fff', color: '#6c5ce7', borderRadius: 20,
+                padding: '3px 10px', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+              ✏️ ערוך
+            </button>
+          )}
+          <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, fontWeight: 700, background: statusInfo.bg, color: statusInfo.color }}>
+            {statusInfo.label}
+          </span>
+        </div>
       </div>
 
       <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse', marginBottom: 12 }}>
