@@ -5,7 +5,7 @@ import Head from 'next/head';
 import DesktopLayout from '../components/DesktopLayout';
 import { useAuth } from '../lib/AuthStore';
 import { useCrm } from '../lib/CrmStore';
-import { fetchToursFromSupabase, upsertTourApi, updateTourApi, submitTourReportApi, notifyTourCreatedApi } from '../lib/toursSupabase';
+import { fetchToursFromSupabase, upsertTourApi, updateTourApi, cancelTourApi, deleteTourApi, submitTourReportApi, notifyTourCreatedApi } from '../lib/toursSupabase';
 import { createDemoNotification } from '../lib/notificationDemo';
 import { inProject } from '../lib/projectUtils';
 import { formatDateHe } from '../lib/formatDate';
@@ -15,6 +15,7 @@ const TODAY = new Date().toISOString().split('T')[0];
 const STATUS_LABELS = {
   upcoming:  { label: 'מתוכנן', color: '#6c5ce7', bg: '#f0effe' },
   completed: { label: 'התקיים', color: '#27ae60', bg: '#edfaf1' },
+  cancelled: { label: 'בוטל',   color: '#c0392b', bg: '#fdecea' },
 };
 
 const EMPTY_FORM = {
@@ -60,7 +61,10 @@ export default function ToursPage() {
   const [tours, setTours] = useState([]);
   const [creating, setCreating] = useState(false);
   const [editingTour, setEditingTour] = useState(null); // הסיור שעורכים כרגע (null = יצירה)
-  const [saveNotice, setSaveNotice] = useState(null);   // סיכום אחרי עריכה: מה השתנה ולמי נשלח
+  const [notice, setNotice] = useState(null);           // באנר סיכום אחרי עריכה/ביטול/מחיקה
+  const [confirmAction, setConfirmAction] = useState(null); // { mode: 'cancel' | 'delete', tour }
+  const [cancelReason, setCancelReason] = useState('');
+  const [actionError, setActionError] = useState('');   // סיבת חסימה שחזרה מהשרת
   const [form, setForm] = useState(EMPTY_FORM);
   const [errors, setErrors] = useState({});
   const [busy, setBusy] = useState(false);
@@ -105,7 +109,7 @@ export default function ToursPage() {
     setEditingTour(tour);
     setCreating(false);
     setErrors({});
-    setSaveNotice(null);
+    setNotice(null);
     setSelectedDay(null);
     setForm({
       tourNumber:      tour.tourNumber || '',
@@ -162,9 +166,10 @@ export default function ToursPage() {
       setBusy(false);
       if (!result) { setErrors({ submit: 'שמירת השינויים נכשלה — נסה שוב' }); return; }
       setTours(prev => prev.map(t => (t.id === result.tour.id ? result.tour : t)));
-      setSaveNotice({
-        tourNumber: result.tour.tourNumber,
-        changes: result.changes,
+      setNotice({
+        title: `סיור ${result.tour.tourNumber} עודכן`,
+        lines: result.changes.map(c => `${c.label}: ${c.from} ← ${c.to}`),
+        emptyText: 'לא זוהה שינוי בפרטים — לא נשלחו התראות.',
         notified: result.notified.length,
       });
       closeForm();
@@ -188,6 +193,43 @@ export default function ToursPage() {
     await notifyTourCreatedApi(saved.id);
 
     closeForm();
+    load();
+  }
+
+  function openConfirm(mode, tour) {
+    setConfirmAction({ mode, tour });
+    setCancelReason('');
+    setActionError('');
+    setSelectedDay(null);
+  }
+
+  async function handleCancelTour() {
+    const tour = confirmAction?.tour;
+    if (!tour) return;
+    setBusy(true);
+    setActionError('');
+    const result = await cancelTourApi(tour.id, cancelReason);
+    setBusy(false);
+    if (!result) { setActionError('ביטול הסיור נכשל — נסה שוב'); return; }
+    setTours(prev => prev.map(t => (t.id === result.tour.id ? result.tour : t)));
+    setNotice({ title: `סיור ${result.tour.tourNumber} בוטל`, lines: [], notified: result.notified.length });
+    setConfirmAction(null);
+    load();
+  }
+
+  async function handleDeleteTour() {
+    const tour = confirmAction?.tour;
+    if (!tour) return;
+    setBusy(true);
+    setActionError('');
+    const result = await deleteTourApi(tour.id);
+    setBusy(false);
+    // חסימה מכוונת מהשרת (דיווח קיים / לקוחות מקושרים) — נשארים במודאל ומציעים ביטול במקום
+    if (!result.ok) { setActionError(result.message); return; }
+    setTours(prev => prev.filter(t => t.id !== tour.id));
+    setNotice({ title: `סיור ${tour.tourNumber} נמחק`, lines: [], notified: result.notified.length });
+    setConfirmAction(null);
+    if (editingTour?.id === tour.id) closeForm();
     load();
   }
 
@@ -257,31 +299,27 @@ export default function ToursPage() {
         </div>
       }
     >
-      {/* אישור אחרי עריכה — מה השתנה ולכמה אנשים נשלח עדכון */}
-      {saveNotice && (
+      {/* באנר סיכום אחרי עריכה/ביטול/מחיקה — מה קרה ולכמה אנשים נשלחה התראה */}
+      {notice && (
         <div style={{ background: '#edfaf1', border: '0.5px solid #a8dcbb', borderRadius: 14, padding: '13px 16px', marginBottom: 16, maxWidth: 620 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 700, color: '#1e7a45' }}>
-              ✓ סיור {saveNotice.tourNumber} עודכן
-            </div>
-            <button onClick={() => setSaveNotice(null)} aria-label="סגור"
+            <div style={{ fontSize: 13.5, fontWeight: 700, color: '#1e7a45' }}>✓ {notice.title}</div>
+            <button onClick={() => setNotice(null)} aria-label="סגור"
               style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#1e7a45', fontSize: 15, lineHeight: 1, padding: 0 }}>×</button>
           </div>
-          {saveNotice.changes.length === 0 ? (
-            <div style={{ fontSize: 12.5, color: '#4a7d5e', marginTop: 5 }}>לא זוהה שינוי בפרטים — לא נשלחו התראות.</div>
+          {notice.lines.length > 0 && (
+            <div style={{ fontSize: 12.5, color: '#4a7d5e', marginTop: 5, lineHeight: 1.75 }}>
+              {notice.lines.map(line => <div key={line}>• {line}</div>)}
+            </div>
+          )}
+          {notice.lines.length === 0 && notice.emptyText ? (
+            <div style={{ fontSize: 12.5, color: '#4a7d5e', marginTop: 5 }}>{notice.emptyText}</div>
           ) : (
-            <>
-              <div style={{ fontSize: 12.5, color: '#4a7d5e', marginTop: 5, lineHeight: 1.75 }}>
-                {saveNotice.changes.map(c => (
-                  <div key={c.label}>• {c.label}: {c.from} ← {c.to}</div>
-                ))}
-              </div>
-              <div style={{ fontSize: 12.5, color: '#1e7a45', marginTop: 7, fontWeight: 600 }}>
-                {saveNotice.notified > 0
-                  ? `נשלח עדכון ל-${saveNotice.notified} נמענים (פעמון + התראה לנייד).`
-                  : 'לא נמצאו נמענים לעדכון.'}
-              </div>
-            </>
+            <div style={{ fontSize: 12.5, color: '#1e7a45', marginTop: 7, fontWeight: 600 }}>
+              {notice.notified > 0
+                ? `נשלחה התראה ל-${notice.notified} נמענים (פעמון + התראה לנייד).`
+                : 'לא נמצאו נמענים להתראה.'}
+            </div>
           )}
         </div>
       )}
@@ -394,9 +432,11 @@ export default function ToursPage() {
             return (
               <TourCard key={tour.id} tour={tour}
                 activistName={activistName}
-                canReport={(canManage || related) && tour.status !== 'completed'}
+                canReport={(canManage || related) && tour.status === 'upcoming'}
                 canEdit={canManage}
                 onEdit={() => openEdit(tour)}
+                onCancel={() => openConfirm('cancel', tour)}
+                onDelete={() => openConfirm('delete', tour)}
                 onReport={() => { setReportForm(EMPTY_REPORT); setReportingTour(tour); }}
                 onViewReport={() => setViewingReport(tour)} />
             );
@@ -463,6 +503,68 @@ export default function ToursPage() {
             })()}
             <button className="btn" style={{ width: '100%', marginTop: 14, cursor: 'pointer', fontFamily: 'inherit' }}
               onClick={() => setSelectedDay(null)}>סגור</button>
+          </div>
+        </div>
+      )}
+
+      {/* מודאל אישור — ביטול או מחיקה */}
+      {confirmAction && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.42)', zIndex: 9100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+          onClick={() => !busy && setConfirmAction(null)}>
+          <div style={{ background: '#fff', borderRadius: 18, padding: 24, maxWidth: 440, width: '100%', boxShadow: '0 24px 80px rgba(0,0,0,0.25)' }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 17, fontWeight: 800, color: confirmAction.mode === 'delete' ? '#c0392b' : '#2d1f5e', marginBottom: 4 }}>
+              {confirmAction.mode === 'delete' ? 'מחיקת סיור לצמיתות' : 'ביטול סיור'}
+            </div>
+            <div style={{ fontSize: 13, color: '#888', marginBottom: 14 }}>
+              סיור {confirmAction.tour.tourNumber} · {confirmAction.tour.settlement} · {formatDateHe(confirmAction.tour.date)}
+            </div>
+
+            {confirmAction.mode === 'cancel' ? (
+              <>
+                <div style={{ fontSize: 13, color: '#555', lineHeight: 1.75, marginBottom: 14 }}>
+                  הסיור יסומן <b>"בוטל"</b> ויישאר בהיסטוריה. הוא לא ייספר בשכר המדריך,
+                  והלקוחות שהגיעו דרכו לא יאבדו את השיוך.
+                  <br />המשפחה המארחת, המדריך, המשובצים והרכזים יקבלו התראה.
+                </div>
+                <label className="form-label">סיבת הביטול (רשות — תופיע בהתראה)</label>
+                <input className="form-input" placeholder="למשל: המשפחה המארחת חלתה"
+                  value={cancelReason} onChange={e => setCancelReason(e.target.value)} maxLength={200}
+                  style={{ width: '100%', marginTop: 4, marginBottom: 14 }} />
+              </>
+            ) : (
+              <div style={{ fontSize: 13, color: '#555', lineHeight: 1.75, marginBottom: 14 }}>
+                הסיור יימחק לגמרי ולא ניתן יהיה לשחזר אותו. זה מיועד לסיור שנוצר בטעות או בכפילות.
+                <br />אם כבר הוגש עליו דיווח, או שיש לקוחות שהגיעו דרכו — המערכת תחסום את המחיקה ותציע לבטל במקום.
+                <br />מי שכבר קיבל "שובצת לסיור" יקבל התראה שהסיור בוטל.
+              </div>
+            )}
+
+            {actionError && (
+              <div style={{ background: '#fdecea', border: '0.5px solid #f0b3ad', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
+                <div style={{ fontSize: 12.5, color: '#a5342a', lineHeight: 1.7 }}>{actionError}</div>
+                {confirmAction.mode === 'delete' && (
+                  <button onClick={() => { setActionError(''); setConfirmAction({ mode: 'cancel', tour: confirmAction.tour }); }}
+                    style={{ marginTop: 8, border: '1px solid rgba(192,57,43,0.3)', background: '#fff', color: '#c0392b',
+                      borderRadius: 8, padding: '5px 12px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    בטל את הסיור במקום
+                  </button>
+                )}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn" style={{ flex: 1, cursor: 'pointer', fontFamily: 'inherit' }}
+                onClick={() => setConfirmAction(null)} disabled={busy}>חזור</button>
+              <button
+                onClick={confirmAction.mode === 'delete' ? handleDeleteTour : handleCancelTour}
+                disabled={busy}
+                style={{ flex: 2, border: 'none', borderRadius: 10, padding: '10px 0', fontFamily: 'inherit', fontWeight: 700,
+                  cursor: busy ? 'default' : 'pointer', fontSize: 13, color: '#fff', opacity: busy ? 0.6 : 1,
+                  background: confirmAction.mode === 'delete' ? '#c0392b' : '#e08a2e' }}>
+                {busy ? 'מבצע…' : (confirmAction.mode === 'delete' ? 'מחק לצמיתות' : 'בטל את הסיור ושלח התראה')}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -591,11 +693,16 @@ export default function ToursPage() {
   );
 }
 
-function TourCard({ tour, activistName, canReport, canEdit, onEdit, onReport, onViewReport }) {
+function TourCard({ tour, activistName, canReport, canEdit, onEdit, onCancel, onDelete, onReport, onViewReport }) {
   const statusInfo = STATUS_LABELS[tour.status] || STATUS_LABELS.upcoming;
+  const isCancelled = tour.status === 'cancelled';
 
   return (
-    <div style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.07)', borderRadius: 16, padding: 18, boxShadow: '0 1px 5px rgba(0,0,0,0.04)' }}>
+    <div style={{
+      background: '#fff', border: `0.5px solid ${isCancelled ? 'rgba(192,57,43,0.2)' : 'rgba(0,0,0,0.07)'}`,
+      borderRadius: 16, padding: 18, boxShadow: '0 1px 5px rgba(0,0,0,0.04)',
+      opacity: isCancelled ? 0.72 : 1,
+    }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10, gap: 8 }}>
         <div>
           <div style={{ fontSize: 16, fontWeight: 800 }}>סיור {tour.tourNumber}</div>
@@ -643,6 +750,22 @@ function TourCard({ tour, activistName, canReport, canEdit, onEdit, onReport, on
         </button>
       )}
 
+      {canEdit && (
+        <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+          {!isCancelled && (
+            <button onClick={onCancel}
+              style={{ flex: 1, border: '1px solid rgba(192,57,43,0.28)', background: '#fff', color: '#c0392b',
+                borderRadius: 10, padding: '7px 0', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+              בטל סיור
+            </button>
+          )}
+          <button onClick={onDelete}
+            style={{ flex: isCancelled ? 1 : 0, flexBasis: isCancelled ? 'auto' : 90, border: '1px solid rgba(0,0,0,0.1)',
+              background: '#fff', color: '#999', borderRadius: 10, padding: '7px 0', fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit' }}>
+            🗑 מחק
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -669,7 +792,7 @@ function hebrewDayLabel(date) {
 }
 
 const CAL_SERIF = "'Frank Ruhl Libre', 'Rubik', serif";
-const CAL_STATUS = { upcoming: '#6d4eca', completed: '#2f9e7f' };
+const CAL_STATUS = { upcoming: '#6d4eca', completed: '#2f9e7f', cancelled: '#c0392b' };
 
 // לוח שנה חודשי — "פנקס עברי": נייר חם, ספרות סריף, גוני זהב לשבת, תצוגה גרגוריאני+עברי
 function ToursCalendar({ tours, calendarMonth, setCalendarMonth, selectedDay, setSelectedDay, activistName }) {
@@ -778,8 +901,12 @@ function ToursCalendar({ tours, calendarMonth, setCalendarMonth, selectedDay, se
               const hasTours = dayTours.length > 0;
               const isToday = ds === todayStr;
               const isShabbat = idx % 7 === 6;
-              const hasUpcoming = dayTours.some(t => t.status !== 'completed');
-              const accent = hasUpcoming ? CAL_STATUS.upcoming : CAL_STATUS.completed;
+              const hasUpcoming = dayTours.some(t => t.status === 'upcoming');
+              const hasCompleted = dayTours.some(t => t.status === 'completed');
+              // יום שכל הסיורים בו בוטלו נצבע אדום — לא ירוק כאילו הם התקיימו
+              const accent = hasUpcoming ? CAL_STATUS.upcoming
+                : hasCompleted ? CAL_STATUS.completed
+                : CAL_STATUS.cancelled;
               const gregDate = new Date(year, month, d);
               return (
                 <button key={idx} type="button" onClick={() => hasTours && setSelectedDay(ds)} disabled={!hasTours}
@@ -788,7 +915,9 @@ function ToursCalendar({ tours, calendarMonth, setCalendarMonth, selectedDay, se
                     minHeight: 80, padding: '7px 9px 8px', borderRadius: 14, textAlign: 'right', overflow: 'hidden',
                     border: isToday ? '1.5px solid #6d4eca' : `1px solid ${hasTours ? 'rgba(109,78,202,0.18)' : 'rgba(0,0,0,0.05)'}`,
                     background: hasTours
-                      ? (hasUpcoming ? 'linear-gradient(158deg, #ece5fb, #fbfaff)' : 'linear-gradient(158deg, #e4f3ea, #fafefb)')
+                      ? (hasUpcoming ? 'linear-gradient(158deg, #ece5fb, #fbfaff)'
+                        : hasCompleted ? 'linear-gradient(158deg, #e4f3ea, #fafefb)'
+                        : 'linear-gradient(158deg, #fbe9e7, #fffafa)')
                       : (isShabbat ? '#fbf5e9' : '#fffdf9'),
                     cursor: hasTours ? 'pointer' : 'default', fontFamily: 'inherit',
                     boxShadow: hasTours ? `0 6px 18px -10px ${accent}` : 'none',
@@ -824,6 +953,7 @@ function ToursCalendar({ tours, calendarMonth, setCalendarMonth, selectedDay, se
           <div style={{ display: 'flex', gap: 18, marginTop: 18, fontSize: 12, color: '#9a90bf', borderTop: '1px solid rgba(58,36,155,0.08)', paddingTop: 14, alignItems: 'center', flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ width: 9, height: 9, borderRadius: '50%', background: CAL_STATUS.upcoming }} /> מתוכנן</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ width: 9, height: 9, borderRadius: '50%', background: CAL_STATUS.completed }} /> התקיים</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ width: 9, height: 9, borderRadius: '50%', background: CAL_STATUS.cancelled }} /> בוטל</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ width: 10, height: 10, borderRadius: 3, background: '#fbf5e9', border: '1px solid #e6d4a8' }} /> שבת</div>
           </div>
         </div>

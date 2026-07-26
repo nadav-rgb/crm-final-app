@@ -23,6 +23,11 @@ export default async function handler(req, res) {
   const { data: tour, error: tErr } = await supabase.from('tours').select('*').eq('id', String(tourId)).single();
   if (tErr || !tour) return res.status(404).json({ error: 'Tour not found' });
 
+  // סיור מבוטל לא חוזר ל"התקיים" דרך דיווח (ה-UI מסתיר את הכפתור, זה השער בצד-שרת)
+  if (tour.status === 'cancelled') {
+    return res.status(409).json({ error: 'הסיור בוטל — לא ניתן להגיש עליו דיווח' });
+  }
+
   const code = Number(auth.profile.activist_code);
   const related = (tour.assigned_activists || []).some(a => Number(a) === code) ||
                   Number(tour.host_activist_id) === code ||
