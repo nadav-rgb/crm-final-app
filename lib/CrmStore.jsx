@@ -415,6 +415,25 @@ export function CrmProvider({ children }) {
     return insertResult;
   }
 
+  // מפגש רב-משתתפים — כל לקוח שהשתתף מקבל שורת קשר משלו, אחרת הסטטוס שלו
+  // ("ימים מאז קשר אחרון") ממשיך להידרדר ל"על סף ניתוק" למרות שהוא היה במפגש.
+  // השורות הנגזרות נושאות participants.derived_from, ו-lib/paymentCalc.js מוציא אותן
+  // מכל חישוב תשלום/תקרה — המפגש משולם פעם אחת בלבד, על השורה המקורית.
+  async function addParticipantInteractions(base, participantIds) {
+    const ids = [...new Set((participantIds || []).map(Number))]
+      .filter(pid => Number.isFinite(pid) && pid !== Number(base.contact_id));
+    if (ids.length === 0) return { error: null };
+
+    // id = base.id + idx + 1 — base.id הוא Date.now(), אז המזהים הנגזרים ייחודיים וצמודים לו.
+    const results = await Promise.all(ids.map((pid, idx) => addInteraction({
+      ...base,
+      id:           base.id + idx + 1,
+      contact_id:   pid,
+      participants: { ...(base.participants || {}), derived_from: base.id },
+    })));
+    return { error: results.find(r => r && r.error)?.error || null };
+  }
+
   // עריכת קשר שכבר דווח (לפני כן לא הייתה שום דרך לתקן/למחוק דיווח קיים).
   async function updateInteraction(interactionId, fields) {
     if (!fields || Object.keys(fields).length === 0) return { error: null };
@@ -569,7 +588,7 @@ export function CrmProvider({ children }) {
     <CrmContext.Provider value={{
       contacts, interactions, activists, messages, baseMeetings, BASE_MEETING_QUESTIONS,
       mitzvotBonuses, newParticipantBonuses, paymentConfig, expenses, tours,
-      addInteraction, updateInteraction, deleteInteraction, addContact, updateContact, deleteContact, updateMitzvot, addMessage, submitBaseMeeting, updateBaseMeetingReport, upsertBaseMeetingReports, advanceBaseMeetingReminders,
+      addInteraction, addParticipantInteractions, updateInteraction, deleteInteraction, addContact, updateContact, deleteContact, updateMitzvot, addMessage, submitBaseMeeting, updateBaseMeetingReport, upsertBaseMeetingReports, advanceBaseMeetingReminders,
       PROJECT_NAMES,
     }}>
       {children}

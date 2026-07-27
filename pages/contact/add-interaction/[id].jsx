@@ -27,7 +27,7 @@ export default function AddInteractionPage() {
   const router    = useRouter();
   const { id }    = router.query;
   const contactId = Number(id);
-  const { contacts, interactions, addInteraction, updateInteraction, paymentConfig } = useCrm();
+  const { contacts, interactions, addInteraction, addParticipantInteractions, updateInteraction, paymentConfig } = useCrm();
   const { currentUser, activeProject } = useAuth();
   const contact = contacts.find(c => c.id === contactId);
 
@@ -209,7 +209,9 @@ export default function AddInteractionPage() {
         : null;
 
     // שיקוף לתוך notes — המונה והשמות נראים בכל מקום שמציג הערות, בלי UI נוסף
-    const participantNames = [...participantClients.map(p => p.name), ...participantExternal].filter(Boolean);
+    // הלקוח שממנו נכנסו לטופס הוא משתתף לכל דבר — בלעדיו המונה והשמות לא מסתדרים,
+    // והפעיל רואה מפגש שהוא עצמו לא מופיע בו.
+    const participantNames = [contact.name, ...participantClients.map(p => p.name), ...participantExternal].filter(Boolean);
     const baseNotes = form.notes.trim();
     const notesFinal = form.multi
       ? `👥 מפגש רב משתתפים · ${form.participant_count} משתתפים${participantNames.length ? ` · משתתפים: ${participantNames.join(', ')}` : ''}${baseNotes ? `\n${baseNotes}` : ''}`
@@ -238,6 +240,12 @@ export default function AddInteractionPage() {
     // await: ההתראות בצד-שרת קוראות את השורה מה-DB, אז היא חייבת לנחות קודם.
     // ה-state כבר עודכן בתוך addInteraction לפני ה-await — המסך לא ממתין.
     const { error: saveError } = await addInteraction(interactionPayload);
+
+    // מפגש רב-משתתפים — שורת קשר נגזרת לכל לקוח נוסף שהשתתף, כדי שגם אצלו הקשר ייספר
+    // ולא יידרדר ל"על סף ניתוק". התשלום לא מושפע: המפגש מזכה פעם אחת בלבד (paymentCalc).
+    if (form.multi && participantClients.length > 0 && !saveError) {
+      await addParticipantInteractions(interactionPayload, participantClients.map(p => p.id));
+    }
 
     // סיכום AI אוטומטי — מיועד לרכז בלבד (הפעיל לא רואה אותו). fire-and-forget:
     // לא חוסם את השמירה, וכשל AI מאבד רק את הסיכום — הקשר כבר נשמר.
