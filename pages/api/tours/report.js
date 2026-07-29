@@ -87,6 +87,8 @@ async function notifyCoordinatorsOfReport(supabase, { tour, reporter, reporterCo
     const reporterName = reporter?.name || 'פעיל';
     const title = 'דיווח סיור הוגש';
     const body = `${reporterName} הגיש דיווח על סיור ${tourNumber} ב${settlement} — הסיור סומן כהתקיים.`;
+    // ?tour= — הרכז נוחת על הסיור שדווח, ויכול לפתוח את הדיווח משם.
+    const tourUrl = `/tours?tour=${tour.id}`;
 
     const { error: insErr } = await supabase.from('notifications').upsert(
       recipients.map((r) => ({
@@ -95,7 +97,7 @@ async function notifyCoordinatorsOfReport(supabase, { tour, reporter, reporterCo
         type: 'system',
         title,
         body,
-        url: '/tours',
+        url: tourUrl,
         priority: 'normal',
       })),
       { onConflict: 'client_id' }
@@ -106,8 +108,8 @@ async function notifyCoordinatorsOfReport(supabase, { tour, reporter, reporterCo
     await Promise.all(
       recipients.map((r) =>
         Promise.all([
-          sendWebPushToActivist(supabase, String(r.activist_code), { title, body, url: '/tours' }),
-          sendFcmToActivist(supabase, r.activist_code, { title, body, url: '/tours' }),
+          sendWebPushToActivist(supabase, String(r.activist_code), { title, body, url: tourUrl }),
+          sendFcmToActivist(supabase, r.activist_code, { title, body, url: tourUrl }),
         ]).catch(() => {})
       )
     );

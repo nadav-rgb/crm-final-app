@@ -148,7 +148,7 @@ export default async function handler(req, res) {
       await notifyRecipients(admin, [{ activist_code: t.code, name: codeName(t.code) }], {
         title: 'שובצת לסיור',
         body: `נקבעת בתור ${t.role} בסיור ${row.tourNumber} ב${row.settlement} בתאריך ${formatDateHe(iso)}.`,
-        url: '/tours',
+        url: `/tours?tour=${newTour.id}`,
         type: 'assignment',
         priority: 'high',
         clientId: c => `tour_sheet_created_${row.tourNumber}_${c}`,

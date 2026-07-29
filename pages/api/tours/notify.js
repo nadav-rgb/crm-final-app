@@ -47,6 +47,8 @@ export default async function handler(req, res) {
 
   const dateStr = formatDateHe(tour.date);
   const hostName = nameByCode[tour.host_activist_id] || '—';
+  // ?tour= — כדי שלחיצה על ההתראה תגלול לסיור עצמו ולא רק תפתח את רשימת הסיורים.
+  const tourUrl = `/tours?tour=${tour.id}`;
   const results = [];
 
   for (const r of recip.values()) {
@@ -63,7 +65,7 @@ export default async function handler(req, res) {
       type: isRole ? 'assignment' : 'system',
       title,
       body,
-      url: '/tours',
+      url: tourUrl,
       priority: isRole ? 'high' : 'normal',
     }, { onConflict: 'client_id' });
     if (insErr) console.error('tours/notify insert failed for', r.id, insErr.message);
@@ -71,8 +73,8 @@ export default async function handler(req, res) {
     // Push best-effort (no-op אם אין מנוי/טוקן)
     let push = 0;
     try {
-      const web = await sendWebPushToActivist(admin, String(r.id), { title, body, url: '/tours' });
-      const fcm = await sendFcmToActivist(admin, r.id, { title, body, url: '/tours' });
+      const web = await sendWebPushToActivist(admin, String(r.id), { title, body, url: tourUrl });
+      const fcm = await sendFcmToActivist(admin, r.id, { title, body, url: tourUrl });
       push = (web?.sent || 0) + (fcm?.sent || 0);
     } catch (e) { console.error('tours/notify push failed for', r.id, e.message); }
 

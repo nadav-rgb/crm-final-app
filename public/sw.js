@@ -24,9 +24,14 @@ self.addEventListener('notificationclick', (event) => {
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      // חלון שכבר עומד על היעד — רק למקד.
       for (const client of list) {
         if (client.url.includes(url) && 'focus' in client) return client.focus();
       }
+      // חלון פתוח בעמוד אחר — לנווט אותו ליעד ולמקד. קודם נפתח כאן חלון *נוסף*,
+      // ואז המשתמש נשאר עם שני עותקים של האפליקציה במקום לקפוץ למקום הנכון.
+      const open = list.find((c) => 'navigate' in c);
+      if (open) return open.navigate(url).then((c) => (c || open).focus()).catch(() => clients.openWindow(url));
       return clients.openWindow(url);
     })
   );

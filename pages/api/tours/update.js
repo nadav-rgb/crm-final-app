@@ -119,6 +119,7 @@ export default async function handler(req, res) {
   const dateStr = formatDateHe(after.date);
   const where = `סיור ${after.tour_number} ב${after.settlement} בתאריך ${dateStr}`;
   const diffText = changes.map(c => `${c.label} (${c.from} ← ${c.to})`).join(' · ');
+  const tourUrl = `/tours?tour=${id}`;
   // חותמת לכל שמירה — כדי ששתי עריכות עוקבות לא ידרסו זו את שורת הפעמון של זו,
   // אבל ריצה חוזרת של אותה שמירה כן תתאחד (upsert לפי client_id).
   const stamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
@@ -135,7 +136,7 @@ export default async function handler(req, res) {
     const res1 = await notifyRecipients(admin, toRecipients([code]), {
       title: 'שובצת לסיור',
       body: `נקבעת בתור ${roleAfter.get(code)} ב${where}.`,
-      url: '/tours',
+      url: tourUrl,
       type: 'assignment',
       priority: 'high',
       clientId: c => `tour_role_added_${id}_${stamp}_${c}`,
@@ -149,6 +150,8 @@ export default async function handler(req, res) {
     const res2 = await notifyRecipients(admin, toRecipients([code]), {
       title: 'שינוי בשיבוץ לסיור',
       body: `כבר אינך משובץ בתור ${roleBefore.get(code)} ב${where}.`,
+      // במכוון לא tourUrl: הוא כבר לא משובץ, ולכן הסיור מסונן מהרשימה שלו
+      // (visibleTours ב-pages/tours.jsx) — הפניה אליו הייתה נוחתת על כלום.
       url: '/tours',
       type: 'assignment',
       priority: 'high',
@@ -163,7 +166,7 @@ export default async function handler(req, res) {
     const res3 = await notifyRecipients(admin, informedList, {
       title: `עודכנו פרטי סיור ${after.tour_number}`,
       body: `${where}. שונה: ${diffText}.`,
-      url: '/tours',
+      url: tourUrl,
       type: 'system',
       priority: 'high',
       clientId: c => `tour_updated_${id}_${stamp}_${c}`,

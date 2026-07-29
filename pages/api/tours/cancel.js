@@ -48,7 +48,8 @@ export default async function handler(req, res) {
   const notified = await notifyRecipients(admin, recipients, {
     title: 'סיור בוטל',
     body,
-    url: '/tours',
+    // הסיור מבוטל אך נשאר בהיסטוריה ובשיוך — לכן עדיין מפנים אליו עצמו.
+    url: `/tours?tour=${id}`,
     type: 'assignment',
     priority: 'high',
     clientId: c => `tour_cancelled_${id}_${c}`,

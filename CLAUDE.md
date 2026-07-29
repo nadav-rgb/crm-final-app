@@ -119,6 +119,25 @@ base_meeting_reports/activist_directory) מסוננת בשרת לפי activist_i
 3. **אבטחה (חובה):** ב-endpoint שפעיל רגיל קורא לו (`requireAuth`) — הלקוח שולח **מזהה בלבד**,
    לא טקסט ולא רשימת נמענים. השרת קורא את השורה מה-DB, מוודא בעלות, ומרכיב את ההודעה בעצמו.
    ראה `pages/api/interactions/notify.js`.
+4. **`url` = יעד הלחיצה. חובה, ותמיד לפריט עצמו** — ראה למטה.
+
+**`url` — לאן הלחיצה על ההתראה מובילה**
+השדה `url` ב-`notifyRecipients` הוא deep-link, לא קישוט. הוא זורם לשלושה מסלולי-לחיצה נפרדים:
+
+| מסלול | מי מטפל | הערה |
+|---|---|---|
+| פעמון in-app | `pages/notifications.jsx` → `router.push(n.link)` | |
+| דפדפן / PWA | `public/sw.js` → `notificationclick` | ממקד חלון קיים ומנווט אותו |
+| אפליקציית אנדרואיד | `lib/nativePush.js` → `pushNotificationActionPerformed` | **בלי המאזין הזה הלחיצה נוחתת במסך הבית** |
+
+- **לכוון לפריט, לא לרשימה:** `/contact/{id}`, `/meeting-houses/{id}`, `/tours?tour={id}` —
+  לא `/contacts` או `/tours`. ההתראה אומרת "משהו קרה"; המשתמש רוצה לראות **מה**.
+- **חריגים לגיטימיים** (יש כאלה — לא כל התראה מצביעה על פריט): פריט שנמחק, משתמש שהוסר
+  מהשיבוץ ולכן הפריט מסונן מהרשימה שלו, והתראות-סיכום על כמה פריטים. ראה `api/tours/delete.js`
+  ו-`api/tours/update.js` — שניהם מתעדים בהערה למה נשארו גנריים.
+- `lib/nativePush.js` מנווט רק לנתיבים שמתחילים ב-`/`. כתובת מלאה ב-`url` פשוט לא תעבוד באפליקציה.
+- האפליקציה טוענת את הווב מ-Vercel (`capacitor.config.json` → `server.url`), לכן תיקון JS
+  כזה עולה לאוויר **בדיפלוי רגיל — בלי APK חדש ובלי Play Store**.
 
 **מסלולים קיימים:** `api/tours/notify` (יצירת סיור) · `api/tours/report` (דיווח סיור) ·
 `api/base-meetings/notify` (דיווח מפגש) · `api/interactions/notify` (סיכום AI + דיווח מזכה) ·

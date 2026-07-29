@@ -1,7 +1,8 @@
 // pages/tours.jsx — סיורים ("נעים להכיר"). מקביל לבתי מפגש: יצירה (רכז), שיבוץ פעיל
 // עם push+התראה, מדריך (פעיל שלנו מהרשימה או מדריך חיצוני בטקסט), משפחה מארחת (תמיד פעיל).
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Head from 'next/head';
+import { useRouter } from 'next/router';
 import DesktopLayout from '../components/DesktopLayout';
 import { useAuth } from '../lib/AuthStore';
 import { useCrm } from '../lib/CrmStore';
@@ -75,6 +76,8 @@ export default function ToursPage() {
   const today = new Date();
   const [calendarMonth, setCalendarMonth] = useState({ year: today.getFullYear(), month: today.getMonth() });
   const [selectedDay, setSelectedDay] = useState(null); // 'YYYY-MM-DD' שנבחר בלוח השנה
+  const [highlightId, setHighlightId] = useState(null); // הסיור שהגענו אליו מהתראה (?tour=)
+  const router = useRouter();
 
   // יצירה/שיבוץ — רק רכז/הנהלה שחברים בנעים להכיר (או מנכ"ל).
   // הדס=כן; נדב=כן; שמעון (אחדות בלבד)=לא.
@@ -96,6 +99,30 @@ export default function ToursPage() {
     }
     return true;
   });
+
+  // נחיתה מהתראה: /tours?tour=<id> — עובר לתצוגת רשימה, גולל לסיור ומדגיש אותו לרגע.
+  // בלי המעבר ל-list, מי שהיה בתצוגת לוח-שנה נוחת בלי לראות את הכרטיס בכלל.
+  // handledTourParam: לרוץ פעם אחת לכל ערך — אחרת כל רענון של הרשימה (load אחרי
+  // עריכה/דיווח) היה גורר את המסך בחזרה לכרטיס באמצע עבודה.
+  const handledTourParam = useRef(null);
+  useEffect(() => {
+    if (!router.isReady) return;
+    const raw = router.query.tour;
+    const target = Array.isArray(raw) ? raw[0] : raw;
+    if (!target || handledTourParam.current === target) return;
+    // סיור שנמחק, או שהמשתמש כבר לא משובץ אליו — פשוט נשארים ברשימה, בלי גלילה לשום מקום.
+    if (!visibleTours.some(t => String(t.id) === String(target))) return;
+
+    handledTourParam.current = target;
+    setViewMode('list');
+    setHighlightId(String(target));
+    // setState למעלה עוד לא רונדר — נותנים פריים לכרטיס להיכנס ל-DOM לפני הגלילה.
+    const scrollTimer = setTimeout(() => {
+      document.getElementById(`tour-${target}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 50);
+    const fadeTimer = setTimeout(() => setHighlightId(null), 2600);
+    return () => { clearTimeout(scrollTimer); clearTimeout(fadeTimer); };
+  }, [router.isReady, router.query.tour, tours]);
 
   const activistName = id => activists.find(a => Number(a.id) === Number(id))?.name ?? null;
 
@@ -431,6 +458,7 @@ export default function ToursPage() {
                             Number(tour.guideActivistId) === uid || Number(tour.hostActivistId) === uid;
             return (
               <TourCard key={tour.id} tour={tour}
+                highlighted={String(tour.id) === highlightId}
                 activistName={activistName}
                 canReport={(canManage || related) && tour.status === 'upcoming'}
                 canEdit={canManage}
@@ -693,14 +721,17 @@ export default function ToursPage() {
   );
 }
 
-function TourCard({ tour, activistName, canReport, canEdit, onEdit, onCancel, onDelete, onReport, onViewReport }) {
+function TourCard({ tour, highlighted, activistName, canReport, canEdit, onEdit, onCancel, onDelete, onReport, onViewReport }) {
   const statusInfo = STATUS_LABELS[tour.status] || STATUS_LABELS.upcoming;
   const isCancelled = tour.status === 'cancelled';
 
   return (
-    <div style={{
+    // ה-id הוא יעד הגלילה של נחיתה מהתראה (?tour=<id>).
+    <div id={`tour-${tour.id}`} style={{
       background: '#fff', border: `0.5px solid ${isCancelled ? 'rgba(192,57,43,0.2)' : 'rgba(0,0,0,0.07)'}`,
-      borderRadius: 16, padding: 18, boxShadow: '0 1px 5px rgba(0,0,0,0.04)',
+      borderRadius: 16, padding: 18,
+      boxShadow: highlighted ? '0 0 0 3px rgba(108,92,231,0.55)' : '0 1px 5px rgba(0,0,0,0.04)',
+      transition: 'box-shadow 0.4s ease',
       opacity: isCancelled ? 0.72 : 1,
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10, gap: 8 }}>
