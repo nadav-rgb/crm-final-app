@@ -5,6 +5,7 @@ import DesktopLayout from '../components/DesktopLayout';
 import { useCrm } from '../lib/CrmStore';
 import { useAuth } from '../lib/AuthStore';
 import { calcMonthlyPayment, resolvePeriod } from '../lib/paymentCalc';
+import { exportPayrollXlsx } from '../lib/payrollExcel';
 import { inProject, inAnyPaidProject } from '../lib/projectUtils';
 import { getSupabaseClient } from '../lib/supabaseClient';
 // activists מגיע מ-CrmStore (Supabase) — לא מקובץ סטטי, כך ה-IDs תואמים ל-activist_id בקשרים
@@ -27,6 +28,7 @@ export default function PaymentsPage() {
   const { currentUser, can, filterProject } = useAuth();
   const router = useRouter();
   const [viewMode, setViewMode] = useState('grid');
+  const [exporting, setExporting] = useState(false); // exceljs נטענת ב-import דינמי — הכפתור ננעל בזמן הטעינה
   const [cancelledBonuses, setCancelledBonuses] = useState([]); // שורות bonus_cancellations החודש — נחוץ לחישוב מדויק של הסכומים ברשימה
 
   const monthOptions = useMemo(() => buildMonthOptions(), []);
@@ -197,8 +199,26 @@ export default function PaymentsPage() {
         </div>
       )}
 
-      {/* כפתור דוח חודשי */}
-      <div style={{ textAlign:'left' }}>
+      {/* כפתורי ייצוא — txt מפורט (פירוט לפי לקוח + קשרים שלא זוכו) ו-xlsx רזה לחשבות */}
+      <div style={{ textAlign:'left', display:'flex', gap:10, justifyContent:'flex-start' }}>
+        <button
+          onClick={async () => {
+            if (exporting) return;
+            setExporting(true);
+            try {
+              await exportPayrollXlsx(paymentData, currentMonthName, year);
+            } catch (err) {
+              console.error('Excel export failed', err);
+              alert('ייצוא האקסל נכשל. נסה שוב, ואם זה חוזר — צלם את המסך ודווח ב"תקלות והצעות".');
+            } finally {
+              setExporting(false);
+            }
+          }}
+          disabled={exporting || paymentData.length === 0}
+          style={{ background: exporting || paymentData.length === 0 ? '#b7b0e8' : 'linear-gradient(135deg,#1f7a45,#2ecc71)', color:'#fff', border:'none', borderRadius:12, padding:'12px 24px', fontSize:14, fontWeight:700, cursor: exporting || paymentData.length === 0 ? 'default' : 'pointer', fontFamily:'Rubik,sans-serif', boxShadow:'0 2px 8px rgba(31,122,69,0.25)' }}
+        >
+          {exporting ? '⏳ מייצא…' : `📊 ייצוא לאקסל ${currentMonthName} ${year}`}
+        </button>
         <button
           onClick={() => {
             const lines = [`דוח פעילות לתשלום — ${currentMonthName} ${year}`, '='.repeat(40), ''];
