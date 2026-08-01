@@ -4,7 +4,7 @@ import { useRouter } from 'next/router';
 import DesktopLayout from '../components/DesktopLayout';
 import { useCrm } from '../lib/CrmStore';
 import { useAuth } from '../lib/AuthStore';
-import { calcMonthlyPayment } from '../lib/paymentCalc';
+import { calcMonthlyPayment, resolvePeriod } from '../lib/paymentCalc';
 import { inProject, inAnyPaidProject } from '../lib/projectUtils';
 import { getSupabaseClient } from '../lib/supabaseClient';
 // activists מגיע מ-CrmStore (Supabase) — לא מקובץ סטטי, כך ה-IDs תואמים ל-activist_id בקשרים
@@ -12,12 +12,36 @@ import { getSupabaseClient } from '../lib/supabaseClient';
 const MONTH_NAMES = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
 const PROJECT_LABELS = { 1: 'אחדות יהודית', 2: 'נעים להכיר' };
 
+// 18 החודשים האחרונים (כולל הנוכחי) לבחירה בסלקטור. הדוח החודשי מופק אחרי סוף החודש,
+// ולכן חייבת להיות גישה לחודשים קודמים ולא רק ל"עכשיו".
+function buildMonthOptions(count = 18) {
+  const now = new Date();
+  return Array.from({ length: count }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    return { year: d.getFullYear(), month: d.getMonth(), label: `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}` };
+  });
+}
+
 export default function PaymentsPage() {
   const { contacts, interactions, mitzvotBonuses, newParticipantBonuses, activists, paymentConfig, expenses, tours } = useCrm();
   const { currentUser, can, filterProject } = useAuth();
   const router = useRouter();
   const [viewMode, setViewMode] = useState('grid');
   const [cancelledBonuses, setCancelledBonuses] = useState([]); // שורות bonus_cancellations החודש — נחוץ לחישוב מדויק של הסכומים ברשימה
+
+  const monthOptions = useMemo(() => buildMonthOptions(), []);
+  // חודש הדיווח הנבחר. ברירת מחדל: החודש הנוכחי; ניתן לבחור חודש קודם (ראה buildMonthOptions).
+  const [period, setPeriod] = useState(() => {
+    const n = new Date();
+    return { year: n.getFullYear(), month: n.getMonth() };
+  });
+
+  // שחזור החודש הנבחר בחזרה מדף הפירוט (/payments/[id]?y=&m=). router.query ריק ברינדור הראשון.
+  useEffect(() => {
+    if (!router.isReady) return;
+    const y = Number(router.query.y), m = Number(router.query.m);
+    if (Number.isInteger(y) && Number.isInteger(m) && m >= 0 && m <= 11) setPeriod({ year: y, month: m });
+  }, [router.isReady, router.query.y, router.query.m]);
 
   // רשאים לצפות: כל מי ש-AuthStore מאשר (רכז, מנכ"ל, כספים, ראש פרויקט)
   const canView = can.seePayments;
@@ -34,8 +58,37 @@ export default function PaymentsPage() {
 
   const cancelledBonusKeys = useMemo(() => new Set(cancelledBonuses.map(b => b.bonus_key)), [cancelledBonuses]);
 
-  // לחיצה על כרטיס פעיל → דף פירוט תשלום ייעודי (pages/payments/[id].jsx)
-  const openActivist = (activistId) => router.push(`/payments/${activistId}`);
+  const { year, month, monthKey, startIso, endIso } = resolvePeriod(period);
+
+  // לחיצה על כרטיס פעיל → דף פירוט תשלום ייעודי (pages/payments/[id].jsx), באותו חודש נבחר
+  const openActivist = (activistId) => router.push(`/payments/${activistId}?y=${year}&m=${month}`);
+
+  // פעילים בפרויקטים בתשלום (אחדות/נעים להכיר), מסוננים לפי הפרויקט הנבחר בסרגל.
+  // פעיל דו-פרויקטלי מופיע פעם אחת — הסכום שלו מאוחד משני הפרויקטים (תקרות משותפות).
+  const achdutActivists = useMemo(() => activists.filter(a =>
+    a.role === 'activist' && inAnyPaidProject(a) &&
+    (filterProject === null || inProject(a, filterProject))
+  ), [activists, filterProject]);
+
+  // חישוב תשלומים לכל פעיל (+ החזר הוצאות בחודש הנבחר — מדווח בעמוד "דיווח הוצאות").
+  // הוצאות וסיורים מסוננים בטווח [startIso, endIso) — חסם עליון חובה, אחרת דוח של חודש
+  // קודם היה סופח אליו גם הוצאות של החודשים שאחריו.
+  const paymentData = useMemo(() => achdutActivists.map(activist => {
+    const myMitzvotBonuses = mitzvotBonuses.filter(b => b.activist_id === activist.id && b.month === monthKey);
+    const myNewBonuses     = newParticipantBonuses.filter(b => b.activist_id === activist.id && b.month === monthKey);
+    const result = calcMonthlyPayment(activist.id, interactions, contacts, myMitzvotBonuses, myNewBonuses, paymentConfig, cancelledBonusKeys, { year, month });
+    const expensesTotal = expenses
+      .filter(x => Number(x.activist_id) === Number(activist.id) && x.date >= startIso && x.date < endIso)
+      .reduce((s, x) => s + Number(x.amount || 0), 0);
+    // שכר הדרכת סיורים — 750₪ (config) לכל סיור שהתקיים בחודש הנבחר כשהפעיל הוא המדריך
+    const guidedCount = tours.filter(t =>
+      t.status === 'completed' &&
+      Number(t.guide_activist_id) === Number(activist.id) &&
+      t.date >= startIso && t.date < endIso
+    ).length;
+    const guidePay = guidedCount * (paymentConfig.TOUR_GUIDE_RATE ?? 750);
+    return { activist, ...result, expensesTotal, guidePay, guidedCount, grandTotal: result.total + expensesTotal + guidePay };
+  }), [achdutActivists, interactions, contacts, mitzvotBonuses, newParticipantBonuses, paymentConfig, expenses, tours, cancelledBonusKeys, monthKey, startIso, endIso, year, month]);
 
   if (!canView) return (
     <DesktopLayout title="דוחות תשלום פעילים">
@@ -46,48 +99,42 @@ export default function PaymentsPage() {
     </DesktopLayout>
   );
 
-  const now   = new Date();
-  const month = now.getMonth();
-  const year  = now.getFullYear();
-
-  // פעילים בפרויקטים בתשלום (אחדות/נעים להכיר), מסוננים לפי הפרויקט הנבחר בסרגל.
-  // פעיל דו-פרויקטלי מופיע פעם אחת — הסכום שלו מאוחד משני הפרויקטים (תקרות משותפות).
-  const achdutActivists = activists.filter(a =>
-    a.role === 'activist' && inAnyPaidProject(a) &&
-    (filterProject === null || inProject(a, filterProject))
-  );
-
-  const monthStartIso = `${year}-${String(month + 1).padStart(2, '0')}-01`;
-
-  // חישוב תשלומים לכל פעיל (+ החזר הוצאות החודש — מדווח בעמוד "דיווח הוצאות")
-  const paymentData = useMemo(() => achdutActivists.map(activist => {
-    const myMitzvotBonuses = mitzvotBonuses.filter(b => b.activist_id === activist.id && b.month === `${year}-${month}`);
-    const myNewBonuses     = newParticipantBonuses.filter(b => b.activist_id === activist.id && b.month === `${year}-${month}`);
-    const result = calcMonthlyPayment(activist.id, interactions, contacts, myMitzvotBonuses, myNewBonuses, paymentConfig, cancelledBonusKeys);
-    const expensesTotal = expenses
-      .filter(x => Number(x.activist_id) === Number(activist.id) && x.date >= monthStartIso)
-      .reduce((s, x) => s + Number(x.amount || 0), 0);
-    // שכר הדרכת סיורים — 750₪ (config) לכל סיור שהתקיים החודש כשהפעיל הוא המדריך
-    const guidedCount = tours.filter(t =>
-      t.status === 'completed' &&
-      Number(t.guide_activist_id) === Number(activist.id) &&
-      t.date >= monthStartIso
-    ).length;
-    const guidePay = guidedCount * (paymentConfig.TOUR_GUIDE_RATE ?? 750);
-    return { activist, ...result, expensesTotal, guidePay, guidedCount, grandTotal: result.total + expensesTotal + guidePay };
-  }), [achdutActivists, interactions, contacts, mitzvotBonuses, newParticipantBonuses, paymentConfig, expenses, tours, cancelledBonusKeys]);
-
   const totalAll = paymentData.reduce((s, d) => s + d.grandTotal, 0);
   const currentMonthName = MONTH_NAMES[month];
   const scopeLabel = filterProject === null ? 'כל הפרויקטים' : (PROJECT_LABELS[filterProject] ?? 'פרויקטים בתשלום');
+  const isCurrentMonth = year === new Date().getFullYear() && month === new Date().getMonth();
 
   return (
     <DesktopLayout title="דוחות תשלום פעילים" subtitle={`${scopeLabel} · ${currentMonthName} ${year}`}>
 
+      {/* בחירת חודש דיווח — הדוח מופק בדרך כלל אחרי סוף החודש, ולכן ברירת המחדל (החודש
+          הנוכחי) לא מספיקה. בחירת חודש קודם מחשבת מחדש הכל: קשרים, בונוסים, הוצאות וסיורים. */}
+      <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:14 }}>
+        <label htmlFor="payment-month" style={{ fontSize:13, fontWeight:700, color:'#555' }}>חודש הדיווח:</label>
+        <select
+          id="payment-month"
+          value={`${year}-${month}`}
+          onChange={e => {
+            const [y, m] = e.target.value.split('-').map(Number);
+            setPeriod({ year: y, month: m });
+          }}
+          style={{ fontFamily:'Rubik,sans-serif', fontSize:13.5, fontWeight:600, padding:'8px 12px', borderRadius:10, border:'1.5px solid #e0dcf5', background:'#fff', color:'#3a249b', cursor:'pointer' }}
+        >
+          {monthOptions.map(o => (
+            <option key={`${o.year}-${o.month}`} value={`${o.year}-${o.month}`}>{o.label}</option>
+          ))}
+        </select>
+        {!isCurrentMonth && (
+          <span style={{ fontSize:12, color:'#7a6cc4', background:'#f0effe', borderRadius:8, padding:'5px 10px', fontWeight:600 }}>
+            מציג חודש סגור
+          </span>
+        )}
+      </div>
+
       {/* סיכום כולל */}
       <div style={{ background:'linear-gradient(135deg,#6c5ce7,#a29bfe)', borderRadius:16, padding:'20px 24px', marginBottom:20, color:'#fff', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
         <div>
-          <div style={{ fontSize:13, opacity:0.8, marginBottom:4 }}>סה"כ תשלומים {currentMonthName}</div>
+          <div style={{ fontSize:13, opacity:0.8, marginBottom:4 }}>סה"כ תשלומים {currentMonthName} {year}</div>
           <div style={{ fontSize:36, fontWeight:700 }}>{totalAll.toLocaleString()} ₪</div>
         </div>
         <div style={{ fontSize:13, opacity:0.7 }}>{achdutActivists.length} פעילים פעילים</div>

@@ -7,7 +7,7 @@ import Link from 'next/link';
 import DesktopLayout from '../../components/DesktopLayout';
 import { useCrm } from '../../lib/CrmStore';
 import { useAuth } from '../../lib/AuthStore';
-import { calcMonthlyPayment } from '../../lib/paymentCalc';
+import { calcMonthlyPayment, resolvePeriod } from '../../lib/paymentCalc';
 import { getSupabaseClient } from '../../lib/supabaseClient';
 
 const MONTH_NAMES = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
@@ -36,31 +36,33 @@ export default function ActivistPaymentDetail() {
 
   const cancelledBonusKeys = useMemo(() => new Set(cancelledBonuses.map(b => b.bonus_key)), [cancelledBonuses]);
 
-  const now   = new Date();
-  const month = now.getMonth();
-  const year  = now.getFullYear();
-  const monthStartIso = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+  // חודש הדיווח מגיע מה-URL (?y=&m=) כדי לשמר את הבחירה מעמוד /payments. ללא פרמטרים → החודש הנוכחי.
+  const { year, month, monthKey, startIso, endIso } = resolvePeriod(
+    router.query.y != null && router.query.m != null
+      ? { year: Number(router.query.y), month: Number(router.query.m) }
+      : null
+  );
   const currentMonthName = MONTH_NAMES[month];
 
   const activist = activists.find(a => Number(a.id) === activistId);
 
-  // חישוב זהה לעמוד התשלומים של הרכז (pages/payments.jsx) — לפעיל הבודד הזה בלבד.
+  // חישוב זהה לעמוד התשלומים של הרכז (pages/payments.jsx) — לפעיל הבודד הזה בלבד, באותו חודש.
   const report = useMemo(() => {
     if (!activist) return null;
-    const myMitzvotBonuses = mitzvotBonuses.filter(b => b.activist_id === activist.id && b.month === `${year}-${month}`);
-    const myNewBonuses     = newParticipantBonuses.filter(b => b.activist_id === activist.id && b.month === `${year}-${month}`);
-    const result = calcMonthlyPayment(activist.id, interactions, contacts, myMitzvotBonuses, myNewBonuses, paymentConfig, cancelledBonusKeys);
+    const myMitzvotBonuses = mitzvotBonuses.filter(b => b.activist_id === activist.id && b.month === monthKey);
+    const myNewBonuses     = newParticipantBonuses.filter(b => b.activist_id === activist.id && b.month === monthKey);
+    const result = calcMonthlyPayment(activist.id, interactions, contacts, myMitzvotBonuses, myNewBonuses, paymentConfig, cancelledBonusKeys, { year, month });
     const expensesTotal = expenses
-      .filter(x => Number(x.activist_id) === Number(activist.id) && x.date >= monthStartIso)
+      .filter(x => Number(x.activist_id) === Number(activist.id) && x.date >= startIso && x.date < endIso)
       .reduce((s, x) => s + Number(x.amount || 0), 0);
     const guidedCount = tours.filter(t =>
       t.status === 'completed' &&
       Number(t.guide_activist_id) === Number(activist.id) &&
-      t.date >= monthStartIso
+      t.date >= startIso && t.date < endIso
     ).length;
     const guidePay = guidedCount * (paymentConfig.TOUR_GUIDE_RATE ?? 750);
     return { ...result, expensesTotal, guidePay, guidedCount, grandTotal: result.total + expensesTotal + guidePay };
-  }, [activist, interactions, contacts, mitzvotBonuses, newParticipantBonuses, paymentConfig, expenses, tours, cancelledBonusKeys]);
+  }, [activist, interactions, contacts, mitzvotBonuses, newParticipantBonuses, paymentConfig, expenses, tours, cancelledBonusKeys, monthKey, startIso, endIso, year, month]);
 
   async function handleCancelBonus(item) {
     if (!item.key || !activist) return;
@@ -80,7 +82,7 @@ export default function ActivistPaymentDetail() {
   }
 
   if (!canView) return (
-    <DesktopLayout title="פירוט תשלום פעיל" backHref="/payments" backLabel="← חזרה לתשלומים">
+    <DesktopLayout title="פירוט תשלום פעיל" backHref={`/payments?y=${year}&m=${month}`} backLabel="← חזרה לתשלומים">
       <div style={{ textAlign:'center', padding:60, color:'#aaa' }}>
         <div style={{ fontSize:48, marginBottom:12 }}>🔒</div>
         <div>אין הרשאה לדף זה</div>
@@ -89,19 +91,19 @@ export default function ActivistPaymentDetail() {
   );
 
   if (!activist) return (
-    <DesktopLayout title="פירוט תשלום פעיל" backHref="/payments" backLabel="← חזרה לתשלומים">
+    <DesktopLayout title="פירוט תשלום פעיל" backHref={`/payments?y=${year}&m=${month}`} backLabel="← חזרה לתשלומים">
       <div style={{ textAlign:'center', padding:60, color:'#aaa' }}>פעיל לא נמצא</div>
     </DesktopLayout>
   );
 
   return (
-    <DesktopLayout title={`פירוט תשלום — ${activist.name}`} subtitle={`${currentMonthName} ${year}`} backHref="/payments" backLabel="← חזרה לתשלומים">
+    <DesktopLayout title={`פירוט תשלום — ${activist.name}`} subtitle={`${currentMonthName} ${year}`} backHref={`/payments?y=${year}&m=${month}`} backLabel="← חזרה לתשלומים">
       <div style={{ maxWidth: 640 }}>
 
         {/* סיכום כולל */}
         <div style={{ background:'linear-gradient(135deg,#6c5ce7,#a29bfe)', borderRadius:16, padding:'20px 24px', marginBottom:20, color:'#fff', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
           <div>
-            <div style={{ fontSize:13, opacity:0.85, marginBottom:4 }}>סה"כ לתשלום {currentMonthName}</div>
+            <div style={{ fontSize:13, opacity:0.85, marginBottom:4 }}>סה"כ לתשלום {currentMonthName} {year}</div>
             <div style={{ fontSize:36, fontWeight:700 }}>{report.grandTotal.toLocaleString()} ₪</div>
           </div>
           {can.seeActivists && (
@@ -116,7 +118,7 @@ export default function ActivistPaymentDetail() {
           <div style={{ fontSize:15, fontWeight:700, marginBottom:14 }}>פירוט קשרים ובונוסים</div>
 
           {report.breakdown.length === 0 && report.guidePay === 0 && report.expensesTotal === 0 && (
-            <div style={{ fontSize:13, color:'#aaa', padding:'8px 0' }}>אין קשרים מזכים החודש.</div>
+            <div style={{ fontSize:13, color:'#aaa', padding:'8px 0' }}>אין קשרים מזכים ב{currentMonthName} {year}.</div>
           )}
 
           {report.breakdown.map((item, i) => (

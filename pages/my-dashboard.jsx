@@ -3,10 +3,20 @@ import { useEffect, useMemo, useState } from 'react';
 import DesktopLayout from '../components/DesktopLayout';
 import { useCrm } from '../lib/CrmStore';
 import { useAuth } from '../lib/AuthStore';
-import { calcConsultantDashboard } from '../lib/paymentCalc';
+import { calcConsultantDashboard, resolvePeriod } from '../lib/paymentCalc';
 import { getSupabaseClient } from '../lib/supabaseClient';
 
 const MONTH_NAMES = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+
+// 18 החודשים האחרונים (כולל הנוכחי) לבחירה בסלקטור — זהה ל-pages/payments.jsx.
+// פעיל שנכנס לדשבורד ב-1 בחודש חייב לראות את החודש שהרגע נסגר, לא רק את "עכשיו".
+function buildMonthOptions(count = 18) {
+  const now = new Date();
+  return Array.from({ length: count }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    return { year: d.getFullYear(), month: d.getMonth(), label: `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}` };
+  });
+}
 
 // צבע מד התקדמות לפי אחוז מהיעד: ירוק < 70% < כתום < 100% ≤ אדום
 function barColor(pct) {
@@ -15,7 +25,7 @@ function barColor(pct) {
   return { bar: '#27ae60', bg: '#edfaf1', text: '#27ae60' };
 }
 
-function CounterCard({ counter }) {
+function CounterCard({ counter, monthLabel }) {
   const { done, cap, label } = counter;
   const pct = cap > 0 ? Math.min(100, Math.round((done / cap) * 100)) : 0;
   const over = done > cap;
@@ -35,7 +45,7 @@ function CounterCard({ counter }) {
         <div style={{ width: `${pct}%`, height: '100%', background: col.bar, borderRadius: 999, transition: 'width 0.5s ease' }} />
       </div>
       <div style={{ fontSize: 12, color: '#999', marginTop: 8 }}>
-        ביצעת {done} מתוך יעד של {cap} החודש
+        ביצעת {done} מתוך יעד של {cap} ב{monthLabel}
       </div>
     </div>
   );
@@ -46,8 +56,16 @@ export default function MyDashboardPage() {
   const { currentUser } = useAuth();
   const [cancelledBonuses, setCancelledBonuses] = useState([]); // בונוסים שרכז ביטל — ראה pages/payments.jsx
 
-  const now = new Date();
-  const monthName = MONTH_NAMES[now.getMonth()];
+  const monthOptions = useMemo(() => buildMonthOptions(), []);
+  // חודש הדיווח הנבחר. ברירת מחדל: החודש הנוכחי; ניתן לבחור חודש קודם (ראה buildMonthOptions).
+  const [period, setPeriod] = useState(() => {
+    const n = new Date();
+    return { year: n.getFullYear(), month: n.getMonth() };
+  });
+
+  const { year, month, monthKey, startIso, endIso } = resolvePeriod(period);
+  const monthName = MONTH_NAMES[month];
+  const isCurrentMonth = year === new Date().getFullYear() && month === new Date().getMonth();
 
   // בונוסים שבוטלו — נטען לפי הפעיל המחובר בלבד (RLS מגביל ממילא ל-activist_id של עצמו)
   useEffect(() => {
@@ -67,52 +85,75 @@ export default function MyDashboardPage() {
 
   const data = useMemo(() => {
     if (!currentUser) return null;
-    // סינון בונוסים ליועץ הנוכחי ולחודש הנוכחי — זהה לעמוד התשלומים של הרכז (כדי שהמספרים יתאימו).
-    const monthKey = `${now.getFullYear()}-${now.getMonth()}`;
+    // סינון בונוסים ליועץ הנוכחי ולחודש הנבחר — זהה לעמוד התשלומים של הרכז (כדי שהמספרים יתאימו).
     const myMitzvot = mitzvotBonuses.filter(b => b.activist_id === currentUser.id && b.month === monthKey);
     const myNew     = newParticipantBonuses.filter(b => b.activist_id === currentUser.id && b.month === monthKey);
-    return calcConsultantDashboard(currentUser.id, interactions, contacts, myMitzvot, myNew, paymentConfig, cancelledBonusKeys);
-  }, [currentUser, interactions, contacts, mitzvotBonuses, newParticipantBonuses, paymentConfig, cancelledBonusKeys]);
+    return calcConsultantDashboard(currentUser.id, interactions, contacts, myMitzvot, myNew, paymentConfig, cancelledBonusKeys, { year, month });
+  }, [currentUser, interactions, contacts, mitzvotBonuses, newParticipantBonuses, paymentConfig, cancelledBonusKeys, monthKey, year, month]);
 
   if (!data) return <DesktopLayout title="הדשבורד שלי"><div style={{ padding: 40, color: '#aaa' }}>טוען…</div></DesktopLayout>;
 
   const { counters, total, salaryByType, bonuses, unpaid } = data;
 
-  // החזר הוצאות החודש — מדיווחי הפעיל בעמוד "דיווח הוצאות"
-  const monthStartIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  // החזר הוצאות החודש הנבחר — מדיווחי הפעיל בעמוד "דיווח הוצאות".
+  // טווח [startIso, endIso) — חסם עליון חובה, אחרת חודש קודם היה סופח גם הוצאות של החודשים שאחריו.
   const myExpenses = expenses
-    .filter(x => Number(x.activist_id) === Number(currentUser?.id) && x.date >= monthStartIso)
+    .filter(x => Number(x.activist_id) === Number(currentUser?.id) && x.date >= startIso && x.date < endIso)
     .reduce((s, x) => s + Number(x.amount || 0), 0);
 
-  // שכר הדרכת סיורים — 750₪ (config) לכל סיור שהתקיים החודש כשהמדריך הוא הפעיל הזה
+  // שכר הדרכת סיורים — 750₪ (config) לכל סיור שהתקיים בחודש הנבחר כשהמדריך הוא הפעיל הזה
   const guideRate = paymentConfig.TOUR_GUIDE_RATE ?? 750;
   const myGuidedTours = tours.filter(t =>
     t.status === 'completed' &&
     Number(t.guide_activist_id) === Number(currentUser?.id) &&
-    t.date >= monthStartIso
+    t.date >= startIso && t.date < endIso
   ).length;
   const guidePay = myGuidedTours * guideRate;
 
   const grandTotal = total + myExpenses + guidePay;
 
   return (
-    <DesktopLayout title="הדשבורד שלי" subtitle={`סיכום חודשי · ${monthName} ${now.getFullYear()}`}>
+    <DesktopLayout title="הדשבורד שלי" subtitle={`סיכום חודשי · ${monthName} ${year}`}>
+
+      {/* בחירת חודש דיווח — פעיל שנכנס ב-1 בחודש צריך לראות את החודש שהרגע נסגר.
+          בחירת חודש קודם מחשבת מחדש הכל: קשרים, בונוסים, הוצאות וסיורים. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+        <label htmlFor="dashboard-month" style={{ fontSize: 13, fontWeight: 700, color: '#555' }}>חודש הדיווח:</label>
+        <select
+          id="dashboard-month"
+          value={`${year}-${month}`}
+          onChange={e => {
+            const [y, m] = e.target.value.split('-').map(Number);
+            setPeriod({ year: y, month: m });
+          }}
+          style={{ fontFamily: 'Rubik,sans-serif', fontSize: 13.5, fontWeight: 600, padding: '8px 12px', borderRadius: 10, border: '1.5px solid #e0dcf5', background: '#fff', color: '#3a249b', cursor: 'pointer' }}
+        >
+          {monthOptions.map(o => (
+            <option key={`${o.year}-${o.month}`} value={`${o.year}-${o.month}`}>{o.label}</option>
+          ))}
+        </select>
+        {!isCurrentMonth && (
+          <span style={{ fontSize: 12, color: '#7a6cc4', background: '#f0effe', borderRadius: 8, padding: '5px 10px', fontWeight: 600 }}>
+            מציג חודש סגור
+          </span>
+        )}
+      </div>
 
       {/* מונים */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16, marginBottom: 24 }}>
-        <CounterCard counter={counters.frontal} />
-        <CounterCard counter={counters.phoneTorani} />
-        <CounterCard counter={counters.multi} />
+        <CounterCard counter={counters.frontal} monthLabel={monthName} />
+        <CounterCard counter={counters.phoneTorani} monthLabel={monthName} />
+        <CounterCard counter={counters.multi} monthLabel={monthName} />
       </div>
 
       {/* ווידג'ט שכר */}
       <div style={{ background: 'linear-gradient(135deg,#2a1870,#3a249b)', borderRadius: 20, padding: '24px 26px', color: '#fff', marginBottom: 24 }}>
-        <div style={{ fontSize: 14, opacity: 0.85, marginBottom: 4 }}>סה"כ לתשלום החודש (משוער{myExpenses > 0 ? ', כולל החזר הוצאות' : ''})</div>
+        <div style={{ fontSize: 14, opacity: 0.85, marginBottom: 4 }}>סה"כ לתשלום {monthName} {year} (משוער{myExpenses > 0 ? ', כולל החזר הוצאות' : ''})</div>
         <div style={{ fontSize: 42, fontWeight: 800, letterSpacing: '-0.02em', marginBottom: 18 }}>{grandTotal.toLocaleString()} ₪</div>
 
         <div style={{ background: 'rgba(255,255,255,0.10)', borderRadius: 14, padding: '14px 16px' }}>
           {salaryByType.length === 0 && bonuses.length === 0 && myExpenses === 0 && guidePay === 0 ? (
-            <div style={{ fontSize: 13, opacity: 0.8 }}>טרם נצברו קשרים מזכים החודש.</div>
+            <div style={{ fontSize: 13, opacity: 0.8 }}>לא נצברו קשרים מזכים ב{monthName}.</div>
           ) : (
             <>
               {salaryByType.map((s, i) => (
@@ -147,7 +188,7 @@ export default function MyDashboardPage() {
       {/* בונוסים שנפתחו */}
       {bonuses.length > 0 && (
         <div style={{ background: '#fffaf0', border: '0.5px solid #f0d98a', borderRadius: 16, padding: '16px 18px', marginBottom: 24 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: '#b06b00', marginBottom: 8 }}>🏆 בונוסים שזכית בהם החודש</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: '#b06b00', marginBottom: 8 }}>🏆 בונוסים שזכית בהם ב{monthName}</div>
           {bonuses.map((b, i) => (
             <div key={i} style={{ fontSize: 13, color: '#7a5a10', padding: '3px 0' }}>• {b.desc} — {b.amount.toLocaleString()} ₪</div>
           ))}
