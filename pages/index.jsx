@@ -5,7 +5,8 @@ import getReminders from '../lib/getReminders';
 import DesktopLayout from '../components/DesktopLayout';
 import { useCrm } from '../lib/CrmStore';
 import { useAuth } from '../lib/AuthStore';
-import { interactionsLast30, payableInteractionsLast30, getActivistPerformanceLabel } from '../lib/activistStats';
+import { interactionsThisMonth, payableInteractionsThisMonth, getActivistPerformanceLabel } from '../lib/activistStats';
+import { isDerivedInteraction } from '../lib/paymentCalc';
 
 export default function Dashboard() {
   const router = useRouter();
@@ -23,15 +24,16 @@ export default function Dashboard() {
   const needsRenew   = enriched.filter(c => c.status === 'דורש חידוש' || c.status === 'על סף ניתוק');
   const withActions  = enriched.filter(c => c.actionDue);
 
+  // "קשרים החודש" = חודש קלנדרי, לא חלון מתגלגל של 30 יום. עד 2026-08 המונה גרר
+  // לתוכו את סוף החודש הקודם ולא התאפס ב-1 בחודש (דיווח מוטי גלעד, 2026-08-02).
+  // שורות נגזרות ממפגש רב-משתתפים לא נספרות — ראה isOwnReport ב-lib/activistStats.js.
+  const thisMonthKey = new Date().toISOString().slice(0, 7);
   const myInteractionsCount = can.addContact
-    ? interactionsLast30(currentUser.id, interactions)
-    : interactions.filter(i => {
-        const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 30);
-        return new Date(i.date) >= cutoff;
-      }).length;
+    ? interactionsThisMonth(currentUser.id, interactions)
+    : interactions.filter(i => !isDerivedInteraction(i) && i.date?.slice(0, 7) === thisMonthKey).length;
 
   const payableCount = can.addContact
-    ? payableInteractionsLast30(currentUser.id, interactions, contacts, activeProject?.id)
+    ? payableInteractionsThisMonth(currentUser.id, interactions, contacts, activeProject?.id)
     : null;
 
   const perfLabel = can.addContact && currentUser
