@@ -1,10 +1,9 @@
 // pages/expenses.jsx — דיווחי הוצאות. פעיל מדווח (בלי קבלות) ורואה את שלו;
 // רכז/מנכ"ל/כספים (can.seePayments) רואים את כולם לחודש הנוכחי.
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import DesktopLayout from '../components/DesktopLayout';
 import { useAuth } from '../lib/AuthStore';
 import { useCrm } from '../lib/CrmStore';
-import { getSupabaseClient } from '../lib/supabaseClient';
 import { formatDateHe } from '../lib/formatDate';
 
 const TODAY = new Date().toISOString().split('T')[0];
@@ -15,8 +14,9 @@ const EMPTY = { date: TODAY, amount: '', description: '' };
 
 export default function ExpensesPage() {
   const { currentUser, can } = useAuth();
-  const { activists } = useCrm();
-  const [expenses, setExpenses] = useState([]);
+  // ההוצאות מגיעות מה-store ולא מ-state מקומי — כך מחיקה/הוספה כאן מתעדכנות מיד
+  // גם ב"סה"כ לתשלום" ב-/my-dashboard וב-/payments (דיווח שירה שם טוב, 2026-07-30).
+  const { activists, expenses: allExpenses, addExpense, deleteExpense } = useCrm();
   const [form,     setForm]     = useState(EMPTY);
   const [errors,   setErrors]   = useState({});
   const [busy,     setBusy]     = useState(false);
@@ -25,17 +25,12 @@ export default function ExpensesPage() {
   const isActivist = currentUser?.role === 'activist';
   const seesAll    = can.seePayments;
 
-  async function load() {
-    const supabase = getSupabaseClient();
-    let q = supabase.from('expenses').select('*').gte('date', MONTH_START).order('date', { ascending: false });
-    if (!seesAll) q = q.eq('activist_id', currentUser.id);
-    const { data, error } = await q;
-    if (error) { setLoadErr(error.message); return; }
-    setLoadErr('');
-    setExpenses(data || []);
-  }
-
-  useEffect(() => { if (currentUser) load(); }, [currentUser?.id]);
+  // רשימת התצוגה — החודש הנוכחי בלבד. ה-store כבר מסונן ב-RLS ובצד-לקוח לפי בעלות;
+  // הסינון כאן הוא הגנת-הגנה נוספת, באותו דפוס כמו שאר הדפים.
+  const expenses = useMemo(() => (allExpenses || [])
+    .filter(x => x.date >= MONTH_START && (seesAll || Number(x.activist_id) === Number(currentUser?.id)))
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)),
+  [allExpenses, seesAll, currentUser?.id]);
 
   async function handleSubmit() {
     const e = {};
@@ -47,10 +42,7 @@ export default function ExpensesPage() {
     if (Object.keys(e).length > 0) { setErrors(e); return; }
 
     setBusy(true);
-    const supabase = getSupabaseClient();
-    const { error } = await supabase.from('expenses').insert({
-      activist_id: currentUser.id,
-      project_id:  currentUser.project_id ?? null,
+    const { error } = await addExpense({
       date:        form.date,
       amount:      amountNum,
       description: form.description.trim(),
@@ -59,13 +51,14 @@ export default function ExpensesPage() {
     if (error) { setErrors({ description: `שגיאה בשמירה: ${error.message}` }); return; }
     setForm(EMPTY);
     setErrors({});
-    load();
+    setLoadErr('');
   }
 
   async function handleDelete(id) {
-    const supabase = getSupabaseClient();
-    const { error } = await supabase.from('expenses').delete().eq('id', id);
-    if (!error) setExpenses(prev => prev.filter(x => x.id !== id));
+    // הכישלון היה שקט לגמרי: RLS שחוסמת מחזירה 0 שורות בלי error, והמשתמש ראה
+    // את השורה נעלמת מהמסך בלי שנמחקה. עכשיו deleteExpense מבדיל, וההודעה מוצגת.
+    const { error } = await deleteExpense(id);
+    setLoadErr(error ? error.message : '');
   }
 
   const total = useMemo(() => expenses.reduce((s, x) => s + Number(x.amount || 0), 0), [expenses]);
@@ -89,7 +82,7 @@ export default function ExpensesPage() {
 
         {loadErr && (
           <div style={{ background: '#fff0f0', border: '0.5px solid #e0a0a0', borderRadius: 12, padding: '12px 16px', color: '#c0392b', fontSize: 13, marginBottom: 14 }}>
-            שגיאה בטעינת הוצאות: {loadErr}
+            {loadErr}
           </div>
         )}
 

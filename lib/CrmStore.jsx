@@ -477,6 +477,33 @@ export function CrmProvider({ children }) {
     return { error: null };
   }
 
+  // הוצאות — נכתבות דרך ה-store ולא ישירות מהדף, כדי שהסכום לתשלום ב-/my-dashboard
+  // וב-/payments יתעדכן מיד. קודם לכן pages/expenses.jsx החזיק state משלו, והמחיקה
+  // לא הגיעה לחישוב עד רענון מלא של הדף (דיווח שירה שם טוב, 2026-07-30:
+  // "כשמוחקים בדיווח הוצאות... הסכום לתשלום לא משתנה").
+  async function addExpense({ date, amount, description }) {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase.from('expenses').insert({
+      activist_id: currentUser?.id,
+      project_id:  currentUser?.project_id ?? null,
+      date, amount, description,
+    }).select().single();
+    if (error) { console.error('Failed to insert expense', error); return { error }; }
+    setExpenses(prev => [data, ...prev]);
+    return { error: null };
+  }
+
+  async function deleteExpense(expenseId) {
+    const supabase = getSupabaseClient();
+    // select() אחרי delete — RLS שחוסמת מחזירה 0 שורות **בלי** error, ואז המחיקה
+    // נראית מוצלחת ולא קרה כלום. בלי הבדיקה הזו הכישלון שקט לגמרי.
+    const { data, error } = await supabase.from('expenses').delete().eq('id', expenseId).select('id');
+    if (error) { console.error('Failed to delete expense', error); return { error }; }
+    if (!data || data.length === 0) return { error: new Error('ההוצאה לא נמחקה — אין הרשאה, או שכבר נמחקה') };
+    setExpenses(prev => prev.filter(x => Number(x.id) !== Number(expenseId)));
+    return { error: null };
+  }
+
   // F1 — מחיקת לקוח (soft-delete: is_active=false). לא נמחק פיזית, מונע אובדן נתונים.
   async function deleteContact(contactId) {
     const supabase = getSupabaseClient();
@@ -583,7 +610,7 @@ export function CrmProvider({ children }) {
     <CrmContext.Provider value={{
       contacts, interactions, activists, messages, baseMeetings, BASE_MEETING_QUESTIONS,
       mitzvotBonuses, newParticipantBonuses, paymentConfig, expenses, tours,
-      addInteraction, addParticipantInteractions, updateInteraction, deleteInteraction, addContact, updateContact, deleteContact, updateMitzvot, addMessage, submitBaseMeeting, updateBaseMeetingReport, upsertBaseMeetingReports, advanceBaseMeetingReminders,
+      addInteraction, addParticipantInteractions, updateInteraction, deleteInteraction, addContact, updateContact, deleteContact, updateMitzvot, addExpense, deleteExpense, addMessage, submitBaseMeeting, updateBaseMeetingReport, upsertBaseMeetingReports, advanceBaseMeetingReminders,
       PROJECT_NAMES,
     }}>
       {children}
