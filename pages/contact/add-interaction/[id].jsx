@@ -644,7 +644,8 @@ export default function AddInteractionPage() {
           {/* disabled בזמן השמירה — לחיצה כפולה יצרה שני דיווחים על אותו קשר (14.8) */}
           <button className="btn btn-primary" style={{ flex: 2, opacity: saving ? 0.6 : 1, cursor: saving ? 'wait' : 'pointer' }}
             onClick={handleSubmit} disabled={saving}>
-            {saving ? 'שומר…' : dupConfirm ? 'שמור בכל זאת' : 'שמור קשר'}
+            {/* התווית חוזרת ל"שמור קשר" ברגע שהעריכה כבר לא זהה לדיווח הקיים */}
+            {saving ? 'שומר…' : (dupConfirm && existingDuplicate) ? 'שמור בכל זאת' : 'שמור קשר'}
           </button>
         </div>
 
