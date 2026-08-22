@@ -66,7 +66,18 @@ export default function ActivistPaymentDetail() {
 
   async function handleCancelBonus(item) {
     if (!item.key || !activist) return;
-    const confirmed = window.confirm(`לבטל את הבונוס "${item.desc}" (${item.amount} ₪) של ${activist.name}?`);
+    // ⚠️ bonus_key הוא לפי פעיל|סוג|לקוח|חודש — כמה בונוסים מאותו סוג מול אותו לקוח
+    // באותו חודש (למשל שתי מצוות שעלו באותה שמירה) חולקים מפתח אחד, וביטול אחד
+    // מבטל את כולם. הפורמט לא ניתן לשינוי — יש שורות bonus_cancellations חיות בו.
+    // לכן לפחות אומרים לרכז מה הוא באמת מבטל, במקום לחסר ממנו סכום בשקט.
+    const sameKey = (report?.breakdown || []).filter(b => b.key === item.key);
+    const totalAmount = sameKey.reduce((s, b) => s + b.amount, 0);
+    const message = sameKey.length > 1
+      ? `הבונוס הזה חולק מפתח עם עוד ${sameKey.length - 1} בונוסים של אותו לקוח החודש:\n\n` +
+        sameKey.map(b => `• ${b.desc} (${b.amount.toLocaleString()} ₪)`).join('\n') +
+        `\n\nביטול יסיר את כולם — סה"כ ${totalAmount.toLocaleString()} ₪ מהתשלום של ${activist.name}. להמשיך?`
+      : `לבטל את הבונוס "${item.desc}" (${item.amount.toLocaleString()} ₪) של ${activist.name}?`;
+    const confirmed = window.confirm(message);
     if (!confirmed) return;
     const supabase = getSupabaseClient();
     const { error } = await supabase.from('bonus_cancellations').insert({
