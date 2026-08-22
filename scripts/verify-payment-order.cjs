@@ -2,7 +2,7 @@
 // שימוש: node scripts/verify-payment-order.cjs
 // אין framework בדיקות בפרויקט — זה סקריפט node עצמאי, בדפוס scripts/verify-*.cjs.
 // עובד על נתונים סינתטיים בלבד: לא נוגע ב-Supabase ולא דורש .env.local.
-const { calcMonthlyPayment, deriveMitzvotBonuses, DEFAULTS } = require('../lib/paymentCalc.js');
+const { calcMonthlyPayment, deriveMitzvotBonuses, comparePaymentOrder, DEFAULTS } = require('../lib/paymentCalc.js');
 
 let failures = 0;
 function check(name, actual, expected) {
@@ -34,6 +34,32 @@ const JULY = { year: 2026, month: 6 }; // month 0-indexed
   const r = calcMonthlyPayment(7, interactions, contacts, [], [], cfg, new Set(), JULY);
   check('#5 התורני נכנס למכסה לפני הידידותי', r.total, 300 + 250);
   check('#5 הידידותי הזול הוא זה שנדחק החוצה', r.unpaid.map(u => u.contactId), [2]);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// שתי התקרות ביחד: קשר שנדחה בגלל תקרת-הלקוח לא אמור לאכול משבצת מהתקרה החודשית.
+// אחרת סדר-לפי-ערך יכול לשלם *פחות* מהסדר הכרונולוגי: כל 10 המפגשים היקרים מול
+// לקוח א' מעובדים ראשונים, 4 מהם נדחים על תקרת-הלקוח — ובכל זאת שורפים 4 משבצות
+// חודשיות שחוסמות מפגשים מזכים מול לקוח ב'.
+// ────────────────────────────────────────────────────────────────────────────
+{
+  const mk = (contact, quality, day, id) => ({
+    activist_id: 7, project_id: 1, contact_id: contact, type: 'פרונטלי',
+    quality, duration_minutes: 60, date: `2026-07-${String(day).padStart(2, '0')}`, id,
+  });
+  // 10 תורניים מול לקוח 1 ו-10 ידידותיים מול לקוח 2, לסירוגין. תקרות: 15 חודשי, 6 ללקוח.
+  const rows = [];
+  for (let k = 0; k < 10; k++) {
+    rows.push(mk(1, 'תורני',   k + 1, 100 + k));
+    rows.push(mk(2, 'ידידותי', k + 1, 200 + k));
+  }
+  const r = calcMonthlyPayment(7, rows, contacts, [], [], DEFAULTS, new Set(), JULY);
+  // 6 מזכים מול כל לקוח (תקרת הלקוח), 12 סה"כ — מתחת לתקרה החודשית של 15.
+  // בתוספת בונוס-לימוד-6 על ששת התורניים מול לקוח 1.
+  check('שתי תקרות: מפגש שנדחה על תקרת-הלקוח לא אוכל מהתקרה החודשית',
+    r.total, 6 * 300 + 6 * 250 + DEFAULTS.LEARNING_BONUS[6]);
+  check('שתי תקרות: אף מפגש לא נדחה בגלל התקרה החודשית',
+    r.unpaid.filter(u => /חודשית/.test(u.reason)).length, 0);
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -109,6 +135,43 @@ const JULY = { year: 2026, month: 6 }; // month 0-indexed
   const r = calcMonthlyPayment(7, rows, contacts, [], [], DEFAULTS, new Set(), JULY);
   check('#10/#11 מפגש רב-משתתפים עם 3 לקוחות = תשלום אחד', r.total, 300);
   check('#10/#11 השורות הנגזרות לא מופיעות כ"לא זוכה"', r.unpaid.length, 0);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// comparePaymentOrder חייב להיות סדר מלא (total order). קומפרטור שמחזיר NaN, או
+// שאינו טרנזיטיבי, מפרק את Array.sort **בשקט** — והתוצאה היא סכומי שכר שמשתנים
+// בין הרצה להרצה בלי שאף אחד ישים לב.
+// ⚠️ `new Date(null)` הוא 1970 ולא Invalid Date. בלי בדיקת falsy מפורשת, שורה בלי
+// תאריך קופצת לראש התור ותופסת משבצת ראשונה במכסה.
+// ────────────────────────────────────────────────────────────────────────────
+{
+  const P = (q, d, id) => ({ type: 'פרונטלי', quality: q, date: d, id });
+  check('סדר: תורני (300) לפני ידידותי (250)',
+    comparePaymentOrder(P('תורני', '2026-07-20', 2), P('ידידותי', '2026-07-01', 1)) < 0, true);
+  check('סדר: בשוויון מחיר — התאריך המוקדם קודם',
+    comparePaymentOrder(P('תורני', '2026-07-01', 5), P('תורני', '2026-07-20', 1)) < 0, true);
+  check('סדר: בשוויון מלא — id שובר',
+    comparePaymentOrder(P('תורני', '2026-07-01', 1), P('תורני', '2026-07-01', 2)) < 0, true);
+  check('סדר: אנטי-סימטריה',
+    comparePaymentOrder(P('תורני', '2026-07-01', 1), P('ידידותי', '2026-07-01', 2)) ===
+    -comparePaymentOrder(P('ידידותי', '2026-07-01', 2), P('תורני', '2026-07-01', 1)), true);
+
+  const broken = [null, '', undefined, 'לא-תאריך'];
+  check('סדר: תאריך חסר/לא תקין נדחק לסוף',
+    broken.every(d => comparePaymentOrder(P('תורני', d, 1), P('תורני', '2026-07-01', 2)) > 0), true);
+  check('סדר: לעולם לא מחזיר NaN',
+    broken.every(x => broken.every(y => !Number.isNaN(comparePaymentOrder(P('תורני', x, 1), P('תורני', y, 2))))), true);
+
+  // טרנזיטיביות על כל השלשות במדגם שמכסה מחיר × תאריך (כולל פגומים) × id.
+  const pool = [];
+  for (const q of ['תורני', 'ידידותי']) for (const d of ['2026-07-01', '2026-07-05', null, '']) for (const id of [1, 2]) pool.push(P(q, d, id));
+  let violations = 0;
+  for (const a of pool) for (const b of pool) for (const c of pool) {
+    if (Math.sign(comparePaymentOrder(a, b)) <= 0 &&
+        Math.sign(comparePaymentOrder(b, c)) <= 0 &&
+        Math.sign(comparePaymentOrder(a, c)) > 0) violations++;
+  }
+  check(`סדר: טרנזיטיביות (${pool.length ** 3} שלשות)`, violations, 0);
 }
 
 console.log(failures === 0 ? '\nכל הבדיקות עברו.' : `\n${failures} בדיקות נכשלו.`);

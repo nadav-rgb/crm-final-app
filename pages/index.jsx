@@ -10,7 +10,7 @@ import { isDerivedInteraction } from '../lib/paymentCalc';
 
 export default function Dashboard() {
   const router = useRouter();
-  const { contacts, interactions } = useCrm();
+  const { contacts, interactions, paymentConfig } = useCrm();
   const { can, activeProject, currentUser, filterProject } = useAuth();
 
   let visibleContacts = contacts;
@@ -33,7 +33,9 @@ export default function Dashboard() {
     : interactions.filter(i => !isDerivedInteraction(i) && i.date?.slice(0, 7) === thisMonthKey).length;
 
   const payableCount = can.addContact
-    ? payableInteractionsThisMonth(currentUser.id, interactions, contacts, activeProject?.id)
+    // paymentConfig חובה — בלעדיו המונה מתמחר לפי ברירות המחדל בקוד ולא לפי payment_config,
+    // ואז הוא ועמוד התשלומים חלוקים על מי תפס את המשבצת האחרונה במכסה.
+    ? payableInteractionsThisMonth(currentUser.id, interactions, contacts, activeProject?.id, paymentConfig)
     : null;
 
   const perfLabel = can.addContact && currentUser

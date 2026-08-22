@@ -52,7 +52,9 @@ export default function AddInteractionPage() {
   const [saving,    setSaving]    = useState(false);
   // אישור-שכפול: הפעיל לחץ "שמור" על דיווח שנראה זהה לדיווח קיים. מנעול saving לא
   // מכסה את המקרה הזה — האפליקציה נתקעה, הפעיל חזר למסך ודיווח שוב מטופס חדש.
-  const [dupConfirm, setDupConfirm] = useState(false);
+  // מחזיק את ה-id של הדיווח שאושר, ולא boolean: דגל בוליאני היה נשאר דלוק אחרי האישור
+  // ומכבה את ההגנה לשארית הסשן, גם אחרי שהפעיל שינה לגמרי את מה שהוא כותב.
+  const [dupConfirmedId, setDupConfirmedId] = useState(null);
 
   if (!contact) {
     return <DesktopLayout title="הוסף קשר"><div style={{ padding: 40, color: '#aaa' }}>לקוח לא נמצא</div></DesktopLayout>;
@@ -242,160 +244,174 @@ export default function AddInteractionPage() {
     // כפולות ו-10 שורות עודפות אצל 5 פעילים, כולן בהפרש 0.3–20 שניות — כלומר לחיצות
     // חוזרות על כפתור שלא הגיב. אחת מהן היא מפגש רב-משתתפים ×3 = 900 ₪ במקום 300.
     // מנעול saving מכסה לחיצה כפולה באותו מסך; זה מכסה גם דיווח חוזר מטופס חדש.
-    if (!dupConfirm && existingDuplicate) {
-      setDupConfirm(true);
-      setToast({ kind: 'warn', text: 'כבר קיים דיווח זהה על לקוח זה באותו תאריך, עם אותו תיאור. אם זה באמת דיווח נוסף — לחץ "שמור קשר" שוב.' });
+    if (existingDuplicate && dupConfirmedId !== existingDuplicate.id) {
+      setDupConfirmedId(existingDuplicate.id);
+      setToast({ kind: 'warn', text: 'כבר קיים דיווח זהה על לקוח זה באותו תאריך, עם אותו תיאור. אם זה באמת דיווח נוסף — לחץ "שמור בכל זאת".' });
       return;
     }
 
     setSaving(true);
+    // try/finally: בלי זה, throw כלשהו (למשל fetch שנקטע באמצע ה-insert) משאיר את
+    // saving=true לנצח — שני הכפתורים disabled, הטופס מת, והפעיל מרענן ומדווח שוב.
+    // זה בדיוק הדיווח הכפול שהמנעול נועד למנוע.
+    try {
 
-    // צבירת הודעות התראה — כדי שחריגת-תקרה ובונוס באותו דיווח לא ידרסו זה את זה.
-    const messages = [];
+      // צבירת הודעות התראה — כדי שחריגת-תקרה ובונוס באותו דיווח לא ידרסו זה את זה.
+      const messages = [];
 
-    // חריגה מתקרת הערוץ החודשית (נגזר מהמנוע)
-    if (monthlyCapExceeded) {
-      if (paymentConfig.CAP_EXCEED_BLOCKS) {
-        setToast({ kind: 'block', text: `שים לב: עברת את גג המפגשים המאושר לחודש זה עבור סוג פעילות זה. הדיווח נחסם.` });
-        setSaving(false); // נחסם — הטופס נשאר פתוח ולחיץ לתיקון
-        return; // חסימה — לפי דגל הקונפיג
+      // חריגה מתקרת הערוץ החודשית (נגזר מהמנוע)
+      if (monthlyCapExceeded) {
+        if (paymentConfig.CAP_EXCEED_BLOCKS) {
+          setToast({ kind: 'block', text: `שים לב: עברת את גג המפגשים המאושר לחודש זה עבור סוג פעילות זה. הדיווח נחסם.` });
+          return; // חסימה — לפי דגל הקונפיג
+        }
+        messages.push({ kind: 'warn', text: `שים לב: עברת את גג המפגשים המאושר לחודש זה עבור סוג פעילות זה. הקשר יישמר אך לא יזכה בתשלום.` });
       }
-      messages.push({ kind: 'warn', text: `שים לב: עברת את גג המפגשים המאושר לחודש זה עבור סוג פעילות זה. הקשר יישמר אך לא יזכה בתשלום.` });
-    }
 
-    // איסוף משתתפים למבנה מובנה (עמודת participants) — שורות ריקות מסוננות, שמות לא חובה
-    const participantClients = form.participant_clients
-      .filter(v => v !== '')
-      .map(v => { const c = contacts.find(x => String(x.id) === String(v)); return { id: c?.id ?? Number(v), name: c?.name ?? '' }; });
-    const participantExternal = form.participant_external.map(s => s.trim()).filter(Boolean);
-    const participantsData = form.multi
-      ? { count: Number(form.participant_count) || null, clients: participantClients, external: participantExternal }
-      : isShabbat
-        ? { count: Number(form.participant_count) || null, clients: [], external: [] }
-        : null;
+      // איסוף משתתפים למבנה מובנה (עמודת participants) — שורות ריקות מסוננות, שמות לא חובה
+      const participantClients = form.participant_clients
+        .filter(v => v !== '')
+        .map(v => { const c = contacts.find(x => String(x.id) === String(v)); return { id: c?.id ?? Number(v), name: c?.name ?? '' }; });
+      const participantExternal = form.participant_external.map(s => s.trim()).filter(Boolean);
+      const participantsData = form.multi
+        ? { count: Number(form.participant_count) || null, clients: participantClients, external: participantExternal }
+        : isShabbat
+          ? { count: Number(form.participant_count) || null, clients: [], external: [] }
+          : null;
 
-    // שיקוף לתוך notes — המונה והשמות נראים בכל מקום שמציג הערות, בלי UI נוסף
-    // הלקוח שממנו נכנסו לטופס הוא משתתף לכל דבר — בלעדיו המונה והשמות לא מסתדרים,
-    // והפעיל רואה מפגש שהוא עצמו לא מופיע בו.
-    const participantNames = [contact.name, ...participantClients.map(p => p.name), ...participantExternal].filter(Boolean);
-    const baseNotes = form.notes.trim();
-    const notesFinal = form.multi
-      ? `👥 מפגש רב משתתפים · ${form.participant_count} משתתפים${participantNames.length ? ` · משתתפים: ${participantNames.join(', ')}` : ''}${baseNotes ? `\n${baseNotes}` : ''}`
-      : isShabbat
-        ? `🍷 אירוח שבת · ${form.participant_count} לקוחות${baseNotes ? `\n${baseNotes}` : ''}`
-        : baseNotes;
+      // שיקוף לתוך notes — המונה והשמות נראים בכל מקום שמציג הערות, בלי UI נוסף
+      // הלקוח שממנו נכנסו לטופס הוא משתתף לכל דבר — בלעדיו המונה והשמות לא מסתדרים,
+      // והפעיל רואה מפגש שהוא עצמו לא מופיע בו.
+      const participantNames = [contact.name, ...participantClients.map(p => p.name), ...participantExternal].filter(Boolean);
+      const baseNotes = form.notes.trim();
+      const notesFinal = form.multi
+        ? `👥 מפגש רב משתתפים · ${form.participant_count} משתתפים${participantNames.length ? ` · משתתפים: ${participantNames.join(', ')}` : ''}${baseNotes ? `\n${baseNotes}` : ''}`
+        : isShabbat
+          ? `🍷 אירוח שבת · ${form.participant_count} לקוחות${baseNotes ? `\n${baseNotes}` : ''}`
+          : baseNotes;
 
-    const interactionPayload = {
-      id:               Date.now(),
-      contact_id:       contactId,
-      activist_id:      currentUser.id,
-      type:             form.type,
-      quality:          form.quality,
-      duration_minutes: duration,
-      outcome:          form.outcome,
-      date:             form.date,
-      time:             new Date().toTimeString().slice(0, 5),
-      notes:            notesFinal,
-      description:      form.description.trim(),
-      ai_summary:       form.ai_summary.trim(),
-      next_action:      form.next_action.trim(),
-      next_action_date: form.next_action_date,
-      ...(participantsData ? { participants: participantsData } : {}),
-    };
+      const interactionPayload = {
+        id:               Date.now(),
+        contact_id:       contactId,
+        activist_id:      currentUser.id,
+        type:             form.type,
+        quality:          form.quality,
+        duration_minutes: duration,
+        outcome:          form.outcome,
+        date:             form.date,
+        time:             new Date().toTimeString().slice(0, 5),
+        notes:            notesFinal,
+        description:      form.description.trim(),
+        ai_summary:       form.ai_summary.trim(),
+        next_action:      form.next_action.trim(),
+        next_action_date: form.next_action_date,
+        ...(participantsData ? { participants: participantsData } : {}),
+      };
 
-    // await: ההתראות בצד-שרת קוראות את השורה מה-DB, אז היא חייבת לנחות קודם.
-    // ה-state כבר עודכן בתוך addInteraction לפני ה-await — המסך לא ממתין.
-    const { error: saveError } = await addInteraction(interactionPayload);
+      // await: ההתראות בצד-שרת קוראות את השורה מה-DB, אז היא חייבת לנחות קודם.
+      // ה-state כבר עודכן בתוך addInteraction לפני ה-await — המסך לא ממתין.
+      const { error: saveError } = await addInteraction(interactionPayload);
 
-    // כשל שמירה — עד היום המסך הציג "הקשר תועד!" גם כשה-insert נכשל, והפעיל
-    // חשב שדיווח. עכשיו הטופס נשאר פתוח עם הודעה, והמנעול נפתח לניסיון חוזר.
-    if (saveError) {
-      setToast({ kind: 'block', text: `הדיווח לא נשמר: ${saveError.message || 'שגיאת רשת'}. הנתונים נשארו בטופס — נסה שוב.` });
-      setSaving(false);
-      return;
-    }
+      // כשל שמירה — עד היום המסך הציג "הקשר תועד!" גם כשה-insert נכשל, והפעיל
+      // חשב שדיווח. עכשיו הטופס נשאר פתוח עם הודעה, והמנעול נפתח לניסיון חוזר.
+      if (saveError) {
+        setToast({ kind: 'block', text: `הדיווח לא נשמר: ${saveError.message || 'שגיאת רשת'}. הנתונים נשארו בטופס — נסה שוב.` });
+        return;
+      }
 
-    // מפגש רב-משתתפים — שורת קשר נגזרת לכל לקוח נוסף שהשתתף, כדי שגם אצלו הקשר ייספר
-    // ולא יידרדר ל"על סף ניתוק". התשלום לא מושפע: המפגש מזכה פעם אחת בלבד (paymentCalc).
-    if (form.multi && participantClients.length > 0 && !saveError) {
-      await addParticipantInteractions(interactionPayload, participantClients.map(p => p.id));
-    }
+      // מפגש רב-משתתפים — שורת קשר נגזרת לכל לקוח נוסף שהשתתף, כדי שגם אצלו הקשר ייספר
+      // ולא יידרדר ל"על סף ניתוק". התשלום לא מושפע: המפגש מזכה פעם אחת בלבד (paymentCalc).
+      if (form.multi && participantClients.length > 0) {
+        const { error: partError } = await addParticipantInteractions(interactionPayload, participantClients.map(p => p.id));
+        // כשל כאן לא מבטל את המפגש עצמו — הוא כבר נשמר ומשולם. אבל בלי חיווי,
+        // המשתתף שלא נרשם ממשיך להידרדר ל"על סף ניתוק" בלי שאף אחד ידע.
+        if (partError) {
+          messages.push({ kind: 'warn', text: 'המפגש נשמר, אבל לא כל המשתתפים נרשמו אצל הלקוחות שלהם. בדוק בכרטיסי הלקוחות והשלם ידנית אם צריך.' });
+        }
+      }
 
-    // סיכום AI אוטומטי — מיועד לרכז בלבד (הפעיל לא רואה אותו). fire-and-forget:
-    // לא חוסם את השמירה, וכשל AI מאבד רק את הסיכום — הקשר כבר נשמר.
-    summarizeInteractionText(interactionPayload.description, {
-      contactName: contact.name, type: form.type, quality: form.quality,
-    }).then(async summary => {
-      if (!summary) return;
-      // await + בדיקת שגיאה לפני ההתראה: השרת קורא את ai_summary מה-DB, אז אם השמירה
-      // לא נחתה (או שה-insert של הקשר עוד באוויר) ההתראה תצא ריקה או תיכשל ב-404.
-      const { error } = await updateInteraction(interactionPayload.id, { ai_summary: summary });
-      if (error) return;
-      notifyInteractionApi({ interactionId: interactionPayload.id, kind: 'summary' });
-    }).catch(() => {});
+      // סיכום AI אוטומטי — מיועד לרכז בלבד (הפעיל לא רואה אותו). fire-and-forget:
+      // לא חוסם את השמירה, וכשל AI מאבד רק את הסיכום — הקשר כבר נשמר.
+      summarizeInteractionText(interactionPayload.description, {
+        contactName: contact.name, type: form.type, quality: form.quality,
+      }).then(async summary => {
+        if (!summary) return;
+        // await + בדיקת שגיאה לפני ההתראה: השרת קורא את ai_summary מה-DB, אז אם השמירה
+        // לא נחתה (או שה-insert של הקשר עוד באוויר) ההתראה תצא ריקה או תיכשל ב-404.
+        const { error } = await updateInteraction(interactionPayload.id, { ai_summary: summary });
+        if (error) return;
+        notifyInteractionApi({ interactionId: interactionPayload.id, kind: 'summary' });
+      }).catch(() => {});
 
-    if (isAchdut && payableCheck) {
-      // התראה לפעיל עצמו (פעמון מקומי) — הוא כבר מול המסך, לא צריך Push.
-      createPaymentInteractionNotifications({
-        interaction: interactionPayload,
-        contact,
-        activist: currentUser,
-        paymentResult: payableCheck,
-      });
-      // Push לפעיל עצמו על אותה שורת פעמון — רק השרת יכול לשלוח Push (VAPID/FCM לא
-      // קיימים בדפדפן). ה-client_id זהה לשורה שנכתבה למעלה, אז זו לא התראה שנייה.
-      notifyInteractionApi({
-        interactionId: interactionPayload.id,
-        kind: 'self_payment',
-        amount: payableCheck.payable ? payableCheck.amount : null,
-      });
-
-      // התראה + Push לניהול הפרויקט — צד-שרת.
-      if (payableCheck.payable && payableCheck.amount > 0) {
-        notifyInteractionApi({
-          interactionId: interactionPayload.id,
-          kind: 'payment',
-          amount: payableCheck.amount,
+      if (isAchdut && payableCheck) {
+        // התראה לפעיל עצמו (פעמון מקומי) — הוא כבר מול המסך, לא צריך Push.
+        createPaymentInteractionNotifications({
+          interaction: interactionPayload,
+          contact,
+          activist: currentUser,
+          paymentResult: payableCheck,
         });
-      }
-    }
+        if (payableCheck.payable && payableCheck.amount > 0) {
+          // Push לפעיל עצמו על אותה שורת פעמון — רק השרת יכול לשלוח Push (VAPID/FCM לא
+          // קיימים בדפדפן). ה-client_id זהה לשורה שנכתבה למעלה, אז זו לא התראה שנייה.
+          // רק לדיווח מזכה: על דיווח שלא זיכה, שורת הפעמון של הדפדפן מפרטת גם את
+          // סיבת אי-הזכאות, וכתיבה מהשרת הייתה דורסת אותה בטקסט דל יותר.
+          notifyInteractionApi({
+            interactionId: interactionPayload.id,
+            kind: 'self_payment',
+            amount: payableCheck.amount,
+          });
 
-    // התראת בונוס עומק-לקוח — 4 / 6 מפגשי לימוד מצטברים מול אותו לקוח (תואם למנוע התשלום).
-    if (isAchdut) {
-      const isLearning = form.quality === 'תורני' && (form.type === 'פרונטלי' || form.type === 'וידאו') && duration >= MIN_DUR;
-      if (isLearning) {
-        const priorLearning = previousContactMonthly.filter(i =>
-          i.quality === 'תורני' && (i.type === 'פרונטלי' || i.type === 'וידאו') && (i.duration_minutes ?? 0) >= MIN_DUR).length;
-        const count = priorLearning + 1;
-        let msg = null, amount = 0;
-        if (count === 6)      { msg = `מצוין! הגעת ל-6 מפגשים עם ${contact.name}. הנך זכאי לבונוס משופר!`; amount = paymentConfig.LEARNING_BONUS[6]; }
-        else if (count === 4) { msg = `כל הכבוד! הגעת ל-4 מפגשים עם ${contact.name}. הנך זכאי לבונוס!`;      amount = paymentConfig.LEARNING_BONUS[4]; }
-        if (msg) {
-          messages.push({ kind: 'bonus', text: msg });
-          // מפתח-חודש ב-id כדי שכל אבן-דרך חודשית תישמר כהתראה נפרדת (לא תידרס בין חודשים).
-          createDemoNotification({
-            id: `loyalty-bonus-${count}-${contactId}-${currentUser.id}-${currentMonthKey}`,
-            type: 'paid_interaction',
-            title: count === 6 ? '🏆 בונוס משופר!' : '🎁 בונוס!',
-            body: `${msg} (${amount.toLocaleString()} ₪)`,
-            user_id: currentUser.id,
-            project_id: 1,
-            priority: 'high',
-            link: '/my-dashboard',
+          // התראה + Push לניהול הפרויקט — צד-שרת.
+          notifyInteractionApi({
+            interactionId: interactionPayload.id,
+            kind: 'payment',
+            amount: payableCheck.amount,
           });
         }
       }
-    }
 
-    // הצגת התראה משולבת (בונוס גובר ויזואלית; חריגת-תקרה מצורפת אם קיימת).
-    if (messages.length > 0) {
-      const bonusMsg = messages.find(m => m.kind === 'bonus');
-      const warnMsg  = messages.find(m => m.kind === 'warn');
-      if (bonusMsg && warnMsg) setToast({ kind: 'bonus', text: `${bonusMsg.text}\n${warnMsg.text}` });
-      else setToast(messages[0]);
-    }
+      // התראת בונוס עומק-לקוח — 4 / 6 מפגשי לימוד מצטברים מול אותו לקוח (תואם למנוע התשלום).
+      if (isAchdut) {
+        const isLearning = form.quality === 'תורני' && (form.type === 'פרונטלי' || form.type === 'וידאו') && duration >= MIN_DUR;
+        if (isLearning) {
+          const priorLearning = previousContactMonthly.filter(i =>
+            i.quality === 'תורני' && (i.type === 'פרונטלי' || i.type === 'וידאו') && (i.duration_minutes ?? 0) >= MIN_DUR).length;
+          const count = priorLearning + 1;
+          let msg = null, amount = 0;
+          if (count === 6)      { msg = `מצוין! הגעת ל-6 מפגשים עם ${contact.name}. הנך זכאי לבונוס משופר!`; amount = paymentConfig.LEARNING_BONUS[6]; }
+          else if (count === 4) { msg = `כל הכבוד! הגעת ל-4 מפגשים עם ${contact.name}. הנך זכאי לבונוס!`;      amount = paymentConfig.LEARNING_BONUS[4]; }
+          if (msg) {
+            messages.push({ kind: 'bonus', text: msg });
+            // מפתח-חודש ב-id כדי שכל אבן-דרך חודשית תישמר כהתראה נפרדת (לא תידרס בין חודשים).
+            createDemoNotification({
+              id: `loyalty-bonus-${count}-${contactId}-${currentUser.id}-${currentMonthKey}`,
+              type: 'paid_interaction',
+              title: count === 6 ? '🏆 בונוס משופר!' : '🎁 בונוס!',
+              body: `${msg} (${amount.toLocaleString()} ₪)`,
+              user_id: currentUser.id,
+              project_id: 1,
+              priority: 'high',
+              link: '/my-dashboard',
+            });
+          }
+        }
+      }
 
-    setSuccess(true);
+      // הצגת התראה משולבת (בונוס גובר ויזואלית; חריגת-תקרה מצורפת אם קיימת).
+      if (messages.length > 0) {
+        const bonusMsg = messages.find(m => m.kind === 'bonus');
+        const warnMsg  = messages.find(m => m.kind === 'warn');
+        if (bonusMsg && warnMsg) setToast({ kind: 'bonus', text: `${bonusMsg.text}\n${warnMsg.text}` });
+        else setToast(messages[0]);
+      }
+
+      setSuccess(true);
+    } catch (err) {
+      setToast({ kind: 'block', text: `שמירת הדיווח נכשלה: ${err?.message || 'שגיאה לא צפויה'}. הנתונים נשארו בטופס — נסה שוב.` });
+    } finally {
+      setSaving(false);
+    }
   }
 
   const card = {
@@ -644,8 +660,8 @@ export default function AddInteractionPage() {
           {/* disabled בזמן השמירה — לחיצה כפולה יצרה שני דיווחים על אותו קשר (14.8) */}
           <button className="btn btn-primary" style={{ flex: 2, opacity: saving ? 0.6 : 1, cursor: saving ? 'wait' : 'pointer' }}
             onClick={handleSubmit} disabled={saving}>
-            {/* התווית חוזרת ל"שמור קשר" ברגע שהעריכה כבר לא זהה לדיווח הקיים */}
-            {saving ? 'שומר…' : (dupConfirm && existingDuplicate) ? 'שמור בכל זאת' : 'שמור קשר'}
+            {/* התווית חוזרת ל"שמור קשר" ברגע שהעריכה כבר לא זהה לדיווח שאושר */}
+            {saving ? 'שומר…' : (existingDuplicate && dupConfirmedId === existingDuplicate.id) ? 'שמור בכל זאת' : 'שמור קשר'}
           </button>
         </div>
 

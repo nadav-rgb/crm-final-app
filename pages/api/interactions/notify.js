@@ -60,15 +60,25 @@ export default async function handler(req, res) {
     // (notificationId(['paid-interaction-activist', id, activistId]) ב-lib/notificationDemo.js),
     // ולכן ה-upsert מאחד אותן — כאן מתווסף רק ה-Push שהדפדפן לא יכול לשלוח.
     // ⚠️ שינוי המחרוזת כאן בלי לשנות שם ייצור שתי שורות פעמון על אותו דיווח.
+    //
+    // מסלול "עצמי" בלבד: גם מנכ"ל לא יכול להפעיל אותו על קשר של פעיל אחר, כי אז ההתראה
+    // הייתה נשלחת למנכ"ל בשם הפעיל. (החריג ב-403 שלמעלה מיועד למסלולים לניהול.)
+    if (Number(interaction.activist_id) !== callerCode) {
+      return res.status(403).json({ error: 'self_payment הוא רק על הקשר שלך' });
+    }
+    // amount מגיע מהלקוח ומשמש לתצוגה בלבד — דוח התשלומים מחושב עצמאית מטבלת
+    // interactions, ולכן ערך שגוי כאן לא נוגע בכסף. ההתראה ממוענת לשולח עצמו.
     const numeric = Number(amount);
-    const amountText = Number.isFinite(numeric) && numeric > 0 ? `${numeric.toLocaleString()} ₪` : null;
+    if (!(Number.isFinite(numeric) && numeric > 0)) {
+      // דיווח שלא זיכה — שורת הפעמון שהדפדפן כתב מפרטת גם את *סיבת* אי-הזכאות,
+      // וכתיבה מכאן הייתה דורסת אותה בטקסט דל יותר. אין כאן חדשות שמצדיקות Push.
+      return res.status(200).json({ notified: [], reason: 'not payable — bell row from client is richer' });
+    }
     recipients = [{ activist_code: callerCode, name: activistName }];
-    title = amountText ? 'הדיווח נכנס לדוח התשלומים' : 'הדיווח נשמר';
-    body = amountText
-      ? `הקשר עם ${contactName} נשמר ונכנס לדוח התשלומים בסך ${amountText}.`
-      : `הקשר עם ${contactName} נשמר.`;
-    type = amountText ? 'paid_interaction' : 'interaction_saved';
-    priority = amountText ? 'high' : 'normal';
+    title = 'הדיווח נכנס לדוח התשלומים';
+    body = `הקשר עם ${contactName} נשמר ונכנס לדוח התשלומים בסך ${numeric.toLocaleString()} ₪.`;
+    type = 'paid_interaction';
+    priority = 'high';
     clientId = () => `paid-interaction-activist__${interaction.id}__${callerCode}`;
   } else {
     // amount הוא לתצוגה בלבד — דוח התשלומים מחושב עצמאית מטבלת interactions, לכן ערך שגוי
