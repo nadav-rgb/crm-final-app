@@ -51,11 +51,15 @@ export default async function handler(req, res) {
   // חלון הזמן נבדק **לכל שורה**, ולא רק על התאריך המאוחר ביותר. שורה עם תאריך עתידי
   // הייתה עוברת (`ageDays` שלילי אינו "> 2"), הופכת ל-lastDate, ומרעילה את הלקוח לצמיתות:
   // כל POST היה מייצר client_id חדש → Push חוזר ללא הגבלה לכל צוות הניהול.
+  // -1 ולא 0 בצד העתידי: `updateMitzvot` כותב את התאריך לפי שעון *הדפדפן*, ומכשיר
+  // שהשעון שלו מקדים חוצה חצות UTC לפני השרת. עם חסם 0 כזה מכשיר היה מאבד את ההתראה
+  // בשקט בכל שמירה. יום אחד קדימה עדיין מגביל תוקף ל-4 תאריכים אפשריים בלבד, כלומר
+  // ל-4 client_id — ההגברה נשארת סגורה.
   const inWindow = (iso) => {
     const t = Date.parse(`${iso}T00:00:00Z`);
     if (!Number.isFinite(t)) return false;
     const ageDays = Math.floor((Date.now() - t) / 86400000);
-    return ageDays >= 0 && ageDays <= MAX_AGE_DAYS;
+    return ageDays >= -1 && ageDays <= MAX_AGE_DAYS;
   };
 
   const history = Array.isArray(contact.mitzvot_history) ? contact.mitzvot_history : [];

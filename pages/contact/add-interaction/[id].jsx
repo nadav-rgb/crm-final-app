@@ -55,6 +55,10 @@ export default function AddInteractionPage() {
   // מחזיק את ה-id של הדיווח שאושר, ולא boolean: דגל בוליאני היה נשאר דלוק אחרי האישור
   // ומכבה את ההגנה לשארית הסשן, גם אחרי שהפעיל שינה לגמרי את מה שהוא כותב.
   const [dupConfirmedId, setDupConfirmedId] = useState(null);
+  // התוצאה שננעלה ברגע השמירה. חובה: addInteraction מכניס את השורה ל-store אופטימית,
+  // הקומפוננטה מתרנדרת מחדש, ואז הקשר שהרגע נשמר נספר כ"קשר קודם" מול עצמו — מסך
+  // ההצלחה היה מציג "✗ חרגת ממגבלת מפגשים עם לקוח זה" על מפגש שהמנוע כן שילם עליו.
+  const [savedResult, setSavedResult] = useState(null);
 
   if (!contact) {
     return <DesktopLayout title="הוסף קשר"><div style={{ padding: 40, color: '#aaa' }}>לקוח לא נמצא</div></DesktopLayout>;
@@ -252,6 +256,8 @@ export default function AddInteractionPage() {
     }
 
     setSaving(true);
+    // ננעל *לפני* השמירה, כשהחישוב עוד לא רואה את השורה החדשה כ"קודמת" של עצמה.
+    setSavedResult(payableCheck);
     // מסמן שהשורה כבר נחתה ב-DB. אם משהו *אחרי* השמירה נופל (התראה, בונוס, סיכום),
     // ההודעה חייבת לומר "נשמר" ולא "נסה שוב" — אחרת הפעיל מדווח פעם שנייה על מה
     // שכבר קיים, וזו בדיוק הכפילות שכל התיקון הזה נועד למנוע.
@@ -457,11 +463,13 @@ export default function AddInteractionPage() {
       <div style={{ textAlign: 'center', padding: '60px 20px' }}>
         <div style={{ fontSize: 56, marginBottom: 16 }}>✅</div>
         <h2 style={{ marginBottom: 8 }}>הקשר תועד!</h2>
-        {isAchdut && payableCheck && (
-          <div style={{ fontSize: 14, color: payableCheck.payable ? '#27ae60' : '#888', marginBottom: 8, fontWeight: 700 }}>
-            {payableCheck.payable
-              ? `✓ קשר מזכה בתשלום — ${payableCheck.amount} ₪`
-              : `✗ ${payableCheck.reason || 'קשר זה אינו מזכה בתשלום'}`}
+        {/* savedResult ולא payableCheck: אחרי השמירה הקשר החדש כבר ב-store, ו-payableCheck
+            היה סופר אותו כ"קשר קודם" מול עצמו ומדווח חריגה על מפגש ששולם. */}
+        {isAchdut && savedResult && (
+          <div style={{ fontSize: 14, color: savedResult.payable ? '#27ae60' : '#888', marginBottom: 8, fontWeight: 700 }}>
+            {savedResult.payable
+              ? `✓ קשר מזכה בתשלום — ${savedResult.amount} ₪`
+              : `✗ ${savedResult.reason || 'קשר זה אינו מזכה בתשלום'}`}
           </div>
         )}
         <p style={{ fontSize: 14, color: '#aaa', marginBottom: 28 }}>הקשר עם {contact.name} נשמר.</p>

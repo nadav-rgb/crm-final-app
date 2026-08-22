@@ -2,7 +2,7 @@
 // שימוש: node scripts/verify-payment-order.cjs
 // אין framework בדיקות בפרויקט — זה סקריפט node עצמאי, בדפוס scripts/verify-*.cjs.
 // עובד על נתונים סינתטיים בלבד: לא נוגע ב-Supabase ולא דורש .env.local.
-const { calcMonthlyPayment, calcConsultantDashboard, deriveMitzvotBonuses, comparePaymentOrder, paidBefore, DEFAULTS } = require('../lib/paymentCalc.js');
+const { calcMonthlyPayment, calcInteractionPayment, calcConsultantDashboard, deriveMitzvotBonuses, comparePaymentOrder, paidBefore, DEFAULTS } = require('../lib/paymentCalc.js');
 
 let failures = 0;
 function check(name, actual, expected) {
@@ -205,6 +205,35 @@ const JULY = { year: 2026, month: 6 }; // month 0-indexed
   const draft = { type: 'פרונטלי', quality: 'תורני', date: '2026-07-25', id: Number.MAX_SAFE_INTEGER };
   const before = paidBefore(draft, rows, many, DEFAULTS);
   check('paidBefore מחזיר רק את המזכים (14 מתוך 18 שדווחו)', before.length, paidFrontal);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// הקשר שהרגע נשמר לא יכול להיות "קשר קודם" של עצמו. addInteraction מכניס אותו
+// ל-store אופטימית והקומפוננטה מתרנדרת מחדש; אם התצוגה תחשב מחדש מול ה-store המעודכן,
+// מסך ההצלחה מדווח "חרגת" על מפגש שהמנוע כן שילם עליו. הטופס פותר את זה בכך שהוא
+// נועל את התוצאה *לפני* השמירה — הבדיקה כאן מתעדת את ההפרש שהנעילה מונעת.
+// ────────────────────────────────────────────────────────────────────────────
+{
+  const mk = (id, day) => ({ activist_id: 7, project_id: 1, id, contact_id: 1, type: 'פרונטלי',
+    quality: 'תורני', duration_minutes: 60, date: `2026-07-${String(day).padStart(2, '0')}` });
+  const five = Array.from({ length: 5 }, (_, k) => mk(700 + k, k + 1));       // 5 מפגשים קיימים
+  const sixth = mk(710, 6);                                                    // המפגש שנשמר עכשיו
+  const draft = { type: 'פרונטלי', quality: 'תורני', date: '2026-07-06', id: Number.MAX_SAFE_INTEGER };
+
+  const beforeSave = paidBefore(draft, five, contacts, DEFAULTS);
+  const locked = calcInteractionPayment({ type: 'פרונטלי', quality: 'תורני', duration_minutes: 60 },
+    beforeSave.filter(i => i.contact_id === 1), false, beforeSave, DEFAULTS);
+
+  const afterSave = paidBefore(draft, [...five, sixth], contacts, DEFAULTS);
+  const recomputed = calcInteractionPayment({ type: 'פרונטלי', quality: 'תורני', duration_minutes: 60 },
+    afterSave.filter(i => i.contact_id === 1), false, afterSave, DEFAULTS);
+
+  const engine = calcMonthlyPayment(7, [...five, sixth], contacts, [], [], DEFAULTS, new Set(), JULY);
+  const enginePaidSixth = engine.breakdown.filter(b => b.type === 'קשר').length === 6;
+
+  check('התוצאה שננעלה לפני השמירה תואמת למנוע', [locked.payable, enginePaidSixth], [true, true]);
+  check('חישוב מחדש *אחרי* השמירה היה מדווח חריגה — זה מה שהנעילה מונעת',
+    recomputed.payable, false);
 }
 
 console.log(failures === 0 ? '\nכל הבדיקות עברו.' : `\n${failures} בדיקות נכשלו.`);
