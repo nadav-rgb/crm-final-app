@@ -11,6 +11,7 @@ import { summarizeInteractionText } from '../../../lib/aiService';
 import { createPaymentInteractionNotifications, createDemoNotification } from '../../../lib/notificationDemo';
 import { notifyInteractionApi } from '../../../lib/notifyApi';
 import VoiceInput from '../../../components/VoiceInput';
+import ClientSearchSelect from '../../../components/ClientSearchSelect';
 
 const TODAY = new Date().toISOString().split('T')[0];
 
@@ -448,18 +449,21 @@ export default function AddInteractionPage() {
                 onChange={e => set('participant_count', e.target.value)} />
               {errors.participant_count && <span className="error-msg">{errors.participant_count}</span>}
 
-              {/* משתתפים מהלקוחות שלך — שורות בחירה מהרשימה */}
+              {/* משתתפים מהלקוחות שלך — בורר עם חיפוש (ClientSearchSelect).
+                  היה כאן <select> ילידי: במובייל הוא נפתח כגלגלת שקשה לסרוק, ובלי חיפוש
+                  קל להחמיץ שם ברשימה ארוכה (דיווח מוטי גלעד, 2026-07-29). */}
               <div style={{ marginTop: 14 }}>
                 <label className="form-label">משתתפים מהלקוחות שלך <span style={{ color: '#999', fontWeight: 400 }}>(לא חובה)</span></label>
+                <div style={{ fontSize: 12, color: '#999', marginBottom: 8, lineHeight: 1.5 }}>
+                  כאן מופיעים הלקוחות שלך בלבד. מי שאינו ברשימה — רשום אותו בשדה "משתתפים נוספים" למטה.
+                </div>
                 {form.participant_clients.map((val, idx) => (
                   <div key={idx} style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-                    <select className="form-select" value={val}
-                      onChange={e => setParticipantRow('participant_clients', idx, e.target.value)}>
-                      <option value="">בחר לקוח מהרשימה...</option>
-                      {clientOptions
-                        .filter(c => String(c.id) === String(val) || !form.participant_clients.includes(String(c.id)))
-                        .map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
+                    <ClientSearchSelect
+                      value={val}
+                      onChange={v => setParticipantRow('participant_clients', idx, v)}
+                      options={clientOptions.filter(c => String(c.id) === String(val) || !form.participant_clients.includes(String(c.id)))}
+                    />
                     <button type="button" aria-label="הסר משתתף" onClick={() => removeParticipantRow('participant_clients', idx)}
                       style={{ border: '1.5px solid #e8e8e8', background: '#fafafa', color: '#c0392b', borderRadius: 10, width: 34, height: 34, cursor: 'pointer', fontSize: 15, lineHeight: 1, flexShrink: 0 }}>✕</button>
                   </div>
@@ -470,7 +474,7 @@ export default function AddInteractionPage() {
 
               {/* משתתפים נוספים שאינם ברשימת הלקוחות — טקסט חופשי */}
               <div style={{ marginTop: 14 }}>
-                <label className="form-label">משתתפים נוספים (לא מהלקוחות) <span style={{ color: '#999', fontWeight: 400 }}>(לא חובה)</span></label>
+                <label className="form-label">משתתפים נוספים — כל מי שאינו ברשימת הלקוחות שלך <span style={{ color: '#999', fontWeight: 400 }}>(לא חובה)</span></label>
                 {form.participant_external.map((val, idx) => (
                   <div key={idx} style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
                     <input type="text" className="form-input" placeholder="שם המשתתף" value={val}
