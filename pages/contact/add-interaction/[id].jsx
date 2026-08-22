@@ -50,6 +50,9 @@ export default function AddInteractionPage() {
   // לחיצה חוזרת בזמן ההמתנה יצרה שני דיווחים על אותו קשר (איתי רוזן, 14.8 14:53,
   // הפרש 2.9 שניות בין שתי השורות. דיווח מוטי גלעד).
   const [saving,    setSaving]    = useState(false);
+  // אישור-שכפול: הפעיל לחץ "שמור" על דיווח שנראה זהה לדיווח קיים. מנעול saving לא
+  // מכסה את המקרה הזה — האפליקציה נתקעה, הפעיל חזר למסך ודיווח שוב מטופס חדש.
+  const [dupConfirm, setDupConfirm] = useState(false);
 
   if (!contact) {
     return <DesktopLayout title="הוסף קשר"><div style={{ padding: 40, color: '#aaa' }}>לקוח לא נמצא</div></DesktopLayout>;
@@ -114,6 +117,19 @@ export default function AddInteractionPage() {
         paymentConfig
       )
     : null;
+
+  // דיווח קיים שנראה זהה לזה שבטופס: אותו לקוח, אותו תאריך, אותו סוג/איכות ואותו תיאור.
+  // התיאור הוא שדה חובה וטקסט חופשי — שני דיווחים אמיתיים על אותו לקוח באותו יום כמעט
+  // לעולם לא יישאו בדיוק את אותו טקסט, ולכן זה סימן מובהק לשכפול ולא לפעילות כפולה.
+  const existingDuplicate = interactions.find(i =>
+    Number(i.activist_id) === Number(currentUser?.id) &&
+    Number(i.contact_id) === contactId &&
+    i.date === form.date &&
+    i.type === form.type &&
+    (i.quality || '') === (form.quality || '') &&
+    (i.description || '').trim() === form.description.trim() &&
+    form.description.trim() !== ''
+  );
 
   // חריגה מתקרת-ערוץ חודשית — נגזרת ישירות מהחלטת המנוע (payableCheck), כך שתמיד עקבית איתו.
   // המנוע מחזיר reason עם המילה "חודשית" / "רב-משתתפים" כשהקשר נדחה בגלל תקרת ערוץ.
@@ -221,6 +237,17 @@ export default function AddInteractionPage() {
     if (saving) return; // הדיווח כבר בדרך — לחיצה חוזרת לא יוצרת שורה שנייה
     const e = validate();
     if (Object.keys(e).length > 0) { setErrors(e); return; }
+
+    // שכבת הגנה שנייה מפני דיווח כפול. סריקה על נתוני אמת (23.8) מצאה 6 קבוצות
+    // כפולות ו-10 שורות עודפות אצל 5 פעילים, כולן בהפרש 0.3–20 שניות — כלומר לחיצות
+    // חוזרות על כפתור שלא הגיב. אחת מהן היא מפגש רב-משתתפים ×3 = 900 ₪ במקום 300.
+    // מנעול saving מכסה לחיצה כפולה באותו מסך; זה מכסה גם דיווח חוזר מטופס חדש.
+    if (!dupConfirm && existingDuplicate) {
+      setDupConfirm(true);
+      setToast({ kind: 'warn', text: 'כבר קיים דיווח זהה על לקוח זה באותו תאריך, עם אותו תיאור. אם זה באמת דיווח נוסף — לחץ "שמור קשר" שוב.' });
+      return;
+    }
+
     setSaving(true);
 
     // צבירת הודעות התראה — כדי שחריגת-תקרה ובונוס באותו דיווח לא ידרסו זה את זה.
@@ -617,7 +644,7 @@ export default function AddInteractionPage() {
           {/* disabled בזמן השמירה — לחיצה כפולה יצרה שני דיווחים על אותו קשר (14.8) */}
           <button className="btn btn-primary" style={{ flex: 2, opacity: saving ? 0.6 : 1, cursor: saving ? 'wait' : 'pointer' }}
             onClick={handleSubmit} disabled={saving}>
-            {saving ? 'שומר…' : 'שמור קשר'}
+            {saving ? 'שומר…' : dupConfirm ? 'שמור בכל זאת' : 'שמור קשר'}
           </button>
         </div>
 
