@@ -148,11 +148,14 @@ async function loadContactsFromSupabase(currentUser) {
   return { data: Array.isArray(data) ? data : [], error: null };
 }
 
+// מחזירה { error } — הקורא (updateMitzvot) חייב לדעת אם השמירה נחתה לפני שהוא מציג
+// "עודכן בהצלחה" ולפני שהוא מפעיל התראה שקוראת את השורה מה-DB.
 async function updateContactFieldsInSupabase(contactId, fields) {
-  if (contactId === undefined || contactId === null) return;
+  if (contactId === undefined || contactId === null) return { error: new Error('Missing contact id') };
   const supabase = getSupabaseClient();
   const { error } = await supabase.from('contacts').update(fields).eq('id', contactId);
   if (error) console.error('Failed to update contact fields', error);
+  return { error: error || null };
 }
 
 const PROJECT_NAMES = { 1:'אחדות יהודית', 2:'נעים להכיר', 3:'שבת מכל הסיבות', 4:'נפש יהודי' };
@@ -369,6 +372,13 @@ export function CrmProvider({ children }) {
     // אז ההמתנה לא מורגשת ב-UI אבל מאפשרת לקורא לחכות לשורה לפני הפעלת התראות.
     const insertResult = await insertInteractionToSupabase(newInteraction);
 
+    // גלגול-אחורה של העדכון האופטימי: בלעדיו קשר שלא נשמר נשאר על המסך ובמוני החודש
+    // עד רענון, והפעיל רואה דיווח שלא קיים ב-DB.
+    if (insertResult.error) {
+      setInteractions(prev => prev.filter(i => i.id !== newInteraction.id));
+      return insertResult;
+    }
+
     const interactionDate = new Date(date);
     const today = new Date(); today.setHours(0,0,0,0);
     const diffDays = Math.max(0, Math.floor((today - interactionDate) / 86400000));
@@ -495,7 +505,10 @@ export function CrmProvider({ children }) {
     }
 
     const fields = { mitzvot: newMitzvot, mitzvot_history: history };
-    await updateContactFieldsInSupabase(contactId, fields);
+    // ה-state מתעדכן רק אחרי כתיבה מוצלחת: אחרת המסך מראה רמה חדשה שלא קיימת ב-DB,
+    // ושמירה חוזרת מייצרת שורת היסטוריה שנייה על אותה עליה — כלומר בונוס כפול.
+    const { error } = await updateContactFieldsInSupabase(contactId, fields);
+    if (error) return { error };
     setContacts(prev => prev.map(c => c.id === contactId ? { ...c, ...fields } : c));
     return { error: null };
   }

@@ -21,6 +21,10 @@ export default function UpdateMitzvotPage() {
   const mitzvotList = contact.gender==='male' ? CONFIG.mitzvotMale : contact.gender==='female' ? CONFIG.mitzvotFemale : CONFIG.mitzvotMale;
   const [mitzvot, setMitzvot] = useState({...(contact.mitzvot||{})});
   const [saved,   setSaved]   = useState(false);
+  // מנעול שמירה + הודעת כשל. בלעדיהם לחיצה כפולה יכולה לרשום את אותה עליה פעמיים
+  // ב-mitzvot_history, ושמירה שנכשלה הציגה "הסרגל עודכן!" בלי שנשמר דבר.
+  const [saving,  setSaving]  = useState(false);
+  const [saveErr, setSaveErr] = useState('');
 
   const changes = mitzvotList.reduce((acc,m)=>{
     const oldVal = Number(contact.mitzvot?.[m]??0);
@@ -32,8 +36,12 @@ export default function UpdateMitzvotPage() {
   // חייב להישאר זהה לגזירת mitzvotBonuses ב-lib/CrmStore.jsx — זה מה שנכנס לדוח בפועל.
   const totalBonus = changes.length * MITZVOT_BONUS_PER_LEVEL;
 
-  function handleSave() {
-    updateMitzvot(contactId, currentUser.id, mitzvot);
+  async function handleSave() {
+    if (saving) return;
+    setSaving(true);
+    setSaveErr('');
+    const { error } = await updateMitzvot(contactId, currentUser.id, mitzvot);
+    if (error) { setSaveErr(error.message || 'השמירה נכשלה. נסה שוב.'); setSaving(false); return; }
     setSaved(true);
   }
 
@@ -86,9 +94,15 @@ export default function UpdateMitzvotPage() {
             <div style={{fontSize:15,fontWeight:700,color:'#27ae60',marginTop:8,paddingTop:8,borderTop:'0.5px solid #b2dfcc'}}>סה"כ בונוס: {totalBonus} ₪</div>
           </div>
         )}
+        {saveErr && (
+          <div style={{background:'#fff0f0',border:'0.5px solid #e0a0a0',borderRadius:12,padding:'12px 16px',color:'#c0392b',fontSize:13,marginBottom:14}}>
+            {saveErr}
+          </div>
+        )}
         <div style={{display:'flex',gap:10,marginBottom:20}}>
           <Link href={`/contact/${contactId}`} className="btn" style={{flex:1,textAlign:'center',textDecoration:'none'}}>ביטול</Link>
-          <button className="btn btn-primary" style={{flex:2}} onClick={handleSave}>שמור עדכון</button>
+          <button className="btn btn-primary" style={{flex:2,opacity:saving?0.6:1,cursor:saving?'wait':'pointer'}}
+            onClick={handleSave} disabled={saving}>{saving ? 'שומר…' : 'שמור עדכון'}</button>
         </div>
       </div>
     </DesktopLayout>

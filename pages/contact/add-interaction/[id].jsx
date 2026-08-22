@@ -14,11 +14,21 @@ import VoiceInput from '../../../components/VoiceInput';
 
 const TODAY = new Date().toISOString().split('T')[0];
 
+// הוספת ימים לתאריך ISO (YYYY-MM-DD) בלי להיגרר לאזור-זמן: בונים את התאריך מחלקיו
+// ולא מ-new Date(iso), שמתפרש כ-UTC וקופץ יום אחורה בישראל.
+function addDaysIso(iso, days) {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(y, m - 1, d + days);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+}
+
 const EMPTY = {
   type: '', quality: '', outcome: 'חיובי', date: TODAY,
   long_enough: null,
   notes: '', description: '', ai_summary: '',
-  next_action: '', next_action_date: '',
+  // ברירת מחדל: שבוע מהיום. מתעדכנת אוטומטית כשמשנים את תאריך הקשר (setDate).
+  next_action: '', next_action_date: addDaysIso(TODAY, 7),
   multi: false, participant_count: '', // מפגש רב משתתפים — קומפוננטה נפרדת
   participant_clients: [], participant_external: [], // שמות משתתפים — רב משתתפים (עדכונים אימיוטביליים בלבד!)
 };
@@ -35,6 +45,10 @@ export default function AddInteractionPage() {
   const [errors,    setErrors]    = useState({});
   const [success,   setSuccess]   = useState(false);
   const [toast,     setToast]     = useState(null); // התראת תקרה/בונוס
+  // מנעול שליחה. handleSubmit הוא async עם כמה await, והכפתור נשאר לחיץ עד setSuccess —
+  // לחיצה חוזרת בזמן ההמתנה יצרה שני דיווחים על אותו קשר (איתי רוזן, 14.8 14:53,
+  // הפרש 2.9 שניות בין שתי השורות. דיווח מוטי גלעד).
+  const [saving,    setSaving]    = useState(false);
 
   if (!contact) {
     return <DesktopLayout title="הוסף קשר"><div style={{ padding: 40, color: '#aaa' }}>לקוח לא נמצא</div></DesktopLayout>;
@@ -110,6 +124,20 @@ export default function AddInteractionPage() {
     setErrors(prev => ({ ...prev, [field]: undefined }));
   }
 
+  // תאריך הקשר. תאריך היעד נגזר ממנו — שבוע קדימה, הקצב המקובל אצל הפעילים — ולא
+  // מ"היום". פעיל שמדווח באיחור על קשר מתחילת החודש קיבל טווח שמתחיל היום, ולכן
+  // "תאריך היעד הבא הוא כבר היה" (דיווח שירה שם טוב, 2026-07-30).
+  function setDate(value) {
+    setForm(prev => {
+      const next = { ...prev, date: value };
+      if (value && (!prev.next_action_date || prev.next_action_date === addDaysIso(prev.date, 7))) {
+        next.next_action_date = addDaysIso(value, 7);
+      }
+      return next;
+    });
+    setErrors(prev => ({ ...prev, date: undefined, next_action_date: undefined }));
+  }
+
   function handleTypeChange(t) {
     const wasShabbat = form.type === 'אירוח שבת';
     set('type', t);
@@ -181,12 +209,18 @@ export default function AddInteractionPage() {
     if (isAchdut && !form.long_enough)           e.long_enough  = 'נא לציין משך הקשר';
     if (!form.next_action?.trim())               e.next_action  = 'נא לתאר את הפעולה הבאה';
     if (!form.next_action_date)                  e.next_action_date = 'נא לבחור תאריך יעד';
+    // הגבול היחיד: תאריך היעד לא מקדים את הקשר עצמו. תאריך שכבר עבר מותר בכוונה —
+    // דיווח מאוחר על קשר מתחילת החודש שקבע פעולה שבועית (דיווח שירה שם טוב, 30.7).
+    else if (form.date && form.next_action_date < form.date)
+                                                 e.next_action_date = 'תאריך היעד לא יכול להקדים את תאריך הקשר';
     return e;
   }
 
   async function handleSubmit() {
+    if (saving) return; // הדיווח כבר בדרך — לחיצה חוזרת לא יוצרת שורה שנייה
     const e = validate();
     if (Object.keys(e).length > 0) { setErrors(e); return; }
+    setSaving(true);
 
     // צבירת הודעות התראה — כדי שחריגת-תקרה ובונוס באותו דיווח לא ידרסו זה את זה.
     const messages = [];
@@ -195,6 +229,7 @@ export default function AddInteractionPage() {
     if (monthlyCapExceeded) {
       if (paymentConfig.CAP_EXCEED_BLOCKS) {
         setToast({ kind: 'block', text: `שים לב: עברת את גג המפגשים המאושר לחודש זה עבור סוג פעילות זה. הדיווח נחסם.` });
+        setSaving(false); // נחסם — הטופס נשאר פתוח ולחיץ לתיקון
         return; // חסימה — לפי דגל הקונפיג
       }
       messages.push({ kind: 'warn', text: `שים לב: עברת את גג המפגשים המאושר לחודש זה עבור סוג פעילות זה. הקשר יישמר אך לא יזכה בתשלום.` });
@@ -243,6 +278,14 @@ export default function AddInteractionPage() {
     // await: ההתראות בצד-שרת קוראות את השורה מה-DB, אז היא חייבת לנחות קודם.
     // ה-state כבר עודכן בתוך addInteraction לפני ה-await — המסך לא ממתין.
     const { error: saveError } = await addInteraction(interactionPayload);
+
+    // כשל שמירה — עד היום המסך הציג "הקשר תועד!" גם כשה-insert נכשל, והפעיל
+    // חשב שדיווח. עכשיו הטופס נשאר פתוח עם הודעה, והמנעול נפתח לניסיון חוזר.
+    if (saveError) {
+      setToast({ kind: 'block', text: `הדיווח לא נשמר: ${saveError.message || 'שגיאת רשת'}. הנתונים נשארו בטופס — נסה שוב.` });
+      setSaving(false);
+      return;
+    }
 
     // מפגש רב-משתתפים — שורת קשר נגזרת לכל לקוח נוסף שהשתתף, כדי שגם אצלו הקשר ייספר
     // ולא יידרדר ל"על סף ניתוק". התשלום לא מושפע: המפגש מזכה פעם אחת בלבד (paymentCalc).
@@ -521,7 +564,7 @@ export default function AddInteractionPage() {
         <div style={card}>
           <label className="form-label">תאריך <span style={{ color: '#e24b4a' }}>*</span></label>
           <input type="date" className={`form-input ${errors.date ? 'form-error' : ''}`}
-            value={form.date} max={TODAY} onChange={e => set('date', e.target.value)} />
+            value={form.date} max={TODAY} onChange={e => setDate(e.target.value)} />
           {errors.date && <span className="error-msg">{errors.date}</span>}
         </div>
 
@@ -544,15 +587,26 @@ export default function AddInteractionPage() {
             style={{ marginBottom: 10 }} />
           {errors.next_action && <span className="error-msg">{errors.next_action}</span>}
           <label className="form-label">תאריך יעד <span style={{ color: '#e24b4a' }}>*</span></label>
+          {/* min = תאריך הקשר, לא "היום": קשר שדווח באיחור צריך תאריך-יעד יחסי אליו
+              (דיווח שירה שם טוב, 2026-07-30 — "בדכ הקשר הוא שבועי"). */}
           <input type="date" className={`form-input ${errors.next_action_date ? 'form-error' : ''}`}
-            value={form.next_action_date} min={TODAY}
+            value={form.next_action_date} min={form.date}
             onChange={e => set('next_action_date', e.target.value)} />
           {errors.next_action_date && <span className="error-msg">{errors.next_action_date}</span>}
+          {form.next_action_date && form.next_action_date < TODAY && (
+            <span style={{ fontSize: 12, color: '#d68910', display: 'block', marginTop: 4 }}>
+              התאריך כבר עבר — התזכורת תופיע מיד.
+            </span>
+          )}
         </div>
 
         <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
-          <button className="btn" style={{ flex: 1 }} onClick={() => setForm(EMPTY)}>נקה</button>
-          <button className="btn btn-primary" style={{ flex: 2 }} onClick={handleSubmit}>שמור קשר</button>
+          <button className="btn" style={{ flex: 1 }} onClick={() => setForm(EMPTY)} disabled={saving}>נקה</button>
+          {/* disabled בזמן השמירה — לחיצה כפולה יצרה שני דיווחים על אותו קשר (14.8) */}
+          <button className="btn btn-primary" style={{ flex: 2, opacity: saving ? 0.6 : 1, cursor: saving ? 'wait' : 'pointer' }}
+            onClick={handleSubmit} disabled={saving}>
+            {saving ? 'שומר…' : 'שמור קשר'}
+          </button>
         </div>
 
       </div>
