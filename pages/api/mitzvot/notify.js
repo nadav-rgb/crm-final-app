@@ -48,21 +48,28 @@ export default async function handler(req, res) {
 
   // העליות מהשמירה האחרונה. כל שדה שנכנס לטקסט ההתראה מאומת כאן — שם המצווה מול
   // הרשימה הלבנה, הרמות מול הסולם 0-4, והתאריך מול חלון של יומיים.
+  // חלון הזמן נבדק **לכל שורה**, ולא רק על התאריך המאוחר ביותר. שורה עם תאריך עתידי
+  // הייתה עוברת (`ageDays` שלילי אינו "> 2"), הופכת ל-lastDate, ומרעילה את הלקוח לצמיתות:
+  // כל POST היה מייצר client_id חדש → Push חוזר ללא הגבלה לכל צוות הניהול.
+  const inWindow = (iso) => {
+    const t = Date.parse(`${iso}T00:00:00Z`);
+    if (!Number.isFinite(t)) return false;
+    const ageDays = Math.floor((Date.now() - t) / 86400000);
+    return ageDays >= 0 && ageDays <= MAX_AGE_DAYS;
+  };
+
   const history = Array.isArray(contact.mitzvot_history) ? contact.mitzvot_history : [];
   const rises = history.filter(h =>
     h && KNOWN_MITZVOT.has(h.mitzva) &&
     LEVELS.has(Number(h.from ?? 0)) && LEVELS.has(Number(h.to ?? 0)) &&
     Number(h.to) > Number(h.from) &&
-    /^\d{4}-\d{2}-\d{2}$/.test(String(h.date || ''))
+    /^\d{4}-\d{2}-\d{2}$/.test(String(h.date || '')) &&
+    inWindow(h.date)
   );
-  if (rises.length === 0) return res.status(200).json({ notified: [], reason: 'no valid rise' });
+  if (rises.length === 0) return res.status(200).json({ notified: [], reason: 'no recent valid rise' });
 
-  // התאריך המאוחר ביותר בהיסטוריה — לא "האחרון במערך": סדר האיברים אינו מובטח.
+  // התאריך המאוחר ביותר מבין הקבילות — לא "האחרון במערך": סדר האיברים אינו מובטח.
   const lastDate = rises.reduce((max, h) => (h.date > max ? h.date : max), rises[0].date);
-  const ageDays = Math.floor((Date.now() - Date.parse(`${lastDate}T00:00:00Z`)) / 86400000);
-  if (!Number.isFinite(ageDays) || ageDays > MAX_AGE_DAYS) {
-    return res.status(200).json({ notified: [], reason: 'rise too old' });
-  }
   const latest = rises.filter(h => h.date === lastDate).slice(0, MAX_LISTED);
 
   const projectId   = Number(contact.project_id) || 1;

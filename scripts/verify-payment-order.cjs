@@ -2,7 +2,7 @@
 // שימוש: node scripts/verify-payment-order.cjs
 // אין framework בדיקות בפרויקט — זה סקריפט node עצמאי, בדפוס scripts/verify-*.cjs.
 // עובד על נתונים סינתטיים בלבד: לא נוגע ב-Supabase ולא דורש .env.local.
-const { calcMonthlyPayment, deriveMitzvotBonuses, comparePaymentOrder, DEFAULTS } = require('../lib/paymentCalc.js');
+const { calcMonthlyPayment, calcConsultantDashboard, deriveMitzvotBonuses, comparePaymentOrder, paidBefore, DEFAULTS } = require('../lib/paymentCalc.js');
 
 let failures = 0;
 function check(name, actual, expected) {
@@ -172,6 +172,39 @@ const JULY = { year: 2026, month: 6 }; // month 0-indexed
         Math.sign(comparePaymentOrder(a, c)) > 0) violations++;
   }
   check(`סדר: טרנזיטיביות (${pool.length ** 3} שלשות)`, violations, 0);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// שלושת המסכים חייבים להסכים: המנוע (calcMonthlyPayment), מוני הדשבורד
+// (calcConsultantDashboard) והתצוגה המקדימה בטופס (paidBefore). כשהתקרה עברה לספור
+// רק מפגשים ששולמו, ספירה עצמאית בשני האחרונים החלה לסתור את המנוע: הדשבורד הציג
+// "חריגה" והטופס הזהיר "לא יזוכה" — בזמן שהמנוע עוד שילם על המפגש הבא.
+// ────────────────────────────────────────────────────────────────────────────
+{
+  // לקוח 1 עם 10 פרונטליים תורניים (רק 6 מזכים — תקרת לקוח), ועוד 8 לקוחות עם אחד כל אחד.
+  // סה"כ 18 מפגשים שדווחו, 14 מזכים — כלומר עוד משבצת פנויה מתוך 15.
+  const rows = [];
+  for (let k = 0; k < 10; k++) {
+    rows.push({ activist_id: 7, project_id: 1, id: 300 + k, contact_id: 1, type: 'פרונטלי',
+      quality: 'תורני', duration_minutes: 60, date: `2026-07-${String(k + 1).padStart(2, '0')}` });
+  }
+  for (let k = 0; k < 8; k++) {
+    rows.push({ activist_id: 7, project_id: 1, id: 400 + k, contact_id: 10 + k, type: 'פרונטלי',
+      quality: 'תורני', duration_minutes: 60, date: `2026-07-${String(k + 11).padStart(2, '0')}` });
+  }
+  const many = Array.from({ length: 20 }, (_, k) => ({ id: k + 1, name: `לקוח ${k + 1}` }));
+  const dash = calcConsultantDashboard(7, rows, many, [], [], DEFAULTS, new Set(), JULY);
+  const paidFrontal = calcMonthlyPayment(7, rows, many, [], [], DEFAULTS, new Set(), JULY)
+    .breakdown.filter(b => b.type === 'קשר').length;
+
+  check('מוני הדשבורד סופרים מה ששולם, לא מה שדווח', dash.counters.frontal.done, paidFrontal);
+  check('מונה הדשבורד לא מציג "חריגה" בזמן שיש עוד משבצת',
+    dash.counters.frontal.done < dash.counters.frontal.cap, true);
+
+  // התצוגה המקדימה: מפגש חדש מול לקוח חדש, כשעדיין יש משבצת פנויה — חייב לצאת מזכה.
+  const draft = { type: 'פרונטלי', quality: 'תורני', date: '2026-07-25', id: Number.MAX_SAFE_INTEGER };
+  const before = paidBefore(draft, rows, many, DEFAULTS);
+  check('paidBefore מחזיר רק את המזכים (14 מתוך 18 שדווחו)', before.length, paidFrontal);
 }
 
 console.log(failures === 0 ? '\nכל הבדיקות עברו.' : `\n${failures} בדיקות נכשלו.`);

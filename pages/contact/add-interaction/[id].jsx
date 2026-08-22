@@ -5,7 +5,7 @@ import Link from 'next/link';
 import CONFIG from '../../../data/config';
 import { useCrm } from '../../../lib/CrmStore';
 import { useAuth } from '../../../lib/AuthStore';
-import { calcInteractionPayment, comparePaymentOrder, PAID_PROJECT_IDS } from '../../../lib/paymentCalc';
+import { calcInteractionPayment, paidBefore, PAID_PROJECT_IDS } from '../../../lib/paymentCalc';
 import DesktopLayout from '../../../components/DesktopLayout';
 import { summarizeInteractionText } from '../../../lib/aiService';
 import { createPaymentInteractionNotifications, createDemoNotification } from '../../../lib/notificationDemo';
@@ -90,13 +90,14 @@ export default function AddInteractionPage() {
   // מאז 2026-08 המנוע מקצה מכסה לפי ערך ולא לפי תאריך, ולכן "קודם" נגזר מאותו comparator
   // ולא מהשוואת תאריכים. הטיוטה מקבלת id מקסימלי כדי שתיקבע אחרונה בשוויון מלא.
   const draft = { type: form.type, quality: form.quality, date: form.date, id: Number.MAX_SAFE_INTEGER };
-  const isPrevious = i =>
-    i.activist_id === currentUser?.id &&
-    PAID_PROJECT_IDS.includes(Number(i.project_id)) &&
-    i.date?.slice(0, 7) === currentMonthKey &&
-    comparePaymentOrder(i, draft, paymentConfig) < 0;
-  const previousContactMonthly  = interactions.filter(i => isPrevious(i) && i.contact_id === contactId);
-  const previousActivistMonthly = interactions.filter(isPrevious);
+  const myMonthly = interactions.filter(i =>
+    i.activist_id === currentUser?.id && i.date?.slice(0, 7) === currentMonthKey);
+  // paidBefore מריץ את לולאת ההקצאה של המנוע עצמו ומחזיר רק את הקשרים ש*זוכו* לפני
+  // הטיוטה. סינון ידני כאן תמיד יסטה מהמנוע ברגע שכללי התקרה משתנים — וזה מה שקרה:
+  // ספירה של כל הדיווחים (גם אלה שנדחו) הזהירה "חרגת" על קשר שהמנוע כן משלם עליו,
+  // ועם CAP_EXCEED_BLOCKS דלוק אפילו חסמה אותו לגמרי.
+  const previousActivistMonthly = paidBefore(draft, myMonthly, contacts, paymentConfig);
+  const previousContactMonthly  = previousActivistMonthly.filter(i => i.contact_id === contactId);
   const isShabbat = form.type === 'אירוח שבת';
   // "רב משתתפים" עבר לקומפוננטה נפרדת (toggleMulti) — לא מוצג עוד כאיכות רגילה כדי למנוע כפילות.
   const qualityOptions = CONFIG.interactionQuality;
@@ -402,12 +403,14 @@ export default function AddInteractionPage() {
         }
       }
 
-      // הצגת התראה משולבת (בונוס גובר ויזואלית; חריגת-תקרה מצורפת אם קיימת).
+      // הצגת התראה משולבת. בונוס גובר ויזואלית, ואחריו **כל** האזהרות — לא רק הראשונה:
+      // דיווח יכול לצבור גם חריגת-תקרה וגם כשל ברישום משתתפים, ואזהרה שנבלעת מחזירה
+      // בדיוק את הכשל השקט שהיא נועדה להסיר.
       if (messages.length > 0) {
         const bonusMsg = messages.find(m => m.kind === 'bonus');
-        const warnMsg  = messages.find(m => m.kind === 'warn');
-        if (bonusMsg && warnMsg) setToast({ kind: 'bonus', text: `${bonusMsg.text}\n${warnMsg.text}` });
-        else setToast(messages[0]);
+        const warns    = messages.filter(m => m.kind === 'warn');
+        const ordered  = [...(bonusMsg ? [bonusMsg] : []), ...warns];
+        setToast({ kind: bonusMsg ? 'bonus' : 'warn', text: ordered.map(m => m.text).join('\n') });
       }
 
       setSuccess(true);
