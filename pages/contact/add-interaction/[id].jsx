@@ -251,9 +251,12 @@ export default function AddInteractionPage() {
     }
 
     setSaving(true);
+    // מסמן שהשורה כבר נחתה ב-DB. אם משהו *אחרי* השמירה נופל (התראה, בונוס, סיכום),
+    // ההודעה חייבת לומר "נשמר" ולא "נסה שוב" — אחרת הפעיל מדווח פעם שנייה על מה
+    // שכבר קיים, וזו בדיוק הכפילות שכל התיקון הזה נועד למנוע.
+    let rowSaved = false;
     // try/finally: בלי זה, throw כלשהו (למשל fetch שנקטע באמצע ה-insert) משאיר את
     // saving=true לנצח — שני הכפתורים disabled, הטופס מת, והפעיל מרענן ומדווח שוב.
-    // זה בדיוק הדיווח הכפול שהמנעול נועד למנוע.
     try {
 
       // צבירת הודעות התראה — כדי שחריגת-תקרה ובונוס באותו דיווח לא ידרסו זה את זה.
@@ -318,6 +321,7 @@ export default function AddInteractionPage() {
         setToast({ kind: 'block', text: `הדיווח לא נשמר: ${saveError.message || 'שגיאת רשת'}. הנתונים נשארו בטופס — נסה שוב.` });
         return;
       }
+      rowSaved = true;
 
       // מפגש רב-משתתפים — שורת קשר נגזרת לכל לקוח נוסף שהשתתף, כדי שגם אצלו הקשר ייספר
       // ולא יידרדר ל"על סף ניתוק". התשלום לא מושפע: המפגש מזכה פעם אחת בלבד (paymentCalc).
@@ -408,7 +412,14 @@ export default function AddInteractionPage() {
 
       setSuccess(true);
     } catch (err) {
-      setToast({ kind: 'block', text: `שמירת הדיווח נכשלה: ${err?.message || 'שגיאה לא צפויה'}. הנתונים נשארו בטופס — נסה שוב.` });
+      if (rowSaved) {
+        // הקשר כבר ב-DB; מה שנפל הוא שלב שאחריו (התראה/בונוס/סיכום). מציגים את מסך
+        // ההצלחה, כי "נסה שוב" כאן היה מייצר דיווח כפול.
+        console.error('הקשר נשמר, אבל שלב אחרי השמירה נכשל', err);
+        setSuccess(true);
+      } else {
+        setToast({ kind: 'block', text: `שמירת הדיווח נכשלה: ${err?.message || 'שגיאה לא צפויה'}. הנתונים נשארו בטופס — נסה שוב.` });
+      }
     } finally {
       setSaving(false);
     }
