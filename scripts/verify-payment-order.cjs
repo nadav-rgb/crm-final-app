@@ -2,7 +2,7 @@
 // שימוש: node scripts/verify-payment-order.cjs
 // אין framework בדיקות בפרויקט — זה סקריפט node עצמאי, בדפוס scripts/verify-*.cjs.
 // עובד על נתונים סינתטיים בלבד: לא נוגע ב-Supabase ולא דורש .env.local.
-const { calcMonthlyPayment, DEFAULTS } = require('../lib/paymentCalc.js');
+const { calcMonthlyPayment, deriveMitzvotBonuses, DEFAULTS } = require('../lib/paymentCalc.js');
 
 let failures = 0;
 function check(name, actual, expected) {
@@ -38,20 +38,15 @@ const JULY = { year: 2026, month: 6 }; // month 0-indexed
 
 // ────────────────────────────────────────────────────────────────────────────
 // דיווח #3 (מוטי גלעד, 2026-08-02) — בונוס מצוות שולם על כל רמה, גם כשהעליה
-// נרשמה בשמירה אחת. חוזה הגזירה כאן חייב להיות זהה ל-lib/CrmStore.jsx.
+// נרשמה בשמירה אחת. נבדק מול deriveMitzvotBonuses עצמה — אותה פונקציה שהאפליקציה
+// וסקריפטי האימות צורכים, לא עותק של הלוגיקה.
 // ────────────────────────────────────────────────────────────────────────────
-function deriveMitzvotBonuses(contact) {
-  if (!contact.activist_id || !Array.isArray(contact.mitzvot_history)) return [];
-  return contact.mitzvot_history
-    .filter(h => h && h.mitzva && Number(h.to ?? 0) > Number(h.from ?? 0))
-    .map(h => ({ activist_id: contact.activist_id, contact_id: contact.id, contactName: contact.name }));
-}
 {
   const jumper = {
     id: 9, name: 'קופץ', activist_id: 7,
     mitzvot_history: [{ mitzva: 'ציצית', from: 0, to: 2, date: '2026-07-05' }],
   };
-  check('#3 קפיצה של 2 רמות = בונוס אחד', deriveMitzvotBonuses(jumper).length, 1);
+  check('#3 קפיצה של 2 רמות = בונוס אחד', deriveMitzvotBonuses([jumper]).length, 1);
 
   const baseline = {
     id: 10, name: 'תיעוד מצב', activist_id: 7,
@@ -61,14 +56,14 @@ function deriveMitzvotBonuses(contact) {
       { mitzva: 'לימוד', from: 0, to: 4, date: '2026-07-30' },
     ],
   };
-  check('#3 שלוש מצוות בשמירה אחת = שלושה בונוסים (לא תשעה)', deriveMitzvotBonuses(baseline).length, 3);
+  check('#3 שלוש מצוות בשמירה אחת = שלושה בונוסים (לא תשעה)', deriveMitzvotBonuses([baseline]).length, 3);
 
   // ירידה/אי-שינוי לא מזכים כלל.
   const noRise = {
     id: 11, name: 'ללא שינוי', activist_id: 7,
     mitzvot_history: [{ mitzva: 'שבת', from: 2, to: 2, date: '2026-07-30' }, { mitzva: 'כיפה', from: 3, to: 1, date: '2026-07-30' }],
   };
-  check('#3 ירידה או אי-שינוי אינם מזכים', deriveMitzvotBonuses(noRise).length, 0);
+  check('#3 ירידה או אי-שינוי אינם מזכים', deriveMitzvotBonuses([noRise]).length, 0);
 }
 
 // ────────────────────────────────────────────────────────────────────────────

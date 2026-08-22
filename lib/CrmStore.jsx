@@ -1,7 +1,7 @@
 // lib/CrmStore.jsx
 import { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import _messages     from '../data/messages';
-import { MITZVOT_BONUS_PER_LEVEL, NEW_PARTICIPANT_BONUS } from './paymentCalc';
+import { deriveMitzvotBonuses } from './paymentCalc';
 import { BASE_MEETING_QUESTIONS } from '../data/base-meetings';
 import { advanceReminderStageForReports } from './reminderSchedulerDemo';
 import { hydrateNotificationsFromSupabase } from './notificationDemo';
@@ -186,27 +186,9 @@ export function CrmProvider({ children }) {
   // בונוס-מצוות — נגזר מ-mitzvot_history הפרסיסטנטי (Supabase) של כל לקוח, לא מ-state זמני.
   // אותו דפוס בדיוק כמו newParticipantBonuses לעיל: מקור-אמת יחיד, נגזר-מחדש בכל טעינה —
   // לא ניתן "לצבור" בונוס כפול כי אין state שמצטבר, רק חישוב טהור מהנתון השמור.
-  // בונוס אחד (₪600) לכל עליית-רמה בודדת בהיסטוריה, כדי לשמר את מדיניות התשלום המקורית.
-  const mitzvotBonuses = useMemo(() => contacts.flatMap(c => {
-    if (!c.activist_id || !Array.isArray(c.mitzvot_history)) return [];
-    return c.mitzvot_history.flatMap(h => {
-      const from = Number(h?.from ?? 0);
-      const to   = Number(h?.to ?? 0);
-      const diff = to - from;
-      if (!h?.mitzva || diff <= 0) return [];
-      const d = h.date ? new Date(h.date) : new Date();
-      const month = `${d.getFullYear()}-${d.getMonth()}`;
-      return Array.from({ length: diff }, (_, i) => ({
-        activist_id: c.activist_id,
-        contact_id:  c.id,
-        contactName: c.name,
-        amount:      MITZVOT_BONUS_PER_LEVEL,
-        desc:        `עליה ב${h.mitzva} מרמה ${from + i} ל-${from + i + 1}`,
-        date:        h.date,
-        month,
-      }));
-    });
-  }), [contacts]);
+  // הגזירה עצמה חיה ב-lib/paymentCalc.js (deriveMitzvotBonuses) כדי שסקריפטי האימות
+  // יחשבו בדיוק אותו דבר — קודם היא הייתה משוכפלת בשלושה מקומות.
+  const mitzvotBonuses = useMemo(() => deriveMitzvotBonuses(contacts), [contacts]);
 
   const { currentUser, authLoading } = useAuth();
 
