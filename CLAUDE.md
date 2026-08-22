@@ -43,7 +43,11 @@ base_meeting_reports/activist_directory) מסוננת בשרת לפי activist_i
 - `today.jsx` — פעולות היום
 - `chat.jsx` — צ'אט פעילים
 - `feedback.jsx` — תקלות והצעות: פעילים מדווחים באגים/תקיעות/רעיונות,
-  רכז/ראש/מנכ"ל מסמנים "נסקר". דורש `migrations/0016_feedback_reports.sql`
+  רכז/ראש/מנכ"ל מסמנים "נסקר". דורש `migrations/0016_feedback_reports.sql`.
+  ⚠️ `migrations/0017_feedback_issue_url.sql` **טרם הורצה** (אומת מול ה-DB ב-2026-08-23:
+  `feedback_reports.issue_url` לא קיימת). לכן ה-cron `api/cron/feedback-to-issues`
+  נכשל כל לילה ולא נפתח אף GitHub Issue. `scripts/mark-feedback-reviewed.cjs` מסמן
+  דיווחים כ"נסקר" אחרי שהם תוקנו.
 
 ### קומפוננטים (components/)
 - `DesktopLayout.jsx` — לייאאוט ראשי + סרגל צד לכל הדפים חוץ מ-landing
@@ -150,6 +154,39 @@ base_meeting_reports/activist_directory) מסוננת בשרת לפי activist_i
 **אבחון "לא מקבל התראות":** קודם כפתור "שלח התראת ניסיון" ב-`/notifications`. אם גם הוא לא
 מגיע — הבעיה בתשתית (הרשאת דפדפן / אין מנוי ב-`push_subscriptions`/`fcm_tokens` / מפתחות
 בפרודקשן), ולא בקוד המסלול. אי אפשר לאמת התראה לנמען אחר מהדפדפן — RLS מסתיר את שורותיו.
+
+### מנוע התשלום (`lib/paymentCalc.js`) — שלושה כללים שקל לשבור
+**1. הקצאת מכסה לפי ערך, לא לפי תאריך.** `comparePaymentOrder` (מחיר יורד → תאריך עולה
+→ id עולה) הוא הסדר היחיד שבו מותר לעבד קשרים חודשיים. מיון כרונולוגי גורם לקשר זול
+בתחילת החודש לתפוס משבצת מקשר יקר בסופו (דיווח אלעזר באום, 2026-07-31).
+כל צרכן חייב להשתמש באותו comparator — `calcMonthlyPayment`, `getMonthlyTotalForActivist`,
+`lib/activistStats.js`, והתצוגה המקדימה ב-`pages/contact/add-interaction/[id].jsx`.
+אי-התאמה כאן = הטופס מזהיר "חרגת" על קשר שהמנוע כן משלם עליו.
+
+**2. בונוס-מצוות אחד לכל אירוע-עליה, לא לכל רמה.** `deriveMitzvotBonuses` ב-`paymentCalc.js`
+הוא **מקור-האמת היחיד** — `lib/CrmStore.jsx` ושלושת סקריפטי ה-`verify-*` צורכים אותו.
+היה משוכפל בשלושה מקומות, ושינוי מדיניות באחד השאיר את השאר מדווחים סכום אחר.
+קפיצה 0→4 בשמירה אחת = 600 ₪, לא 2,400. (דיווח מוטי גלעד, 2026-08-02.)
+⚠️ **פורמט `bonus_key` לא משתנה** — `${activistId}|${type}|${contactId}|${monthKey}` עם
+`monthKey` = `${year}-${month}` (month 0-indexed). יש שורות `bonus_cancellations` חיות בפורמט
+הזה; שינוי הפורמט מחזיר לחיים בונוסים שכבר בוטלו.
+
+**3. שורה נגזרת ממפגש רב-משתתפים אינה דיווח.** `isDerivedInteraction` (יש לה
+`participants.derived_from`) — מוחרגת מכל תשלום, תקרה ובונוס, **וגם מכל מונה-תצוגה**
+(`pages/index.jsx`, `my-activities`, `landing`, `activistStats`). בלי ההחרגה בתצוגה,
+מפגש אחד עם 2 לקוחות נראה כ-3 דיווחים (דיווחי 28-30.7).
+
+**כל שינוי במנוע:** `node scripts/verify-payment-order.cjs` (10 בדיקות, בלי DB), ואם השינוי
+נוגע בכסף — גם `node scripts/compare-payment-impact.cjs <שנה> <חודש>` שמריץ את המנוע של
+`main` ואת החדש על אותם נתוני אמת ומדפיס למי הסכום זז.
+
+### טפסים — מנעול שליחה חובה
+לטופס דיווח הקשר לא היה מנעול, והכפתור נשאר לחיץ לאורך כמה `await`. תוצאה בנתוני אמת:
+6 קבוצות דיווחים כפולים, 10 שורות עודפות, 5 פעילים — כולן בהפרש 0.3–20 שניות. אחת מהן
+מפגש רב-משתתפים ×3 = 900 ₪ במקום 300. **כל טופס שכותב ל-DB חייב `saving` + `disabled`,
+ולא להציג "נשמר" לפני שהתקבל `{ error: null }`.** ב-`add-interaction` יש גם אישור-שכפול
+(אותו לקוח+תאריך+סוג+איכות+תיאור → דורש לחיצה שנייה מודעת).
+`scripts/find-duplicate-interactions.cjs` מאתר כפילויות קיימות; `--delete` מוחק אותן.
 
 ### בתי מפגש
 - בית עובר ל-`completed` רק **7 ימים** אחרי תאריך המפגש הרביעי
