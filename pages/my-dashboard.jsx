@@ -26,7 +26,7 @@ function barColor(pct) {
 }
 
 function CounterCard({ counter, monthLabel }) {
-  const { done, cap, label } = counter;
+  const { done, cap, label, reported } = counter;
   const pct = cap > 0 ? Math.min(100, Math.round((done / cap) * 100)) : 0;
   const over = done > cap;
   const col = barColor(cap > 0 ? (done / cap) * 100 : 0);
@@ -45,8 +45,15 @@ function CounterCard({ counter, monthLabel }) {
         <div style={{ width: `${pct}%`, height: '100%', background: col.bar, borderRadius: 999, transition: 'width 0.5s ease' }} />
       </div>
       <div style={{ fontSize: 12, color: '#999', marginTop: 8 }}>
-        ביצעת {done} מתוך יעד של {cap} ב{monthLabel}
+        {done} מתוך {cap} משבצות נוצלו ב{monthLabel}
       </div>
+      {/* המונה סופר משבצות שנתפסו, לא דיווחים. כשדיווחת יותר ממה שנספר — זו תקרה
+          מול לקוח מסוים, לא טעות. בלי המשפט הזה המספר פשוט נראה נמוך מדי. */}
+      {reported > done && (
+        <div style={{ fontSize: 11.5, color: '#d68910', marginTop: 4, lineHeight: 1.5 }}>
+          דיווחת {reported}; {reported - done} לא נספרו כי הגעת לתקרה מול אותו לקוח.
+        </div>
+      )}
     </div>
   );
 }
