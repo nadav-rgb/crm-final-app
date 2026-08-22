@@ -5,7 +5,7 @@ import Link from 'next/link';
 import CONFIG from '../../../data/config';
 import { useCrm } from '../../../lib/CrmStore';
 import { useAuth } from '../../../lib/AuthStore';
-import { calcInteractionPayment, PAID_PROJECT_IDS } from '../../../lib/paymentCalc';
+import { calcInteractionPayment, comparePaymentOrder, PAID_PROJECT_IDS } from '../../../lib/paymentCalc';
 import DesktopLayout from '../../../components/DesktopLayout';
 import { summarizeInteractionText } from '../../../lib/aiService';
 import { createPaymentInteractionNotifications, createDemoNotification } from '../../../lib/notificationDemo';
@@ -66,12 +66,15 @@ export default function AddInteractionPage() {
   // "קשרים קודמים" חייב להיבנות בדיוק כמו במנוע (calcMonthlyPayment), אחרת הטופס מזהיר "חרגת"
   // על קשר שהמנוע כן משלם עליו (דיווח מוטי גלעד, 2026-07-21). שני ההבדלים שהיו:
   //   1. בלי סינון פרויקט — קשרים מפרויקט לא-מזכה נספרו לתוך התקרה.
-  //   2. בלי חיתוך כרונולוגי — קשר מאוחר יותר באותו חודש נספר כ"קודם".
+  //   2. בלי חיתוך לפי סדר ההקצאה — קשר שמוקצה אחרי החדש נספר כ"קודם".
+  // מאז 2026-08 המנוע מקצה מכסה לפי ערך ולא לפי תאריך, ולכן "קודם" נגזר מאותו comparator
+  // ולא מהשוואת תאריכים. הטיוטה מקבלת id מקסימלי כדי שתיקבע אחרונה בשוויון מלא.
+  const draft = { type: form.type, quality: form.quality, date: form.date, id: Number.MAX_SAFE_INTEGER };
   const isPrevious = i =>
     i.activist_id === currentUser?.id &&
     PAID_PROJECT_IDS.includes(Number(i.project_id)) &&
     i.date?.slice(0, 7) === currentMonthKey &&
-    i.date <= form.date; // הקשר החדש נכנס אחרון — קשרים באותו יום נספרים לפניו
+    comparePaymentOrder(i, draft, paymentConfig) < 0;
   const previousContactMonthly  = interactions.filter(i => isPrevious(i) && i.contact_id === contactId);
   const previousActivistMonthly = interactions.filter(isPrevious);
   const isShabbat = form.type === 'אירוח שבת';
