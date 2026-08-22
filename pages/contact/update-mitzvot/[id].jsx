@@ -6,6 +6,7 @@ import CONFIG from '../../../data/config';
 import { useCrm } from '../../../lib/CrmStore';
 import { useAuth } from '../../../lib/AuthStore';
 import { MITZVOT_BONUS_PER_LEVEL } from '../../../lib/paymentCalc';
+import { notifyMitzvotApi } from '../../../lib/notifyApi';
 import DesktopLayout from '../../../components/DesktopLayout';
 
 export default function UpdateMitzvotPage() {
@@ -42,6 +43,9 @@ export default function UpdateMitzvotPage() {
     setSaveErr('');
     const { error } = await updateMitzvot(contactId, currentUser.id, mitzvot);
     if (error) { setSaveErr(error.message || 'השמירה נכשלה. נסה שוב.'); setSaving(false); return; }
+    // ההתראה נשלחת רק אחרי שהעדכון נחת: השרת קורא את mitzvot_history מה-DB, ולפני
+    // כן הוא היה מרכיב הודעה על המצב הישן. fire-and-forget — כשל התראה לא מבטל שמירה.
+    if (changes.length > 0) notifyMitzvotApi(contactId);
     setSaved(true);
   }
 

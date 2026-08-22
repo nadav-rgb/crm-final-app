@@ -314,8 +314,16 @@ export default function AddInteractionPage() {
         activist: currentUser,
         paymentResult: payableCheck,
       });
-      // התראה + Push לניהול הפרויקט — צד-שרת. רק אם השורה באמת נשמרה.
-      if (!saveError && payableCheck.payable && payableCheck.amount > 0) {
+      // Push לפעיל עצמו על אותה שורת פעמון — רק השרת יכול לשלוח Push (VAPID/FCM לא
+      // קיימים בדפדפן). ה-client_id זהה לשורה שנכתבה למעלה, אז זו לא התראה שנייה.
+      notifyInteractionApi({
+        interactionId: interactionPayload.id,
+        kind: 'self_payment',
+        amount: payableCheck.payable ? payableCheck.amount : null,
+      });
+
+      // התראה + Push לניהול הפרויקט — צד-שרת.
+      if (payableCheck.payable && payableCheck.amount > 0) {
         notifyInteractionApi({
           interactionId: interactionPayload.id,
           kind: 'payment',

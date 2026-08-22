@@ -8,7 +8,10 @@ import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { requireAuth } from '../meeting-houses/_auth';
 import { getProjectManagers, notifyRecipients } from '../../../lib/notifyRecipients';
 
-const KINDS = ['summary', 'payment'];
+// summary/payment → ניהול הפרויקט. self_payment → הפעיל עצמו, וזה המסלול היחיד
+// שמגיע למכשיר שלו: השורה שהדפדפן כותב (createPaymentInteractionNotifications)
+// היא פעמון בלבד (דיווח מוטי גלעד, 2026-07-23).
+const KINDS = ['summary', 'payment', 'self_payment'];
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
@@ -52,6 +55,21 @@ export default async function handler(req, res) {
     type = 'interaction_summary';
     priority = 'normal';
     clientId = (code) => `interaction_summary__${interaction.id}__${code}`;
+  } else if (kind === 'self_payment') {
+    // הפעיל עצמו. הדפדפן כבר כתב שורת פעמון עם אותו client_id בדיוק
+    // (notificationId(['paid-interaction-activist', id, activistId]) ב-lib/notificationDemo.js),
+    // ולכן ה-upsert מאחד אותן — כאן מתווסף רק ה-Push שהדפדפן לא יכול לשלוח.
+    // ⚠️ שינוי המחרוזת כאן בלי לשנות שם ייצור שתי שורות פעמון על אותו דיווח.
+    const numeric = Number(amount);
+    const amountText = Number.isFinite(numeric) && numeric > 0 ? `${numeric.toLocaleString()} ₪` : null;
+    recipients = [{ activist_code: callerCode, name: activistName }];
+    title = amountText ? 'הדיווח נכנס לדוח התשלומים' : 'הדיווח נשמר';
+    body = amountText
+      ? `הקשר עם ${contactName} נשמר ונכנס לדוח התשלומים בסך ${amountText}.`
+      : `הקשר עם ${contactName} נשמר.`;
+    type = amountText ? 'paid_interaction' : 'interaction_saved';
+    priority = amountText ? 'high' : 'normal';
+    clientId = () => `paid-interaction-activist__${interaction.id}__${callerCode}`;
   } else {
     // amount הוא לתצוגה בלבד — דוח התשלומים מחושב עצמאית מטבלת interactions, לכן ערך שגוי
     // כאן לא משפיע על כסף. עדיין מנרמלים למספר כדי לא להדפיס קלט חופשי בגוף ההתראה.
