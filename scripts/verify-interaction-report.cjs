@@ -157,6 +157,10 @@ test('calculations', 'builds the Hebrew summary sentence from actual totals', ()
   assert.match(report.summarySentence, /01\.05\.2026–31\.05\.2026/);
   assert.match(report.summarySentence, /11 קשרים/);
   assert.match(report.summarySentence, /5 קשרים תורניים/);
+  assert.deepEqual(report.disclosures, [
+    'האפליקציה עדיין בפיילוט ראשוני, הערכה שמשקפת 75% מהקשרים והלקוחות האמיתיים',
+    'האפליקציה עלתה לאוויר לפני כחודש וחצי',
+  ]);
 });
 
 function loadServerModule() {
@@ -291,12 +295,14 @@ test('excel', 'writes all main metrics and keeps averages numeric', async () => 
   const { buildInteractionWorkbook } = require('../lib/interactionReportExcel');
   const workbook = await buildInteractionWorkbook(buildFixtureReport());
   const sheet = workbook.getWorksheet('סיכום לפי פעיל');
-  assert.deepEqual(sheet.getRow(3).values.slice(1), [
+  assert.equal(sheet.getCell('A3').value, '• האפליקציה עדיין בפיילוט ראשוני, הערכה שמשקפת 75% מהקשרים והלקוחות האמיתיים');
+  assert.equal(sheet.getCell('A4').value, '• האפליקציה עלתה לאוויר לפני כחודש וחצי');
+  assert.deepEqual(sheet.getRow(6).values.slice(1), [
     'שם הפעיל', 'מספר לקוחות כולל', 'סך כל הקשרים', 'קשרים תורניים', 'קשרים ידידותיים',
     'קשרים פרונטליים', 'קשרי וידאו', 'קשרים טלפוניים', 'אירוחי שבת', 'סך דקות הקשר',
     'ממוצע קשרים ללקוח', 'ממוצע משך קשר',
   ]);
-  const davidRow = sheet.getRows(4, sheet.rowCount - 3).find(row => row.getCell(1).value === 'דוד כהן');
+  const davidRow = sheet.getRows(7, sheet.rowCount - 6).find(row => row.getCell(1).value === 'דוד כהן');
   assert.equal(davidRow.getCell(2).value, 2);
   assert.equal(davidRow.getCell(3).value, 10);
   assert.equal(typeof davidRow.getCell(11).value, 'number');
@@ -308,7 +314,7 @@ test('excel', 'writes detailed mitzvot events and the organizational sentence', 
   const report = buildFixtureReport();
   const workbook = await buildInteractionWorkbook(report);
   const progress = workbook.getWorksheet('התקדמות במצוות');
-  const eventRow = progress.getRows(4, progress.rowCount - 3).find(row => row.getCell(3).value === 100 && row.getCell(4).value === 'שבת' && row.getCell(5).value === 1 && row.getCell(6).value === 4);
+  const eventRow = progress.getRows(7, progress.rowCount - 6).find(row => row.getCell(3).value === 100 && row.getCell(4).value === 'שבת' && row.getCell(5).value === 1 && row.getCell(6).value === 4);
   assert.ok(eventRow);
   assert.equal(eventRow.getCell(7).value, 3);
   const organizational = workbook.getWorksheet('סיכום ארגוני');
@@ -333,6 +339,7 @@ test('pdf', 'builds a complete main-table and mitzvot PDF model from the filtere
   assert.equal(model.main.rows.find(row => row[0] === 'דוד כהן')[2], 10);
   assert.equal(model.main.totalRow[2], 11);
   assert.equal(model.summarySentence, report.summarySentence);
+  assert.deepEqual(model.disclosures, report.disclosures);
   assert.ok(model.mitzvot.rows.some(row => row[0] === 'סה״כ כל הפעילים' && row[1] === 'שבת'));
 });
 
