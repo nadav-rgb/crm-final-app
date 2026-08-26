@@ -348,6 +348,41 @@ test('pdf', 'creates a real PDF byte stream with the embedded Hebrew font', asyn
   assert.ok(bytes.length > 10_000);
 });
 
+function loadUiModule() {
+  try {
+    return require('../lib/interactionReportUi');
+  } catch (_error) {
+    return null;
+  }
+}
+
+test('ui', 'exposes the complete 12-column CEO table model', () => {
+  const ui = loadUiModule();
+  assert.ok(ui, 'interactionReportUi module must exist');
+  assert.equal(ui.REPORT_TABLE_COLUMNS.length, 11);
+  assert.equal(ui.REPORT_TABLE_COLUMNS[0].key, 'totalClients');
+  assert.equal(ui.REPORT_TABLE_COLUMNS.at(-1).key, 'averageDuration');
+  assert.equal(1 + ui.REPORT_TABLE_COLUMNS.length, 12);
+});
+
+test('ui', 'allows only the CEO role to request the screen data', () => {
+  const ui = loadUiModule();
+  assert.ok(ui, 'interactionReportUi module must exist');
+  assert.equal(ui.canViewInteractionReport({ role: 'ceo' }), true);
+  assert.equal(ui.canViewInteractionReport({ role: 'head' }), false);
+  assert.equal(ui.canViewInteractionReport({ role: 'coord' }), false);
+  assert.equal(ui.canViewInteractionReport({ role: 'activist' }), false);
+  assert.equal(ui.canViewInteractionReport(null), false);
+});
+
+test('ui', 'formats counts and averages in Hebrew without losing precision rules', () => {
+  const ui = loadUiModule();
+  assert.ok(ui, 'interactionReportUi module must exist');
+  assert.equal(ui.formatReportNumber(1234), '1,234');
+  assert.equal(ui.formatReportNumber(11 / 3, true), '3.67');
+  assert.equal(ui.formatReportNumber(0, true), '0');
+});
+
 async function main() {
   let failed = 0;
   for (const item of tests) {

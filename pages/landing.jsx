@@ -8,7 +8,7 @@ import Link from 'next/link';
 import {
   Home, User, Users, Calendar, UserPlus,
   ClipboardList, Star, CreditCard, Bell, BellRing, Receipt, Compass,
-  MessageSquare, Building2, FolderOpen, Activity, AlertCircle,
+  MessageSquare, Building2, FolderOpen, Activity, AlertCircle, BarChart2,
 } from 'lucide-react';
 import MobileBottomNav from '../components/MobileBottomNav';
 import { inProject, inAnyPaidProject } from '../lib/projectUtils';
@@ -243,6 +243,9 @@ export default function LandingPage() {
           )}
           {can.seePayments && (
             <SideItem icon={<CreditCard   {...ICO} />} label="דוחות תשלום"    open={open} onClick={() => router.push('/payments')} />
+          )}
+          {isCeo && (
+            <SideItem icon={<BarChart2 {...ICO} />} label="דו״ח קשרים" open={open} onClick={() => router.push('/interaction-report')} />
           )}
           <SideItem icon={<Receipt        {...ICO} />} label="דיווח הוצאות"   open={open} onClick={() => router.push('/expenses')} />
           <SideItem icon={<Bell           {...ICO} />} label="תזכורות קשר"    open={open} onClick={() => router.push('/reminders')} />

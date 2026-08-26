@@ -171,6 +171,9 @@ export default function DesktopLayout({ children, title, subtitle, actions, back
           {can.seePayments && (
             <NavItem href="/payments"     icon={<CreditCard    {...ICO} />} label="דוחות תשלום פעילים" open={open} active={router.pathname === '/payments'}         onActivate={() => setOpen(true)} />
           )}
+          {isCeo && (
+            <NavItem href="/interaction-report" icon={<BarChart2 {...ICO} />} label="דו״ח קשרים" open={open} active={router.pathname === '/interaction-report'} onActivate={() => setOpen(true)} />
+          )}
           <NavItem href="/expenses"       icon={<Receipt       {...ICO} />} label="דיווח הוצאות"        open={open} active={router.pathname === '/expenses'}         onActivate={() => setOpen(true)} />
           <NavItem href="/reminders"      icon={<Bell          {...ICO} />} label="תזכורות קשר"         open={open} active={router.pathname === '/reminders'}        onActivate={() => setOpen(true)} />
           <NavItem href="/notifications"  icon={<BellRing      {...ICO} />} label="התראות מערכת"        open={open} active={router.pathname === '/notifications'}    onActivate={() => setOpen(true)} />

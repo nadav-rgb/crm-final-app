@@ -41,6 +41,7 @@ export default function MobileBottomNav() {
     can.addContact && { href: '/contacts/add',                    icon: <UserPlus     {...ICO} />, label: 'הוסף לקוח' },
     can.seeActivists && { href: '/activists',                     icon: <Star         {...ICO} />, label: 'פעילים' },
     can.seePayments && { href: '/payments',                       icon: <CreditCard   {...ICO} />, label: 'דוחות תשלום' },
+    currentUser?.role === 'ceo' && { href: '/interaction-report', icon: <BarChart2    {...ICO} />, label: 'דו״ח קשרים' },
     { href: '/expenses',                                          icon: <Receipt      {...ICO} />, label: 'דיווח הוצאות' },
     { href: '/notifications',                                     icon: <BellRing     {...ICO} />, label: 'התראות מערכת' },
     { href: '/chat',                                              icon: <MessageSquare {...ICO} />, label: 'צ׳אט פעילים' },
