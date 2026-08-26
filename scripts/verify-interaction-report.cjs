@@ -316,6 +316,38 @@ test('excel', 'writes detailed mitzvot events and the organizational sentence', 
   assert.ok(values.includes(report.summarySentence));
 });
 
+function loadPdfModule() {
+  try {
+    return require('../lib/interactionReportPdf');
+  } catch (_error) {
+    return null;
+  }
+}
+
+test('pdf', 'builds a complete main-table and mitzvot PDF model from the filtered report', () => {
+  const pdf = loadPdfModule();
+  assert.ok(pdf, 'interactionReportPdf module must exist');
+  const report = buildFixtureReport();
+  const model = pdf.buildInteractionPdfModel(report);
+  assert.equal(model.main.headers.length, 12);
+  assert.equal(model.main.rows.find(row => row[0] === 'דוד כהן')[2], 10);
+  assert.equal(model.main.totalRow[2], 11);
+  assert.equal(model.summarySentence, report.summarySentence);
+  assert.ok(model.mitzvot.rows.some(row => row[0] === 'סה״כ כל הפעילים' && row[1] === 'שבת'));
+});
+
+test('pdf', 'creates a real PDF byte stream with the embedded Hebrew font', async () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const pdf = loadPdfModule();
+  assert.ok(pdf, 'interactionReportPdf module must exist');
+  const fontPath = path.join(__dirname, '..', 'public', 'fonts', 'NotoSansHebrew-Regular.ttf');
+  assert.equal(fs.existsSync(fontPath), true, 'Hebrew TTF must exist');
+  const bytes = await pdf.buildInteractionReportPdf(buildFixtureReport(), { fontBinary: fs.readFileSync(fontPath) });
+  assert.equal(Buffer.from(bytes).subarray(0, 5).toString('ascii'), '%PDF-');
+  assert.ok(bytes.length > 10_000);
+});
+
 async function main() {
   let failed = 0;
   for (const item of tests) {
