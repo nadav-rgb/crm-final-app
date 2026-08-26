@@ -295,8 +295,8 @@ test('excel', 'writes all main metrics and keeps averages numeric', async () => 
   const { buildInteractionWorkbook } = require('../lib/interactionReportExcel');
   const workbook = await buildInteractionWorkbook(buildFixtureReport());
   const sheet = workbook.getWorksheet('סיכום לפי פעיל');
-  assert.equal(sheet.getCell('A3').value, '• האפליקציה עדיין בפיילוט ראשוני, הערכה שמשקפת 75% מהקשרים והלקוחות האמיתיים');
-  assert.equal(sheet.getCell('A4').value, '• האפליקציה עלתה לאוויר לפני כחודש וחצי');
+  assert.equal(sheet.getCell('A3').value, '\u200F•\u00A0האפליקציה עדיין בפיילוט ראשוני, הערכה שמשקפת 75% מהקשרים והלקוחות האמיתיים');
+  assert.equal(sheet.getCell('A4').value, '\u200F•\u00A0האפליקציה עלתה לאוויר לפני כחודש וחצי');
   assert.deepEqual(sheet.getRow(6).values.slice(1), [
     'שם הפעיל', 'מספר לקוחות כולל', 'סך כל הקשרים', 'קשרים תורניים', 'קשרים ידידותיים',
     'קשרים פרונטליים', 'קשרי וידאו', 'קשרים טלפוניים', 'אירוחי שבת', 'סך דקות הקשר',
@@ -376,6 +376,14 @@ test('pdf', 'prepares numeric-only cells for jsPDF RTL without reversing their v
   assert.equal(pdf.formatPdfTableValue(748), '847');
   assert.equal(pdf.formatPdfTableValue(13.37), '73.31');
   assert.equal(pdf.formatPdfTableValue('שם הפעיל'), 'שם הפעיל');
+});
+
+test('pdf', 'keeps disclosure bullets separate so they render on the right in RTL', () => {
+  const pdf = loadPdfModule();
+  assert.deepEqual(pdf.formatPdfRtlBullet('טקסט בעברית'), {
+    bullet: '•',
+    text: 'טקסט בעברית',
+  });
 });
 
 test('pdf', 'places the first logical Hebrew column on the right edge of PDF tables', () => {
