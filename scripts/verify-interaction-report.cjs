@@ -371,6 +371,15 @@ test('pdf', 'prepares numeric-only cells for jsPDF RTL without reversing their v
   assert.equal(pdf.formatPdfTableValue('שם הפעיל'), 'שם הפעיל');
 });
 
+test('pdf', 'places the first logical Hebrew column on the right edge of PDF tables', () => {
+  const pdf = loadPdfModule();
+  assert.ok(pdf, 'interactionReportPdf module must exist');
+  assert.deepEqual(
+    pdf.formatPdfRtlTableRow(['שם הפעיל', 234, 748]),
+    ['847', '432', 'שם הפעיל'],
+  );
+});
+
 function loadUiModule() {
   try {
     return require('../lib/interactionReportUi');
