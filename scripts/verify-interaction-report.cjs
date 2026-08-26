@@ -271,6 +271,51 @@ test('server', 'rejects an inverted date range with a Hebrew 400 response', asyn
   assert.deepEqual(res.body, { error: 'תאריך ההתחלה אינו יכול להיות מאוחר מתאריך הסיום.' });
 });
 
+test('excel', 'creates exactly four required RTL worksheets', async () => {
+  const { buildInteractionWorkbook } = require('../lib/interactionReportExcel');
+  const workbook = await buildInteractionWorkbook(buildFixtureReport());
+  assert.deepEqual(workbook.worksheets.map(sheet => sheet.name), [
+    'סיכום לפי פעיל',
+    'התקדמות במצוות',
+    'סיכום מצוות',
+    'סיכום ארגוני',
+  ]);
+  workbook.worksheets.forEach(sheet => {
+    assert.equal(sheet.views[0].rightToLeft, true);
+    assert.equal(sheet.views[0].state, 'frozen');
+    assert.ok(sheet.views[0].ySplit >= 3);
+  });
+});
+
+test('excel', 'writes all main metrics and keeps averages numeric', async () => {
+  const { buildInteractionWorkbook } = require('../lib/interactionReportExcel');
+  const workbook = await buildInteractionWorkbook(buildFixtureReport());
+  const sheet = workbook.getWorksheet('סיכום לפי פעיל');
+  assert.deepEqual(sheet.getRow(3).values.slice(1), [
+    'שם הפעיל', 'מספר לקוחות כולל', 'סך כל הקשרים', 'קשרים תורניים', 'קשרים ידידותיים',
+    'קשרים פרונטליים', 'קשרי וידאו', 'קשרים טלפוניים', 'אירוחי שבת', 'סך דקות הקשר',
+    'ממוצע קשרים ללקוח', 'ממוצע משך קשר',
+  ]);
+  const davidRow = sheet.getRows(4, sheet.rowCount - 3).find(row => row.getCell(1).value === 'דוד כהן');
+  assert.equal(davidRow.getCell(2).value, 2);
+  assert.equal(davidRow.getCell(3).value, 10);
+  assert.equal(typeof davidRow.getCell(11).value, 'number');
+  assert.equal(typeof davidRow.getCell(12).value, 'number');
+});
+
+test('excel', 'writes detailed mitzvot events and the organizational sentence', async () => {
+  const { buildInteractionWorkbook } = require('../lib/interactionReportExcel');
+  const report = buildFixtureReport();
+  const workbook = await buildInteractionWorkbook(report);
+  const progress = workbook.getWorksheet('התקדמות במצוות');
+  const eventRow = progress.getRows(4, progress.rowCount - 3).find(row => row.getCell(3).value === 100 && row.getCell(4).value === 'שבת' && row.getCell(5).value === 1 && row.getCell(6).value === 4);
+  assert.ok(eventRow);
+  assert.equal(eventRow.getCell(7).value, 3);
+  const organizational = workbook.getWorksheet('סיכום ארגוני');
+  const values = organizational.getRows(1, organizational.rowCount).flatMap(row => row.values);
+  assert.ok(values.includes(report.summarySentence));
+});
+
 async function main() {
   let failed = 0;
   for (const item of tests) {
