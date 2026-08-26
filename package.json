@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "generate:interaction-report": "node scripts/generate-interaction-report-files.cjs",
     "verify:interaction-report": "node scripts/verify-interaction-report.cjs"
   },
   "dependencies": {

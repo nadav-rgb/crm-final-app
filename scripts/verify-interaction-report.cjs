@@ -341,11 +341,34 @@ test('pdf', 'creates a real PDF byte stream with the embedded Hebrew font', asyn
   const path = require('node:path');
   const pdf = loadPdfModule();
   assert.ok(pdf, 'interactionReportPdf module must exist');
-  const fontPath = path.join(__dirname, '..', 'public', 'fonts', 'NotoSansHebrew-Regular.ttf');
+  const fontPath = path.join(__dirname, '..', 'public', 'fonts', 'Assistant-Regular.ttf');
   assert.equal(fs.existsSync(fontPath), true, 'Hebrew TTF must exist');
   const bytes = await pdf.buildInteractionReportPdf(buildFixtureReport(), { fontBinary: fs.readFileSync(fontPath) });
   assert.equal(Buffer.from(bytes).subarray(0, 5).toString('ascii'), '%PDF-');
   assert.ok(bytes.length > 10_000);
+});
+
+test('pdf', 'embedded PDF font contains both Hebrew letters and decimal digits', async () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { jsPDF } = await import('jspdf');
+  const fontPath = path.join(__dirname, '..', 'public', 'fonts', 'Assistant-Regular.ttf');
+  const doc = new jsPDF();
+  doc.addFileToVFS('report-font.ttf', fs.readFileSync(fontPath).toString('base64'));
+  doc.addFont('report-font.ttf', 'ReportFont', 'normal');
+  doc.setFont('ReportFont', 'normal');
+  const metadata = doc.internal.getFont().metadata;
+  assert.ok(metadata.characterToGlyph('ש'.codePointAt(0)) > 0, 'font must render Hebrew');
+  assert.ok(metadata.characterToGlyph('1'.codePointAt(0)) > 0, 'font must render digits');
+  assert.ok(metadata.characterToGlyph('.'.codePointAt(0)) > 0, 'font must render decimals');
+});
+
+test('pdf', 'prepares numeric-only cells for jsPDF RTL without reversing their visual order', () => {
+  const pdf = loadPdfModule();
+  assert.ok(pdf, 'interactionReportPdf module must exist');
+  assert.equal(pdf.formatPdfTableValue(748), '847');
+  assert.equal(pdf.formatPdfTableValue(13.37), '73.31');
+  assert.equal(pdf.formatPdfTableValue('שם הפעיל'), 'שם הפעיל');
 });
 
 function loadUiModule() {
