@@ -159,6 +159,118 @@ test('calculations', 'builds the Hebrew summary sentence from actual totals', ()
   assert.match(report.summarySentence, /5 קשרים תורניים/);
 });
 
+function loadServerModule() {
+  try {
+    return require('../lib/interactionReportServer');
+  } catch (_error) {
+    return null;
+  }
+}
+
+function createFakeSupabase(tableRows) {
+  const calls = [];
+  return {
+    calls,
+    from(table) {
+      const call = { table, columns: '', filters: [] };
+      calls.push(call);
+      const query = {
+        select(columns) { call.columns = columns; return query; },
+        eq(column, value) { call.filters.push(['eq', column, value]); return query; },
+        gte(column, value) { call.filters.push(['gte', column, value]); return query; },
+        lte(column, value) { call.filters.push(['lte', column, value]); return query; },
+        single() {
+          const rows = tableRows[table] || [];
+          return Promise.resolve({ data: rows[0] || null, error: rows.length ? null : { message: 'not found' } });
+        },
+        then(resolve, reject) {
+          return Promise.resolve({ data: tableRows[table] || [], error: null }).then(resolve, reject);
+        },
+      };
+      return query;
+    },
+  };
+}
+
+function createResponseRecorder() {
+  return {
+    statusCode: 200,
+    body: null,
+    headers: {},
+    status(code) { this.statusCode = code; return this; },
+    json(body) { this.body = body; return this; },
+    end() { return this; },
+    setHeader(name, value) { this.headers[name] = value; },
+  };
+}
+
+test('server', 'authorizes only a CEO profile', () => {
+  const server = loadServerModule();
+  assert.ok(server, 'interactionReportServer module must exist');
+  assert.deepEqual(server.authorizeCeoProfile(null), { ok: false, status: 403, error: 'No profile' });
+  assert.equal(server.authorizeCeoProfile({ role: 'activist' }).status, 403);
+  assert.equal(server.authorizeCeoProfile({ role: 'coord' }).status, 403);
+  assert.deepEqual(server.authorizeCeoProfile({ role: 'ceo' }), { ok: true });
+});
+
+test('server', 'loads live project 1 data without filtering inactive contacts', async () => {
+  const server = loadServerModule();
+  assert.ok(server, 'interactionReportServer module must exist');
+  const supabase = createFakeSupabase({
+    projects: [{ id: 1, name: 'אחדות יהודית' }],
+    contacts: contacts.filter(contact => contact.project_id === 1),
+    interactions,
+    activist_directory: activists,
+  });
+  const report = await server.loadLiveInteractionReport({
+    supabase,
+    startDate: '2026-05-01',
+    endDate: '2026-05-31',
+  });
+  assert.equal(report.meta.projectId, 1);
+  assert.equal(report.totals.totalClients, 3);
+  assert.equal(report.totals.totalInteractions, 11);
+  const contactsCall = supabase.calls.find(call => call.table === 'contacts');
+  assert.equal(contactsCall.filters.some(([, column]) => column === 'is_active'), false);
+  const interactionsCall = supabase.calls.find(call => call.table === 'interactions');
+  assert.deepEqual(interactionsCall.filters.filter(([kind]) => kind === 'gte' || kind === 'lte'), [
+    ['gte', 'date', '2026-05-01'],
+    ['lte', 'date', '2026-05-31'],
+  ]);
+});
+
+test('server', 'rejects a non-CEO before loading any report data', async () => {
+  const server = loadServerModule();
+  assert.ok(server, 'interactionReportServer module must exist');
+  let loadCalls = 0;
+  const handler = server.createInteractionReportHandler({
+    requireAuth: async () => ({ ok: true, profile: { role: 'activist' } }),
+    getSupabaseAdmin: () => ({}),
+    loadLiveInteractionReport: async () => { loadCalls += 1; return {}; },
+  });
+  const req = { method: 'GET', headers: {}, query: {} };
+  const res = createResponseRecorder();
+  await handler(req, res);
+  assert.equal(res.statusCode, 403);
+  assert.equal(loadCalls, 0);
+  assert.deepEqual(res.body, { error: 'הדו״ח זמין למנכ״ל בלבד.' });
+});
+
+test('server', 'rejects an inverted date range with a Hebrew 400 response', async () => {
+  const server = loadServerModule();
+  assert.ok(server, 'interactionReportServer module must exist');
+  const handler = server.createInteractionReportHandler({
+    requireAuth: async () => ({ ok: true, profile: { role: 'ceo' } }),
+    getSupabaseAdmin: () => ({}),
+    loadLiveInteractionReport: async () => ({}),
+  });
+  const req = { method: 'GET', headers: {}, query: { from: '2026-06-01', to: '2026-05-01' } };
+  const res = createResponseRecorder();
+  await handler(req, res);
+  assert.equal(res.statusCode, 400);
+  assert.deepEqual(res.body, { error: 'תאריך ההתחלה אינו יכול להיות מאוחר מתאריך הסיום.' });
+});
+
 async function main() {
   let failed = 0;
   for (const item of tests) {
