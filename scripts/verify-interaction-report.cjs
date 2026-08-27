@@ -113,6 +113,38 @@ test('calculations', 'keeps quality and type as independent dimensions', () => {
   assert.equal(report.totals.totalInteractions, 11);
 });
 
+test('calculations', 'builds an auditable quality by connection-type matrix', () => {
+  const report = buildFixtureReport();
+  assert.deepEqual(report.analytics.qualityTypeMatrix, {
+    torani: { total: 5, frontal: 3, video: 0, phone: 2, other: 0 },
+    friendly: { total: 5, frontal: 0, video: 3, phone: 0, other: 2 },
+  });
+});
+
+test('calculations', 'classifies each client once with torani taking precedence over friendly', () => {
+  const report = buildFixtureReport();
+  assert.deepEqual(report.analytics.relationshipSegments, {
+    generalRelationships: 850,
+    trackedClients: 3,
+    activeClients: 2,
+    personalFriendlyClients: 0,
+    personalToraniClients: 1,
+    activeWithoutPersonalQuality: 1,
+  });
+});
+
+test('calculations', 'groups unique clients by their number of connections', () => {
+  const report = buildFixtureReport();
+  assert.deepEqual(report.analytics.clientConnectionDistribution, [
+    { key: '0', label: '0 קשרים', count: 1 },
+    { key: '1', label: 'קשר אחד', count: 1 },
+    { key: '2', label: '2 קשרים', count: 0 },
+    { key: '3-4', label: '3–4 קשרים', count: 0 },
+    { key: '5-9', label: '5–9 קשרים', count: 0 },
+    { key: '10+', label: '10 קשרים ומעלה', count: 1 },
+  ]);
+});
+
 test('calculations', 'deduplicates organizational clients by contact_id rather than summing rows', () => {
   const report = buildFixtureReport();
   assert.equal(report.rows.find(item => item.activistId === 10).totalClients, 2);
@@ -322,6 +354,21 @@ test('excel', 'writes detailed mitzvot events and the organizational sentence', 
   assert.ok(values.includes(report.summarySentence));
 });
 
+test('excel', 'adds the RTL executive analysis to the organizational worksheet', async () => {
+  const { buildInteractionWorkbook } = require('../lib/interactionReportExcel');
+  const workbook = await buildInteractionWorkbook(buildFixtureReport());
+  const sheet = workbook.getWorksheet('סיכום ארגוני');
+  const values = sheet.getRows(1, sheet.rowCount).flatMap(row => row.values);
+  assert.ok(values.includes('תמונת מצב מנהלים'));
+  assert.ok(values.includes('קשר אישי תורני'));
+  assert.ok(values.includes('התפלגות לקוחות לפי מספר קשרים'));
+  assert.ok(values.includes(850));
+  const barRow = sheet.getRows(1, sheet.rowCount).find(row => row.getCell(1).value === 'תורני · פרונטלי');
+  for (let column = 5; column <= 14; column += 1) {
+    assert.equal(barRow.getCell(column).value, null, 'visual bar cells must be truly blank');
+  }
+});
+
 function loadPdfModule() {
   try {
     return require('../lib/interactionReportPdf');
@@ -340,6 +387,8 @@ test('pdf', 'builds a complete main-table and mitzvot PDF model from the filtere
   assert.equal(model.main.totalRow[2], 11);
   assert.equal(model.summarySentence, report.summarySentence);
   assert.deepEqual(model.disclosures, report.disclosures);
+  assert.equal(model.analytics.relationshipSegments.generalRelationships, 850);
+  assert.deepEqual(model.analytics, report.analytics);
   assert.ok(model.mitzvot.rows.some(row => row[0] === 'סה״כ כל הפעילים' && row[1] === 'שבת'));
 });
 
