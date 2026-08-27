@@ -1,13 +1,12 @@
 // pages/notifications.jsx
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import DesktopLayout from '../components/DesktopLayout';
 import { useAuth } from '../lib/AuthStore';
-import { useCrm } from '../lib/CrmStore';
 import { getPushStatus, registerPushSubscription } from '../lib/pushClient';
 import { isNativeApp, getNativePushPermission, enableNativePush } from '../lib/nativePush';
-import { authHeader } from '../lib/apiAuth';
 import {
+  hydrateNotificationsFromSupabase,
   getNotificationsForUser,
   getNotificationTypeLabel,
   markNotificationAsRead,
@@ -38,7 +37,7 @@ function describeTestResult(d) {
   return lines.join('\n');
 }
 
-function DeviceNotificationCard({ currentUser }) {
+function DeviceNotificationCard({ currentUser, apiFetch }) {
   const native = isNativeApp(); // אפליקציית Capacitor — משתמש ב-FCM נייטיבי, לא ב-web-push
   const [status, setStatus]   = useState(null);   // null = בטעינה
   const [busy, setBusy]       = useState(false);
@@ -48,21 +47,21 @@ function DeviceNotificationCard({ currentUser }) {
     if (native) {
       getNativePushPermission().then(permission => setStatus({ supported: true, native: true, permission }));
     } else {
-      getPushStatus().then(setStatus);
+      getPushStatus(apiFetch).then(setStatus);
     }
-  }, [native]);
+  }, [native, apiFetch]);
   useEffect(() => { refresh(); }, [refresh]);
 
   async function handleEnable() {
     setBusy(true); setMessage('');
     if (native) {
-      const permission = await enableNativePush(String(currentUser.id));
+      const permission = await enableNativePush(apiFetch);
       await refresh();
       setMessage(permission === 'granted'
         ? '✅ ההתראות הופעלו במכשיר הזה'
         : 'לא הצלחנו להפעיל — בדוק שההרשאה לא נחסמה בהגדרות המכשיר ונסה שוב');
     } else {
-      const sub = await registerPushSubscription(String(currentUser.id));
+      const sub = await registerPushSubscription(apiFetch);
       await refresh();
       // כשל אפשרי משתי סיבות: ההרשאה נדחתה, או שהשמירה בשרת נכשלה (registerPushSubscription
       // מחזיר null בשני המקרים). מנסחים כך שהמשתמש ידע לבדוק את שניהם.
@@ -76,9 +75,8 @@ function DeviceNotificationCard({ currentUser }) {
   async function handleTest() {
     setBusy(true); setMessage('');
     try {
-      const res = await fetch('/api/push/test', { method: 'POST', headers: { ...(await authHeader()) } });
-      const data = await res.json().catch(() => ({}));
-      setMessage(res.ok ? describeTestResult(data) : 'שליחת הניסיון נכשלה — נסה להפעיל מחדש את ההתראות');
+      const data = await apiFetch('/api/push/test', { method: 'POST', body: {} });
+      setMessage(describeTestResult(data));
     } catch {
       setMessage('שליחת הניסיון נכשלה — בדוק את החיבור לרשת');
     }
@@ -225,34 +223,37 @@ function formatDateTime(value) {
 }
 
 export default function NotificationsPage() {
-  const { currentUser } = useAuth();
-  const { baseMeetings } = useCrm();
+  const { currentUser, apiFetch } = useAuth();
   const router = useRouter();
-  // readTick — חישוב מחדש של הרשימה (והמונה) אחרי סימון "נקרא".
-  const [readTick, setReadTick] = useState(0);
-  const notifications = useMemo(
-    () => getNotificationsForUser(currentUser, baseMeetings),
-    [currentUser, baseMeetings, readTick]
-  );
+  const [notifications, setNotifications] = useState([]);
+
+  useEffect(() => {
+    let active = true;
+    hydrateNotificationsFromSupabase(currentUser, apiFetch).then(() => {
+      if (active) setNotifications(getNotificationsForUser(currentUser));
+    });
+    return () => { active = false; };
+  }, [currentUser, apiFetch]);
+
   const unreadCount = notifications.filter(n => !n.read).length;
 
-  function handleClick(n) {
+  async function handleClick(n) {
     if (!n.read) {
-      markNotificationAsRead(n.id, currentUser);
-      setReadTick(t => t + 1);
+      await markNotificationAsRead(n.id, currentUser);
+      setNotifications(getNotificationsForUser(currentUser));
     }
     if (n.link) router.push(n.link);
   }
 
-  function handleMarkAllRead() {
-    markAllNotificationsAsRead(notifications, currentUser);
-    setReadTick(t => t + 1);
+  async function handleMarkAllRead() {
+    await markAllNotificationsAsRead(notifications, currentUser);
+    setNotifications(getNotificationsForUser(currentUser));
   }
 
   return (
     <DesktopLayout title="התראות" subtitle="שיבוץ, תזכורות דיווח, תשלומים והתרעות לרכז">
       <div style={{ maxWidth: 900, margin: '0 auto' }}>
-        {currentUser && <DeviceNotificationCard currentUser={currentUser} />}
+        {currentUser && <DeviceNotificationCard currentUser={currentUser} apiFetch={apiFetch} />}
         <div style={{ background:'#fff', border:'0.5px solid rgba(0,0,0,0.08)', borderRadius:16, padding:18, marginBottom:16 }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:12 }}>
             <div style={{ fontSize:16, fontWeight:800, color:'#2d1f5e', marginBottom:6 }}>מרכז ההתראות</div>

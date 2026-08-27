@@ -234,11 +234,11 @@ export function CrmProvider({ children }) {
     return () => { active = false; };
   }, [currentUser, authLoading, apiFetch]);
 
-  // סנכרון התראות מ-Supabase ל-localStorage בכניסה (cross-device). fire-and-forget.
+  // טעינת התראות דרך ה-BFF בלבד; אין PII ב-localStorage ואין CRUD ישיר מהדפדפן.
   useEffect(() => {
     if (authLoading || !currentUser) return;
-    hydrateNotificationsFromSupabase(currentUser);
-  }, [currentUser, authLoading]);
+    hydrateNotificationsFromSupabase(currentUser, apiFetch);
+  }, [currentUser, authLoading, apiFetch]);
 
   // directory מוקרן דרך ה-BFF בלבד; השרת קובע project scope ושדות מותרים לפי role.
   useEffect(() => {

@@ -8,13 +8,13 @@ import { registerPushSubscription } from '../lib/pushClient';
 import { initNativePush } from '../lib/nativePush';
 
 export default function PushRegistrationMount() {
-  const { currentUser } = useAuth();
+  const { currentUser, apiFetch } = useAuth();
 
   useEffect(() => {
     if (!currentUser?.id) return;
-    registerPushSubscription(String(currentUser.id));
-    initNativePush(String(currentUser.id));
-  }, [currentUser?.id]);
+    registerPushSubscription(apiFetch);
+    initNativePush(apiFetch);
+  }, [currentUser?.id, apiFetch]);
 
   return null;
 }
