@@ -372,4 +372,28 @@ end $$;
 revoke all on function public.app_membership_change(text,uuid,uuid,integer,text,text) from public, anon, authenticated;
 grant execute on function public.app_membership_change(text,uuid,uuid,integer,text,text) to service_role;
 
+-- Boolean-only duplicate check. It deliberately exposes no row identifier or PII and
+-- accepts calls only from an active member of the requested project (or an AAL2 CEO).
+create or replace function public.check_contact_duplicate(
+  p_project_id integer, p_phone_suffix text
+) returns boolean
+language plpgsql security definer stable
+set search_path = pg_catalog, public
+as $$
+begin
+  if auth.uid() is null
+     or p_phone_suffix !~ '^[0-9]{7,8}$'
+     or not (public.app_has_active_membership(p_project_id) or public.app_is_ceo()) then
+    return false;
+  end if;
+  return exists (
+    select 1 from public.contacts c
+    where c.project_id = p_project_id and c.is_active = true
+      and regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g') like '%' || p_phone_suffix
+  );
+end $$;
+
+revoke all on function public.check_contact_duplicate(integer,text) from public, anon;
+grant execute on function public.check_contact_duplicate(integer,text) to authenticated;
+
 commit;

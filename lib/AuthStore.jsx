@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { createApiClient } from './security/api-client.mjs';
 
 const AuthContext = createContext(null);
@@ -92,6 +92,8 @@ export function AuthProvider({ children }) {
     method: 'POST', body: { username }, csrf: false,
   });
 
+  const apiFetch = useCallback((path, options) => api()(path, options), []);
+
   async function completePasswordReset(password) {
     const result = await api()('/api/auth/password-reset/complete', {
       method: 'POST', body: { password },
@@ -129,6 +131,7 @@ export function AuthProvider({ children }) {
       currentUser, projects, activeProject, filterProject, loginError, authLoading,
       requiresMfa, authState, login, logout, enrollMfa, challengeMfa, verifyMfa,
       mfaFactors, requestPasswordReset, completePasswordReset, switchProject, can,
+      apiFetch,
     }}>
       {children}
     </AuthContext.Provider>

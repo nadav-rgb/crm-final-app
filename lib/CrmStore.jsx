@@ -77,13 +77,22 @@ function toInteractionRow(interaction) {
   return row;
 }
 
-async function insertInteractionToSupabase(interaction) {
-  const row = toInteractionRow(interaction);
-  if (row.id === undefined || row.id === null) return { error: new Error('Missing interaction id') };
-  const supabase = getSupabaseClient();
-  const { error } = await supabase.from('interactions').insert(row);
-  if (error) console.error('Failed to insert interaction', error);
-  return { error: error || null };
+async function insertInteractionViaApi(apiFetch, interaction) {
+  try {
+    const result = await apiFetch(`/api/contacts/${encodeURIComponent(interaction.contact_id)}/interactions`, {
+      method: 'POST',
+      body: {
+        occurredAt: new Date(`${interaction.date}T${interaction.time || '00:00'}:00`).toISOString(),
+        type: interaction.type,
+        quality: interaction.quality || undefined,
+        notes: interaction.notes || undefined,
+        participantIds: Array.isArray(interaction.participants) ? interaction.participants : [],
+      },
+    });
+    return { data: result.interaction, error: null };
+  } catch (error) {
+    return { data: null, error };
+  }
 }
 
 // העמודות הקיימות בטבלת contacts ב-Supabase — סינון לפני כתיבה (משמיט מפתחות זרים מהטופס)
@@ -122,40 +131,46 @@ function toContactRow(contact) {
   return row;
 }
 
-async function insertContactToSupabase(contact) {
-  const row = toContactRow(contact);
-  const supabase = getSupabaseClient();
-  const { error } = await supabase
-    .from('contacts')
-    .insert(row);
-  if (error) {
-    console.error('Failed to insert customer into Supabase contacts table', { error, row });
+async function insertContactViaApi(apiFetch, contact) {
+  try {
+    const result = await apiFetch('/api/contacts', {
+      method: 'POST',
+      body: { name: contact.name, phone: contact.phone || undefined, city: contact.city || undefined, notes: contact.notes || undefined },
+    });
+    return { data: result.contact, error: null };
+  } catch (error) {
+    return { data: null, error };
   }
-  return { error };
 }
 
 // כתיבת השדות הנגזרים חזרה לטבלת contacts (אחרת הם נשארים מקומיים ונעלמים ב-reload)
-async function loadContactsFromSupabase(currentUser) {
-  const supabase = getSupabaseClient();
-  // is_active=false = לקוח שנמחק (soft-delete) — לא נטען. השדה NOT NULL default true.
-  let query = supabase.from('contacts').select('*').eq('is_active', true);
-  query = scopeQueryToUser(query, currentUser);
-  const { data, error } = await query;
-  if (error) {
-    console.error('Failed to load customers from Supabase contacts table', error);
+async function loadContactsFromApi(apiFetch, currentUser) {
+  try {
+    const result = await apiFetch('/api/contacts', { method: 'GET' });
+    const data = (result.contacts || []).map(contact => ({
+      ...contact,
+      assigned_user_id: contact.assignedUserId,
+      activist_id: contact.assignedUserId,
+      next_action_date: contact.nextActionAt,
+      project_id: currentUser?.project_id ?? null,
+    }));
+    return { data, error: null };
+  } catch (error) {
     return { data: null, error };
   }
-  return { data: Array.isArray(data) ? data : [], error: null };
 }
 
 // מחזירה { error } — הקורא (updateMitzvot) חייב לדעת אם השמירה נחתה לפני שהוא מציג
 // "עודכן בהצלחה" ולפני שהוא מפעיל התראה שקוראת את השורה מה-DB.
-async function updateContactFieldsInSupabase(contactId, fields) {
-  if (contactId === undefined || contactId === null) return { error: new Error('Missing contact id') };
-  const supabase = getSupabaseClient();
-  const { error } = await supabase.from('contacts').update(fields).eq('id', contactId);
-  if (error) console.error('Failed to update contact fields', error);
-  return { error: error || null };
+async function updateContactFieldsViaApi(apiFetch, contactId, fields) {
+  const allowed = Object.fromEntries(Object.entries(fields).filter(([key]) => ['name', 'phone', 'city', 'notes'].includes(key)));
+  if (Object.keys(allowed).length === 0) return { error: null };
+  try {
+    await apiFetch(`/api/contacts/${encodeURIComponent(contactId)}`, { method: 'PATCH', body: allowed });
+    return { error: null };
+  } catch (error) {
+    return { error };
+  }
 }
 
 const PROJECT_NAMES = { 1:'אחדות יהודית', 2:'נעים להכיר', 3:'שבת מכל הסיבות', 4:'נפש יהודי' };
@@ -193,7 +208,7 @@ export function CrmProvider({ children }) {
   // יחשבו בדיוק אותו דבר — קודם היא הייתה משוכפלת בשלושה מקומות.
   const mitzvotBonuses = useMemo(() => deriveMitzvotBonuses(contacts), [contacts]);
 
-  const { currentUser, authLoading } = useAuth();
+  const { currentUser, authLoading, apiFetch } = useAuth();
 
   // טעינת קונפיג השכר מ-Supabase (No-Hard-Coding). fallback ל-DEFAULT_CONFIG בכשל.
   useEffect(() => {
@@ -211,13 +226,13 @@ export function CrmProvider({ children }) {
     if (!currentUser) { setContacts([]); return; }
     let active = true;
     (async () => {
-      const { data, error } = await loadContactsFromSupabase(currentUser);
+      const { data, error } = await loadContactsFromApi(apiFetch, currentUser);
       if (!active) return;
       if (error) return;
       setContacts(data);
     })();
     return () => { active = false; };
-  }, [currentUser, authLoading]);
+  }, [currentUser, authLoading, apiFetch]);
 
   // סנכרון התראות מ-Supabase ל-localStorage בכניסה (cross-device). fire-and-forget.
   useEffect(() => {
@@ -311,16 +326,20 @@ export function CrmProvider({ children }) {
     if (!currentUser) { setInteractions([]); return; }
     let active = true;
     (async () => {
-      const supabase = getSupabaseClient();
-      let query = supabase.from('interactions').select('*');
-      query = scopeQueryToUser(query, currentUser);
-      const { data, error } = await query;
+      const requests = contacts.map(contact => apiFetch(`/api/contacts/${encodeURIComponent(contact.id)}/interactions`, { method: 'GET' }));
+      const settled = await Promise.allSettled(requests);
       if (!active) return;
-      if (error) { console.error('Failed to load interactions', error); return; }
-      if (Array.isArray(data)) setInteractions(data);
+      if (settled.some(result => result.status === 'rejected')) return;
+      const data = settled.flatMap(result => result.value.interactions || []).map(interaction => ({
+        ...interaction,
+        contact_id: interaction.contactId,
+        date: interaction.occurredAt?.slice(0, 10),
+        time: interaction.occurredAt?.slice(11, 16),
+      }));
+      setInteractions(data);
     })();
     return () => { active = false; };
-  }, [currentUser, authLoading]);
+  }, [currentUser, authLoading, contacts, apiFetch]);
 
   // טעינת דיווחי מפגשי בסיס מ-Supabase — רק אחרי שההתחברות מוכנה ויש משתמש,
   // כדי שה-select לא יצא כאנונימי (קריטי כשיופעל RLS). מסונן לפי בעלות.
@@ -370,7 +389,7 @@ export function CrmProvider({ children }) {
 
     // כתיבה לענן — נמתנת (mitzvot_level מסונן ב-toInteractionRow). ה-state כבר עודכן למעלה,
     // אז ההמתנה לא מורגשת ב-UI אבל מאפשרת לקורא לחכות לשורה לפני הפעלת התראות.
-    const insertResult = await insertInteractionToSupabase(newInteraction);
+    const insertResult = await insertInteractionViaApi(apiFetch, newInteraction);
 
     // גלגול-אחורה של העדכון האופטימי: בלעדיו קשר שלא נשמר נשאר על המסך ובמוני החודש
     // עד רענון, והפעיל רואה דיווח שלא קיים ב-DB.
@@ -402,7 +421,7 @@ export function CrmProvider({ children }) {
     const contactFields = { days_since_last_contact: diffDays, last_interaction_date: date };
     if (next_action      !== undefined) contactFields.next_action      = next_action;
     if (next_action_date !== undefined) contactFields.next_action_date = next_action_date;
-    updateContactFieldsInSupabase(contact_id, contactFields);
+    updateContactFieldsViaApi(apiFetch, contact_id, contactFields);
 
     return insertResult;
   }
@@ -431,16 +450,18 @@ export function CrmProvider({ children }) {
     if (!fields || Object.keys(fields).length === 0) return { error: null };
     const row = {};
     INTERACTION_COLUMNS.forEach(key => { if (fields[key] !== undefined) row[key] = fields[key]; });
-    const supabase = getSupabaseClient();
-    const { error } = await supabase.from('interactions').update(row).eq('id', interactionId);
+    let error = null;
+    try { await apiFetch(`/api/interactions/${encodeURIComponent(interactionId)}`, { method: 'PATCH', body: row }); }
+    catch (caught) { error = caught; }
     if (error) { console.error('Failed to update interaction', error); return { error }; }
     setInteractions(prev => prev.map(i => i.id === interactionId ? { ...i, ...row } : i));
     return { error: null };
   }
 
   async function deleteInteraction(interactionId) {
-    const supabase = getSupabaseClient();
-    const { error } = await supabase.from('interactions').delete().eq('id', interactionId);
+    let error = null;
+    try { await apiFetch(`/api/interactions/${encodeURIComponent(interactionId)}`, { method: 'DELETE' }); }
+    catch (caught) { error = caught; }
     if (error) { console.error('Failed to delete interaction', error); return { error }; }
     setInteractions(prev => prev.filter(i => i.id !== interactionId));
     return { error: null };
@@ -450,13 +471,13 @@ export function CrmProvider({ children }) {
     // random integer 100M–999M: בטוח ב-int4, רחוק מ-seed data (1001-9999), לא גולש כמו Date.now()
     const tempId = Math.floor(Math.random() * 900_000_000) + 100_000_000;
     const newContact = { ...contactData, id: tempId, mitzvot: contactData.mitzvot || {}, mitzvot_history: [] };
-    const { error } = await insertContactToSupabase(newContact);
+    const { error } = await insertContactViaApi(apiFetch, newContact);
 
     if (error) {
       return { error };
     }
 
-    const syncResult = await loadContactsFromSupabase(currentUser);
+    const syncResult = await loadContactsFromApi(apiFetch, currentUser);
     if (syncResult.error) {
       return { error: syncResult.error };
     }
@@ -470,8 +491,7 @@ export function CrmProvider({ children }) {
   // F1 — עריכת פרטי לקוח קיים. שומר ל-Supabase + עדכון optimistic.
   async function updateContact(contactId, fields) {
     if (!fields || Object.keys(fields).length === 0) return { error: null };
-    const supabase = getSupabaseClient();
-    const { error } = await supabase.from('contacts').update(fields).eq('id', contactId);
+    const { error } = await updateContactFieldsViaApi(apiFetch, contactId, fields);
     if (error) { console.error('Failed to update contact', error); return { error }; }
     setContacts(prev => prev.map(c => c.id === contactId ? { ...c, ...fields } : c));
     return { error: null };
@@ -506,8 +526,9 @@ export function CrmProvider({ children }) {
 
   // F1 — מחיקת לקוח (soft-delete: is_active=false). לא נמחק פיזית, מונע אובדן נתונים.
   async function deleteContact(contactId) {
-    const supabase = getSupabaseClient();
-    const { error } = await supabase.from('contacts').update({ is_active: false }).eq('id', contactId);
+    let error = null;
+    try { await apiFetch(`/api/contacts/${encodeURIComponent(contactId)}`, { method: 'DELETE' }); }
+    catch (caught) { error = caught; }
     if (error) { console.error('Failed to delete contact', error); return { error }; }
     setContacts(prev => prev.filter(c => c.id !== contactId));
     return { error: null };
@@ -534,7 +555,7 @@ export function CrmProvider({ children }) {
     const fields = { mitzvot: newMitzvot, mitzvot_history: history };
     // ה-state מתעדכן רק אחרי כתיבה מוצלחת: אחרת המסך מראה רמה חדשה שלא קיימת ב-DB,
     // ושמירה חוזרת מייצרת שורת היסטוריה שנייה על אותה עליה — כלומר בונוס כפול.
-    const { error } = await updateContactFieldsInSupabase(contactId, fields);
+    const { error } = await updateContactFieldsViaApi(apiFetch, contactId, fields);
     if (error) return { error };
     setContacts(prev => prev.map(c => c.id === contactId ? { ...c, ...fields } : c));
     return { error: null };
