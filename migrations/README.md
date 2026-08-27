@@ -41,6 +41,7 @@
 | 0014_bonus_cancellations | טבלת `bonus_cancellations` | ✅ הורץ |
 | 0015_participants_reports_project_notification_recipients | `interactions.participants` + RPC `app_notification_recipients` | ✅ הורץ |
 | 0016_feedback_reports | טבלת `feedback_reports` (עמוד `/feedback`) | ✅ הורץ 2026-07-21 |
+| 0018_security_foundation | memberships, UUID ownership, private sessions/audit/rate-limit | ⛔ לא הורץ — נדרש G5 מאושר |
 
 ### 0016 — אימות שבוצע (2026-07-21)
 - הטבלה קיימת עם כל 10 העמודות ✅
