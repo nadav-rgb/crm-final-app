@@ -45,6 +45,16 @@ drop trigger if exists audit_push_subscriptions_changes on public.push_subscript
 drop trigger if exists audit_fcm_tokens_changes on public.fcm_tokens;
 drop trigger if exists audit_feedback_reports_changes on public.feedback_reports;
 
+drop function if exists public.app_membership_change(text,uuid,uuid,integer,text,text);
+drop function if exists public.app_audit_append(uuid,text,integer,text,text,text,text,text,uuid,text,jsonb);
+drop function if exists public.app_rate_limit_consume(text,integer,integer);
+drop function if exists public.app_session_refresh_tokens(text,text,text,text,integer,timestamptz);
+drop function if exists public.app_session_revoke(text,text);
+drop function if exists public.app_session_rotate(text,text,text,text,integer,timestamptz,text,smallint,integer,text,timestamptz,integer,timestamptz,timestamptz,text);
+drop function if exists public.app_session_touch(text,timestamptz,timestamptz);
+drop function if exists public.app_session_load(text);
+drop function if exists public.app_session_create(text,uuid,text,text,integer,timestamptz,text,smallint,integer,text,timestamptz,integer,timestamptz,timestamptz);
+
 drop function if exists public.app_security_posture();
 drop function if exists public.app_notification_recipients(integer);
 drop function if exists public.app_current_role();
