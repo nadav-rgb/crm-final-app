@@ -1,27 +1,18 @@
-// pages/api/reminders/cancel.js — cancels pending reminders when report is submitted
-import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
-import { requireAuth } from '../meeting-houses/_auth';
+import { secureHandler } from '../../../lib/security/api-handler.mjs';
+import { SecurityError } from '../../../lib/security/errors.mjs';
+import { reminderCancelSchema } from '../../../lib/security/schemas.mjs';
+import { cancelReminderCommand } from '../../../lib/security/domains/meetings.mjs';
 
-export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).end();
-
-  const auth = await requireAuth(req);
-  if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
-
-  const { meetingId, activistId } = req.body;
-  if (!meetingId || !activistId) {
-    return res.status(400).json({ error: 'Missing fields' });
-  }
-
-  const supabase = getSupabaseAdmin();
-
-  const { error } = await supabase
-    .from('meeting_reminders')
-    .update({ sent: true })
-    .eq('meeting_id', meetingId)
-    .eq('activist_id', activistId)
-    .eq('sent', false);
-
-  if (error) return res.status(500).json({ error: error.message });
-  return res.status(200).json({ ok: true });
-}
+export default secureHandler({ method: 'POST', schema: reminderCancelSchema, resourceType: 'meeting_reminder' }, async (context, input) => {
+  const { data: reminder, error } = await context.db.from('meeting_reminders')
+    .select('id,project_id,recipient_user_id,meeting_id').eq('meeting_id', input.meetingId)
+    .eq('recipient_user_id', context.userId).is('cancelled_at', null).limit(1).maybeSingle();
+  if (error) throw new SecurityError(503, 'DATA_UNAVAILABLE', 'Data service is unavailable', { cause: error });
+  if (!reminder) throw new SecurityError(404, 'NOT_FOUND', 'Reminder was not found');
+  const command = await cancelReminderCommand(context, reminder);
+  const { data, error: updateError } = await context.db.from('meeting_reminders')
+    .update({ cancelled_at: command.cancelled_at }).eq('id', reminder.id).select('id').maybeSingle();
+  if (updateError) throw new SecurityError(503, 'DATA_UNAVAILABLE', 'Data service is unavailable', { cause: updateError });
+  if (!data) throw new SecurityError(404, 'NOT_FOUND', 'Reminder was not found');
+  return { cancelled: true };
+});

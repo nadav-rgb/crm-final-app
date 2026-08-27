@@ -4,7 +4,6 @@ import Link from 'next/link';
 import DesktopLayout from '../../components/DesktopLayout';
 import { useAuth } from '../../lib/AuthStore';
 import { useCrm } from '../../lib/CrmStore';
-import { getMeetingHouses } from '../../lib/meetingHousesStorage';
 import { fetchMeetingHousesFromSupabase } from '../../lib/meetingHousesSupabase';
 import { generateMeetingNotesAiSummaryDemo, summarizeBaseMeetingDemo } from '../../lib/aiDemo';
 
@@ -14,7 +13,7 @@ function formatDate(d) {
 }
 
 export default function CompletedMeetingHousesPage() {
-  const { can } = useAuth();
+  const { can, apiFetch } = useAuth();
   const { baseMeetings, activists } = useCrm();
   const [houses, setHouses] = useState([]);
   const [selectedHouse, setSelectedHouse] = useState(null);
@@ -26,14 +25,11 @@ export default function CompletedMeetingHousesPage() {
   useEffect(() => {
     let active = true;
     (async () => {
-      const remote = await fetchMeetingHousesFromSupabase();
-      const local = getMeetingHouses();
-      const remoteIds = new Set(remote.map(h => String(h.id)));
-      const merged = [...remote, ...local.filter(h => !remoteIds.has(String(h.id)))];
-      if (active) setHouses(merged.filter(h => h.status === 'completed'));
+      const remote = await fetchMeetingHousesFromSupabase(apiFetch);
+      if (active) setHouses(remote.filter(h => h.status === 'completed'));
     })();
     return () => { active = false; };
-  }, [activists]);
+  }, [activists, apiFetch]);
 
   if (!can.seeMeetingHouses) {
     return (

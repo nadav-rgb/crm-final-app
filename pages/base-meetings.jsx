@@ -7,11 +7,9 @@ import { useAuth } from '../lib/AuthStore';
 import { summarizeBaseMeetingDemo } from '../lib/aiDemo';
 import { summarizeReportText } from '../lib/aiService';
 import VoiceInput from '../components/VoiceInput';
-import { getMeetingHouses } from '../lib/meetingHousesStorage';
+import { fetchMeetingHousesFromSupabase } from '../lib/meetingHousesSupabase';
 import { buildBaseMeetingsFromHouses } from '../lib/baseMeetingUtils';
-import { getSupabaseClient } from '../lib/supabaseClient';
 import { getReminderStatus } from '../lib/reminderSchedulerDemo';
-import { authHeader } from '../lib/apiAuth';
 import { notifyBaseMeetingReportApi } from '../lib/notifyApi';
 
 const MEETING_NUMBER_LABELS = { 1:'מפגש ראשון 🌱', 2:'מפגש שני 🌿', 3:'מפגש שלישי 🌳', 4:'מפגש רביעי 🏆' };
@@ -92,32 +90,21 @@ function structuredToText(sa) {
 
 export default function BaseMeetingsPage() {
   const { baseMeetings, submitBaseMeeting, updateBaseMeetingReport, activists } = useCrm();
-  const { currentUser } = useAuth();
+  const { currentUser, apiFetch } = useAuth();
   const router = useRouter();
   const [houses, setHouses] = useState([]);
 
   useEffect(() => {
     let active = true;
     (async () => {
-      const local = getMeetingHouses(); // mock + localStorage (fallback / בסיס למיזוג)
       try {
-        const supabase = getSupabaseClient();
-        const { data, error } = await supabase.from('meeting_houses').select('*');
+        const data = await fetchMeetingHousesFromSupabase(apiFetch);
         if (!active) return;
-        if (error || !Array.isArray(data) || data.length === 0) {
-          setHouses(local); // fallback מלא
-          return;
-        }
-        // מיזוג: מתחילים מהמקומי, ובתי הענן גוברים לפי id
-        const byId = new Map(local.map(h => [String(h.id), h]));
-        data.map(mapHouseRow).forEach(h => byId.set(String(h.id), h));
-        setHouses(Array.from(byId.values()));
-      } catch (e) {
-        if (active) setHouses(local); // fallback מלא בכשל
-      }
+        setHouses(data);
+      } catch { if (active) setHouses([]); }
     })();
     return () => { active = false; };
-  }, []);
+  }, [apiFetch]);
 
   const expandedBaseMeetings = useMemo(() => buildBaseMeetingsFromHouses({
     houses,
@@ -171,15 +158,7 @@ export default function BaseMeetingsPage() {
     const pending = visibleMeetings.filter(m => !m.submitted && m.date === today);
     if (!pending.length) return;
     pending.forEach(async meeting => {
-      fetch('/api/reminders/schedule', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
-        body: JSON.stringify({
-          meetingId: String(meeting.id),
-          activistId: String(meeting.activist_id || currentUser.id),
-          meetingDate: today,
-        }),
-      }).catch(() => {});
+      apiFetch('/api/reminders/schedule', { method: 'POST', body: { meetingId: meeting.id } }).catch(() => {});
     });
   }, [visibleMeetings, currentUser]);
 
@@ -278,16 +257,7 @@ export default function BaseMeetingsPage() {
       })
       .catch(err => console.error('שמירת הדיווח נכשלה', err));
     // Cancel pending reminders — report was submitted
-    authHeader().then(h =>
-      fetch('/api/reminders/cancel', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...h },
-        body: JSON.stringify({
-          meetingId: String(selected.id),
-          activistId: String(selected.activist_id || currentUser?.id),
-        }),
-      })
-    ).catch(() => {});
+    apiFetch('/api/reminders/cancel', { method: 'POST', body: { meetingId: selected.id } }).catch(() => {});
     setSaved(true);
     setSelected(null);
   }

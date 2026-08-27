@@ -1,44 +1,19 @@
-// pages/api/base-meetings/notify.js — התראת "דיווח מפגש בסיס הוגש", בצד השרת (service role → עוקף RLS).
-// למה בשרת: שליחת Push אמיתי (טלפון/מחשב) חייבת admin key + VAPID/FCM secrets — לא זמינים בדפדפן.
-// עד היום lib/notificationDemo.js כתב רק שורת notifications (פעמון באפליקציה) מהדפדפן — בלי Push בפועל,
-// ולכן רכז שלא היה פתוח על המערכת באותו רגע לא קיבל שום התראה בפועל לטלפון/מחשב.
-import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
-import { requireAuth } from '../meeting-houses/_auth';
-import { getProjectManagers, notifyRecipients } from '../../../lib/notifyRecipients';
+import { z } from 'zod';
+import { secureHandler } from '../../../lib/security/api-handler.mjs';
+import { SecurityError } from '../../../lib/security/errors.mjs';
 
-export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).end();
+const schema = z.object({ reportId: z.union([z.string().uuid(), z.number().int().positive()]) }).strict();
 
-  const auth = await requireAuth(req);
-  if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
-  if (!auth.profile?.activist_code) return res.status(403).json({ error: 'No profile' });
-
-  const { reportId } = req.body || {};
-  if (!reportId) return res.status(400).json({ error: 'Missing reportId' });
-
-  const supabase = getSupabaseAdmin();
-  const { data: report, error: rErr } = await supabase
-    .from('base_meeting_reports')
-    .select('*')
-    .eq('id', String(reportId))
-    .single();
-  if (rErr || !report) return res.status(404).json({ error: 'Report not found' });
-
-  const reporterCode = Number(auth.profile.activist_code);
-  const projectId = Number(report.project_id) || 1;
-  const recipients = await getProjectManagers(supabase, projectId, { excludeCode: reporterCode });
-
-  const reporterName = auth.profile.name || report.activist_name || 'פעיל';
-  const baseBody = `${reporterName} מילא דיווח עבור בית מפגש ${report.meeting_place_number}, מפגש ${report.meeting_number}.`;
-
-  const notified = await notifyRecipients(supabase, recipients, {
-    title: 'דיווח מפגש בסיס הוגש',
-    body: report.ai_summary ? `${baseBody}\n\nסיכום:\n${report.ai_summary}` : baseBody,
-    url: report.house_id ? `/meeting-houses/${report.house_id}` : '/base-meetings',
-    type: 'base_meeting_submitted',
-    priority: 'normal',
-    clientId: (code) => `base_meeting_report__${report.id}__${code}`,
-  });
-
-  return res.status(200).json({ notified });
-}
+export default secureHandler({ method: 'POST', schema, resourceType: 'base_meeting_report' }, async (context, input) => {
+  const { data: report, error } = await context.db.from('base_meeting_reports')
+    .select('id,project_id,house_id,actor_user_id').eq('id', input.reportId).maybeSingle();
+  if (error) throw new SecurityError(503, 'DATA_UNAVAILABLE', 'Data service is unavailable', { cause: error });
+  if (!report) throw new SecurityError(404, 'NOT_FOUND', 'Report was not found');
+  const membership = context.memberships?.find((entry) => entry.projectId === report.project_id && entry.status === 'active');
+  if (context.globalRole !== 'ceo' && report.actor_user_id !== context.userId && !['head', 'coord'].includes(membership?.role)) {
+    throw new SecurityError(404, 'NOT_FOUND', 'Report was not found');
+  }
+  const { data, error: notifyError } = await context.db.rpc('enqueue_base_meeting_notification', { p_report_id: report.id });
+  if (notifyError) throw new SecurityError(503, 'DEPENDENCY_UNAVAILABLE', 'Notification delivery is unavailable', { cause: notifyError });
+  return { notified: Array.isArray(data) ? data : [] };
+});

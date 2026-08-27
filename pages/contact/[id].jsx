@@ -10,7 +10,6 @@ import { formatDateHe } from '../../lib/formatDate';
 import { useCrm } from '../../lib/CrmStore';
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../lib/AuthStore';
-import { getMeetingHouses } from '../../lib/meetingHousesStorage';
 import { fetchMeetingHousesFromSupabase } from '../../lib/meetingHousesSupabase';
 import { PAID_PROJECT_IDS } from '../../lib/paymentCalc';
 import { createInteractionEditedNotification } from '../../lib/notificationDemo';
@@ -19,7 +18,7 @@ export default function ContactDetail() {
   const router = useRouter();
   const { id, from, activistId, view, contactId: fromContactId } = router.query;
   const { contacts, interactions, activists, tours, updateContact, deleteContact, updateInteraction, deleteInteraction } = useCrm();
-  const { can, activeProject, currentUser } = useAuth();
+  const { can, activeProject, currentUser, apiFetch } = useAuth();
 
   // F1 — state לעריכה/מחיקה. חייב להיות לפני כל early return (כללי hooks).
   const [editing, setEditing]     = useState(false);
@@ -52,14 +51,11 @@ export default function ContactDetail() {
   useEffect(() => {
     let active = true;
     (async () => {
-      const remote = await fetchMeetingHousesFromSupabase();
-      const local  = getMeetingHouses();
-      const remoteIds = new Set(remote.map(h => String(h.id)));
-      const merged = [...remote, ...local.filter(h => !remoteIds.has(String(h.id)))];
-      if (active) setHouses(merged);
+      const remote = await fetchMeetingHousesFromSupabase(apiFetch);
+      if (active) setHouses(remote);
     })();
     return () => { active = false; };
-  }, []);
+  }, [apiFetch]);
   const houseKey = h => `${h.houseNumber}||${h.settlement || h.city || ''}`;
 
   const contact = contacts.find(c => c.id === Number(id));

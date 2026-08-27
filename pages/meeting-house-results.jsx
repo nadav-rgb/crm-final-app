@@ -3,18 +3,18 @@ import { useState, useEffect, useMemo } from 'react';
 import DesktopLayout from '../components/DesktopLayout';
 import { useCrm } from '../lib/CrmStore';
 import { useAuth } from '../lib/AuthStore';
-import { getMeetingHouses } from '../lib/meetingHousesStorage';
+import { fetchMeetingHousesFromSupabase } from '../lib/meetingHousesSupabase';
 import { inProject } from '../lib/projectUtils';
 
 export default function MeetingHouseResultsPage() {
   const { contacts, baseMeetings, activists } = useCrm();
-  const { can } = useAuth();
+  const { can, apiFetch } = useAuth();
   const [houses, setHouses] = useState([]);
   const achdutActivists = useMemo(() => activists.filter(a => a.role === 'activist' && inProject(a, 1)), [activists]);
 
   useEffect(() => {
-    setHouses(getMeetingHouses());
-  }, []);
+    fetchMeetingHousesFromSupabase(apiFetch).then(setHouses).catch(() => setHouses([]));
+  }, [apiFetch]);
 
   const achdutContacts = contacts.filter(c =>
     c.project_id === 1 && c.meeting_place_number && c.meeting_place_city

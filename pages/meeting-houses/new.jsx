@@ -3,7 +3,6 @@ import { useState } from 'react';
 import { useRouter } from 'next/router';
 import DesktopLayout from '../../components/DesktopLayout';
 import { useAuth } from '../../lib/AuthStore';
-import { saveManualMeetingHouse } from '../../lib/meetingHousesStorage';
 import { upsertMeetingHouseApi } from '../../lib/meetingHousesSupabase';
 import { inProject } from '../../lib/projectUtils';
 
@@ -11,7 +10,7 @@ const emptyMeetings = [1, 2, 3, 4].map(num => ({ meetingNumber: num, date: '', s
 
 export default function NewMeetingHousePage() {
   const router = useRouter();
-  const { can, currentUser } = useAuth();
+  const { can, currentUser, apiFetch } = useAuth();
   const [form, setForm] = useState({
     settlement: '',
     houseNumber: '',
@@ -67,18 +66,15 @@ export default function NewMeetingHousePage() {
     setSaving(true);
 
     // מקור אמת: Supabase (דרך API מאומת).
-    const saved = await upsertMeetingHouseApi({
-      id: `mh-${Date.now()}`,
+    const saved = await upsertMeetingHouseApi(apiFetch, {
+      id: globalThis.crypto.randomUUID(),
       settlement: form.settlement,
       city: form.settlement,
       houseNumber: form.houseNumber,
       hostName: form.hostName,
       facilitatorName: form.facilitatorName,
-      status: 'upcoming',
       meetings: form.meetings,
-      assignedActivists: [],
-      project_id: currentUser?.project_id ?? 1,
-      startDate: form.meetings[0]?.date || '',
+      assignedUserIds: [],
     });
 
     if (saved) {
@@ -86,19 +82,8 @@ export default function NewMeetingHousePage() {
       return;
     }
 
-    // נפילה ל-localStorage רק אם השרת לא זמין — לא לאבד את העבודה.
-    const local = saveManualMeetingHouse({
-      ...form,
-      city: form.settlement,
-      startDate: form.meetings[0]?.date || '',
-      assignedActivists: [],
-    });
-    if (!local) {
-      setError('לא ניתן לשמור כרגע. נסה לרענן את הדף.');
-      setSaving(false); // נכשל — הטופס חוזר להיות לחיץ לניסיון נוסף
-      return;
-    }
-    router.push(`/meeting-houses/${local.id}`);
+    setError('לא ניתן לשמור כרגע. נסה לרענן את הדף.');
+    setSaving(false);
   }
 
   return (

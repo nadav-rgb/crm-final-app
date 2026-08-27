@@ -3,8 +3,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import DesktopLayout from '../../components/DesktopLayout';
 import { useAuth } from '../../lib/AuthStore';
-import { getMeetingHouseById, updateMeetingHouseAssignments, updateMeetingCompletion } from '../../lib/meetingHousesStorage';
-import { fetchMeetingHousesFromSupabase, updateAssignmentsApi, sendAssignmentPushApi } from '../../lib/meetingHousesSupabase';
+import { fetchMeetingHousesFromSupabase, updateAssignmentsApi, sendAssignmentPushApi, upsertMeetingHouseApi } from '../../lib/meetingHousesSupabase';
 import { createDemoNotification } from '../../lib/notificationDemo';
 import ActivistSearchSelect from '../../components/ActivistSearchSelect';
 import { useCrm } from '../../lib/CrmStore';
@@ -21,7 +20,7 @@ function formatDate(dateString) {
 export default function MeetingHouseDetailPage() {
   const router = useRouter();
   const { id } = router.query;
-  const { can, currentUser } = useAuth();
+  const { can, currentUser, apiFetch } = useAuth();
   const { baseMeetings, upsertBaseMeetingReports, activists } = useCrm();
 
   const [house, setHouse] = useState(null);
@@ -37,15 +36,15 @@ export default function MeetingHouseDetailPage() {
     let active = true;
     (async () => {
       // מקור אמת: Supabase. נפילה ל-localStorage רק עבור בתי מפגש דמו ישנים.
-      const houses = await fetchMeetingHousesFromSupabase();
-      let found = houses.find(h => String(h.id) === String(id)) || getMeetingHouseById(id) || null;
+      const houses = await fetchMeetingHousesFromSupabase(apiFetch);
+      const found = houses.find(h => String(h.id) === String(id)) || null;
       if (!active) return;
       setHouse(found);
       setAssignedIds(found?.assignedActivists ?? []);
       setLoaded(true);
     })();
     return () => { active = false; };
-  }, [id]);
+  }, [id, apiFetch]);
 
   // מקור הפעילים האמיתי — activist_directory (דרך useCrm). מסונן לפי חברות בפרויקט
   // של בית המפגש (בתי מפגש=אחדות/1) — כולל פעילים דו-פרויקטליים.
@@ -80,7 +79,7 @@ export default function MeetingHouseDetailPage() {
   }
 
   // Robust string-normalised comparisons — avoids number/string mismatch
-  const uid = String(currentUser?.id ?? '');
+  const uid = String(currentUser?.userId ?? '');
   const isActivistRole = currentUser?.role === 'activist';
 
   const matchesAssignedId    = String(house.assignedActivistId ?? '') === uid;
@@ -104,30 +103,24 @@ export default function MeetingHouseDetailPage() {
   async function persistAssignments(nextAssignedIds) {
     setAssignedIds(nextAssignedIds);
     // מקור אמת: Supabase (דרך API מאומת). נפילה ל-localStorage רק לבתי מפגש דמו ישנים.
-    const updated = await updateAssignmentsApi(house.id, nextAssignedIds);
-    if (updated) { setHouse(updated); return; }
-    const local = updateMeetingHouseAssignments(house.id, nextAssignedIds);
-    if (local) setHouse(local);
+    const updated = await updateAssignmentsApi(apiFetch, house.id, nextAssignedIds);
+    if (updated) setHouse(updated);
   }
 
   async function assignActivist() {
-    const parsedId = Number(selectedActivistId);
-    if (!parsedId || assignedIds.some(a => Number(a) === parsedId)) return;
-    await persistAssignments([...assignedIds, parsedId]);
+    const selected = activistPool.find(a => String(a.id) === String(selectedActivistId));
+    const selectedUserId = selected?.userId;
+    if (!selectedUserId || assignedIds.includes(selectedUserId)) return;
+    await persistAssignments([...assignedIds, selectedUserId]);
     // Push אמיתי לטלפון של הפעיל (no-op בטוח אם לא נרשם להתראות).
-    sendAssignmentPushApi({
-      activistId: parsedId,
-      title: 'שובצת לבית מפגש',
-      body: `שובצת לבית מפגש ${house.houseNumber} ב${house.settlement || house.city}.`,
-      url: `/meeting-houses/${house.id}`,
-    });
+    sendAssignmentPushApi(apiFetch, { houseId: house.id }).catch(() => {});
     // התראה בתוך-המערכת (קיימת — נשארת לתצוגה בתוך ה-CRM).
     createDemoNotification({
-      id: `manual_assignment_${house.id}_${parsedId}_${Date.now()}`,
+      id: `manual_assignment_${house.id}_${selectedUserId}_${Date.now()}`,
       type: 'assignment',
       title: 'שובצת לבית מפגש',
       body: `שובצת לבית מפגש ${house.houseNumber} ב${house.settlement || house.city}.`,
-      user_id: parsedId,
+      user_id: selectedUserId,
       project_id: 1,
       priority: 'high',
       created_at: new Date().toISOString(),
@@ -135,7 +128,7 @@ export default function MeetingHouseDetailPage() {
     });
     if (currentUser) {
       createDemoNotification({
-        id: `manager_assignment_${house.id}_${parsedId}_${currentUser.id}_${Date.now()}`,
+        id: `manager_assignment_${house.id}_${selectedUserId}_${currentUser.id}_${Date.now()}`,
         type: 'assignment',
         title: 'שיבוץ פעיל נשמר',
         body: `שיבצת פעיל לבית מפגש ${house.houseNumber}. נשלחה אליו התראה על השיבוץ.`,
@@ -150,7 +143,7 @@ export default function MeetingHouseDetailPage() {
   }
 
   async function removeActivist(activistId) {
-    await persistAssignments(assignedIds.filter(item => Number(item) !== Number(activistId)));
+    await persistAssignments(assignedIds.filter(item => String(item) !== String(activistId)));
   }
 
   function openMeetingEditor(meetingNumber) {
@@ -159,9 +152,15 @@ export default function MeetingHouseDetailPage() {
     setExpandedMeeting(meetingNumber);
   }
 
-  function handleMarkComplete(meetingNumber) {
-    const updated = updateMeetingCompletion(house.id, meetingNumber, { completed: true, notes: draftNotes });
-    if (updated) { setHouse(updated); }
+  async function handleMarkComplete(meetingNumber) {
+    const nextHouse = {
+      ...house,
+      meetings: house.meetings.map(meeting => Number(meeting.meetingNumber) === Number(meetingNumber)
+        ? { ...meeting, completed: true, notes: draftNotes }
+        : meeting),
+    };
+    const updated = await upsertMeetingHouseApi(apiFetch, nextHouse);
+    if (updated) setHouse(updated);
     setExpandedMeeting(null);
     setDraftNotes('');
   }

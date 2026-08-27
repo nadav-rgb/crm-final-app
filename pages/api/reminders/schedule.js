@@ -1,69 +1,33 @@
-// pages/api/reminders/schedule.js — schedules 4 reminders for a meeting
-// Times are in Israel Standard Time (UTC+3):
-//   activist_1  → same day  23:00 IST
-//   activist_2  → next day  10:00 IST
-//   activist_3  → next day  11:30 IST
-//   coordinator → next day  12:00 IST (only if report not filled)
+import { secureHandler } from '../../../lib/security/api-handler.mjs';
+import { SecurityError } from '../../../lib/security/errors.mjs';
+import { reminderScheduleSchema } from '../../../lib/security/schemas.mjs';
+import { getHouse, scheduleReminderCommand } from '../../../lib/security/domains/meetings.mjs';
 
-import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
-import { requireAuth } from '../meeting-houses/_auth';
-
-function israelTime(year, month, day, hour, minute) {
-  // Israel is UTC+3 (summer) — subtract 3 hours to get UTC
-  return new Date(Date.UTC(year, month - 1, day, hour - 3, minute, 0));
+function times(occurredAt) {
+  const date = new Date(occurredAt);
+  if (Number.isNaN(date.getTime())) throw new SecurityError(400, 'VALIDATION_FAILED', 'Meeting date is invalid');
+  const day = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  return [
+    ['activist_1', 20 * 60],
+    ['activist_2', 31 * 60],
+    ['activist_3', 32 * 60 + 30],
+    ['coordinator', 33 * 60],
+  ].map(([type, hours]) => ({ type, remind_at: new Date(day.getTime() + hours * 60 * 1000).toISOString() }));
 }
 
-export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).end();
-
-  const auth = await requireAuth(req);
-  if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
-
-  const { meetingId, activistId, meetingDate } = req.body;
-  if (!meetingId || !activistId || !meetingDate) {
-    return res.status(400).json({ error: 'Missing fields' });
-  }
-
-  const supabase = getSupabaseAdmin();
-
-  // Skip if reminders already exist for this meeting
-  const { data: existing } = await supabase
-    .from('meeting_reminders')
-    .select('id')
-    .eq('meeting_id', meetingId)
-    .eq('activist_id', activistId)
-    .limit(1);
-
-  if (existing?.length > 0) {
-    return res.status(200).json({ ok: true, skipped: true });
-  }
-
-  const [year, month, day] = meetingDate.split('-').map(Number);
-
-  // הרכז מחושב בצד השרת (service role) לפי הפרויקט של הפעיל, לא מתקבל מהלקוח —
-  // לקוח מסוג "פעיל" כבר לא טוען את רשימת הפעילים המלאה (בידוד נתונים), כך שלא יכול לדעת מי הרכז שלו.
-  let coordId = 'none';
-  const { data: activistProfile } = await supabase
-    .from('profiles').select('project_id').eq('activist_code', activistId).maybeSingle();
-  if (activistProfile?.project_id) {
-    const { data: coord } = await supabase
-      .from('profiles').select('activist_code')
-      .eq('role', 'coord').eq('project_id', activistProfile.project_id)
-      .limit(1).maybeSingle();
-    if (coord) coordId = String(coord.activist_code);
-  }
-
-  const base = { meeting_id: meetingId, activist_id: activistId, coordinator_id: coordId, meeting_date: meetingDate };
-
-  const rows = [
-    { ...base, remind_at: israelTime(year, month, day,     23,  0).toISOString(), type: 'activist_1' },
-    { ...base, remind_at: israelTime(year, month, day + 1, 10,  0).toISOString(), type: 'activist_2' },
-    { ...base, remind_at: israelTime(year, month, day + 1, 11, 30).toISOString(), type: 'activist_3' },
-    { ...base, remind_at: israelTime(year, month, day + 1, 12,  0).toISOString(), type: 'coordinator' },
-  ];
-
-  const { error } = await supabase.from('meeting_reminders').insert(rows);
-  if (error) return res.status(500).json({ error: error.message });
-
-  return res.status(200).json({ ok: true, scheduled: rows.length });
-}
+export default secureHandler({ method: 'POST', schema: reminderScheduleSchema, resourceType: 'meeting_reminder' }, async (context, input) => {
+  const { data: report, error } = await context.db.from('base_meeting_reports')
+    .select('id,project_id,house_id,actor_user_id,occurred_at').eq('id', input.meetingId).maybeSingle();
+  if (error) throw new SecurityError(503, 'DATA_UNAVAILABLE', 'Data service is unavailable', { cause: error });
+  if (!report) throw new SecurityError(404, 'NOT_FOUND', 'Meeting was not found');
+  const house = await getHouse(context, report.house_id);
+  const baseKey = (await scheduleReminderCommand(context, report, house, input)).idempotency_key;
+  const rows = times(report.occurred_at).map((entry) => ({
+    meeting_id: report.id, project_id: report.project_id, recipient_user_id: report.actor_user_id,
+    type: entry.type, remind_at: entry.remind_at, idempotency_key: `${baseKey}:${entry.type}`,
+  }));
+  const { error: insertError } = await context.db.from('meeting_reminders').insert(rows);
+  if (insertError?.code === '23505') throw new SecurityError(409, 'REMINDER_CONFLICT', 'Reminder is already scheduled');
+  if (insertError) throw new SecurityError(503, 'DATA_UNAVAILABLE', 'Data service is unavailable', { cause: insertError });
+  return { scheduled: rows.length };
+});

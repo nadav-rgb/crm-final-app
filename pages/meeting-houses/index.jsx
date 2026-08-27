@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import DesktopLayout from '../../components/DesktopLayout';
 import { useAuth } from '../../lib/AuthStore';
-import { getMeetingHouses, updateMeetingHouseAssignments } from '../../lib/meetingHousesStorage';
 import { fetchMeetingHousesFromSupabase, updateAssignmentsApi, sendAssignmentPushApi } from '../../lib/meetingHousesSupabase';
 import { createDemoNotification } from '../../lib/notificationDemo';
 import { useCrm } from '../../lib/CrmStore';
@@ -21,7 +20,7 @@ const STATUS_LABELS = {
 };
 
 export default function MeetingHousesPage() {
-  const { can, currentUser } = useAuth();
+  const { can, currentUser, apiFetch } = useAuth();
   const { activists } = useCrm();
 
   // ניהול בתי מפגש (יצירה/ייבוא) — רק רכז/הנהלה שחברים באחדות יהודית (או מנכ"ל).
@@ -35,10 +34,7 @@ export default function MeetingHousesPage() {
 
   // מקור אמת: Supabase. בתי מפגש דמו ישנים מ-localStorage מתווספים כ-fallback בלבד.
   async function loadHouses() {
-    const remote = await fetchMeetingHousesFromSupabase();
-    const local = getMeetingHouses();
-    const remoteIds = new Set(remote.map(h => String(h.id)));
-    return [...remote, ...local.filter(h => !remoteIds.has(String(h.id)))];
+    return fetchMeetingHousesFromSupabase(apiFetch);
   }
 
   useEffect(() => {
@@ -62,20 +58,15 @@ export default function MeetingHousesPage() {
 
   async function handleAssign(houseId, activistId, houseNumber, houseCity) {
     // מקור אמת: Supabase. נפילה ל-localStorage רק לבתי מפגש דמו ישנים.
-    let updated = await updateAssignmentsApi(houseId, [activistId]);
-    if (!updated) updated = updateMeetingHouseAssignments(houseId, [activistId]);
+    const activist = activistPool.find(a => String(a.id) === String(activistId));
+    if (!activist?.userId) return;
+    const updated = await updateAssignmentsApi(apiFetch, houseId, [activist.userId]);
     if (!updated) return;
     setHouses(await loadHouses());
-    const activist = activistPool.find(a => Number(a.id) === Number(activistId));
     if (!activist) return;
 
     // Push אמיתי לטלפון של הפעיל (no-op בטוח אם לא נרשם להתראות).
-    sendAssignmentPushApi({
-      activistId,
-      title: 'שובצת לבית מפגש',
-      body: `שובצת לבית מפגש ${houseNumber} ב${houseCity}.`,
-      url: `/meeting-houses/${houseId}`,
-    });
+    sendAssignmentPushApi(apiFetch, { houseId }).catch(() => {});
 
     const firstMeeting = updated.meetings?.[0];
     const dateStr = firstMeeting?.date ? formatDate(firstMeeting.date) : 'טרם נקבע';
