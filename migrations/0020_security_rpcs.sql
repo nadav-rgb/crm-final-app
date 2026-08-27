@@ -335,7 +335,7 @@ declare
   v_actor_is_ceo boolean := false;
   v_actor_is_head boolean := false;
 begin
-  if p_role not in ('head','coord','finance','activist')
+  if p_role not in ('head','coord','finance','activist','ceo')
      or p_status not in ('active','suspended','revoked') then return false; end if;
   select actor.global_role = 'ceo', exists (
     select 1 from public.project_memberships pm
@@ -357,6 +357,30 @@ begin
   perform 1 from public.profiles
   where id = p_target_user_id and disabled_at is null for update;
   if not found then return false; end if;
+  if p_role = 'ceo' then
+    if not v_actor_is_ceo then return false; end if;
+    perform pg_advisory_xact_lock(832745, 1);
+    if p_status = 'active' then
+      update public.profiles set global_role = 'ceo', security_version = security_version + 1
+      where id = p_target_user_id;
+    else
+      if (select count(*) from public.profiles where global_role = 'ceo' and disabled_at is null) <= 1
+         or not exists (select 1 from public.profiles where id = p_target_user_id and global_role = 'ceo') then
+        return false;
+      end if;
+      update public.profiles set global_role = null, security_version = security_version + 1
+      where id = p_target_user_id;
+    end if;
+    update app_private.auth_sessions
+    set revoked_at = now(), revoke_reason = 'global_role_changed'
+    where user_id = p_target_user_id and revoked_at is null;
+    return true;
+  end if;
+  if exists (
+    select 1 from public.project_memberships
+    where user_id = p_target_user_id and project_id = p_project_id
+      and role = p_role and status = p_status
+  ) then return false; end if;
   insert into public.project_memberships (user_id, project_id, role, status)
   values (p_target_user_id, p_project_id, p_role, p_status)
   on conflict (user_id, project_id) do update

@@ -208,7 +208,7 @@ export function CrmProvider({ children }) {
   // יחשבו בדיוק אותו דבר — קודם היא הייתה משוכפלת בשלושה מקומות.
   const mitzvotBonuses = useMemo(() => deriveMitzvotBonuses(contacts), [contacts]);
 
-  const { currentUser, authLoading, apiFetch } = useAuth();
+  const { currentUser, authLoading, apiFetch, activeProject } = useAuth();
 
   // טעינת קונפיג השכר מ-Supabase (No-Hard-Coding). fallback ל-DEFAULT_CONFIG בכשל.
   useEffect(() => {
@@ -240,46 +240,36 @@ export function CrmProvider({ children }) {
     hydrateNotificationsFromSupabase(currentUser);
   }, [currentUser, authLoading]);
 
-  // טעינת פעילים מ-Supabase view activist_directory — אותה תבנית auth-gated.
-  // ברירות מחדל בטוחות: id מתוך activist_code, status='active' (ה-view לא חושף status).
-  // פעיל רואה רק את עצמו (רק רכז/ראש-פרויקט/מנכ"ל רואים רשימת פעילים); רכז מוגבל לפרויקטים שלו.
+  // directory מוקרן דרך ה-BFF בלבד; השרת קובע project scope ושדות מותרים לפי role.
   useEffect(() => {
     if (authLoading) return;
     if (!currentUser) { setActivists([]); return; }
     let active = true;
     (async () => {
-      const supabase = getSupabaseClient();
-      let query = supabase
-        .from('activist_directory')
-        .select('activist_code, name, role, project_id, project_ids')
-        .order('name');
-      if (currentUser.role === 'activist') {
-        query = query.eq('activist_code', currentUser.id);
-      } else if (currentUser.role !== 'ceo') {
-        const ids = Array.isArray(currentUser.project_ids) && currentUser.project_ids.length > 0
-          ? currentUser.project_ids
-          : (currentUser.project_id ? [currentUser.project_id] : []);
-        query = query.overlaps('project_ids', ids.length > 0 ? ids : [-1]);
+      const projectId = activeProject?.id ?? currentUser.project_id;
+      if (!projectId) { setActivists([]); return; }
+      let data;
+      try {
+        const result = await apiFetch(`/api/memberships?projectId=${encodeURIComponent(projectId)}`, { method: 'GET' });
+        data = result.profiles;
+      } catch {
+        return;
       }
-      const { data, error } = await query;
       if (!active) return;
-      if (error) { console.error('Failed to load activists', error); return; }
       if (Array.isArray(data)) {
         setActivists(data.map(a => ({
-          id:         Number(a.activist_code),
+          userId:     a.userId,
+          id:         a.activistCode ?? a.userId,
           name:       a.name,
-          role:       a.role,
-          project_id: a.project_id,
-          // חברות מלאה בפרויקטים (רב-פרויקטלי). fallback: הפרויקט הראשי בלבד.
-          project_ids: Array.isArray(a.project_ids) && a.project_ids.length > 0
-            ? a.project_ids.map(Number)
-            : (a.project_id ? [Number(a.project_id)] : []),
+          role:       a.memberships?.[0]?.role ?? (a.userId === currentUser.userId ? currentUser.role : null),
+          project_id: Number(projectId),
+          project_ids: [Number(projectId)],
           status:     'active',
         })));
       }
     })();
     return () => { active = false; };
-  }, [currentUser, authLoading]);
+  }, [currentUser, authLoading, activeProject, apiFetch]);
 
   // טעינת דיווחי הוצאות — אותה תבנית auth-gated. זורמים ל"דשבורד שלי" ולעמוד התשלומים. מסונן לפי בעלות.
   useEffect(() => {
