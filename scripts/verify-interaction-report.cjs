@@ -82,42 +82,45 @@ test('calculations', 'exports strict date validation', () => {
   });
 });
 
-test('calculations', 'counts ten connections for one unique assigned client and includes inactive clients', () => {
+test('calculations', 'adds one friendly baseline only for a client with no recorded connections', () => {
   const report = buildFixtureReport();
   const row = report.rows.find(item => item.activistId === 10);
   assert.equal(row.totalClients, 2);
-  assert.equal(row.totalInteractions, 10);
+  assert.equal(row.totalInteractions, 11);
+  assert.equal(row.friendlyCount, 6);
   assert.equal(row.totalMinutes, 100);
-  assert.equal(row.averageInteractionsPerClient, 5);
-  assert.equal(row.averageDuration, 10);
+  assert.equal(row.averageInteractionsPerClient, 5.5);
+  assert.equal(row.averageDuration, 100 / 11);
 });
 
 test('calculations', 'includes both date endpoints and excludes outside dates and another project', () => {
   const report = buildFixtureReport();
-  assert.equal(report.totals.totalInteractions, 11);
-  assert.equal(report.meta.interactionCount, 11);
+  assert.equal(report.totals.totalInteractions, 12);
+  assert.equal(report.meta.interactionCount, 12);
+  assert.equal(report.meta.recordedInteractionCount, 11);
+  assert.equal(report.meta.baselineInteractionCount, 1);
 });
 
 test('calculations', 'counts derived participant rows as full connections', () => {
   const report = buildFixtureReport();
   const row = report.rows.find(item => item.activistId === 10);
-  assert.equal(row.totalInteractions, 10);
+  assert.equal(row.totalInteractions, 11);
   assert.equal(row.frontalCount + row.videoCount + row.phoneCount + row.shabbatHostCount, 10);
 });
 
 test('calculations', 'keeps quality and type as independent dimensions', () => {
   const report = buildFixtureReport();
   assert.equal(report.totals.toraniCount, 5);
-  assert.equal(report.totals.friendlyCount, 5);
+  assert.equal(report.totals.friendlyCount, 6);
   assert.equal(report.totals.frontalCount, 4);
-  assert.equal(report.totals.totalInteractions, 11);
+  assert.equal(report.totals.totalInteractions, 12);
 });
 
 test('calculations', 'builds an auditable quality by connection-type matrix', () => {
   const report = buildFixtureReport();
   assert.deepEqual(report.analytics.qualityTypeMatrix, {
     torani: { total: 5, frontal: 3, video: 0, phone: 2, other: 0 },
-    friendly: { total: 5, frontal: 0, video: 3, phone: 0, other: 2 },
+    friendly: { total: 6, frontal: 0, video: 3, phone: 0, other: 3 },
   });
 });
 
@@ -126,18 +129,17 @@ test('calculations', 'classifies each client once with torani taking precedence 
   assert.deepEqual(report.analytics.relationshipSegments, {
     generalRelationships: 850,
     trackedClients: 3,
-    activeClients: 2,
-    personalFriendlyClients: 0,
+    activeClients: 3,
+    personalFriendlyClients: 2,
     personalToraniClients: 1,
-    activeWithoutPersonalQuality: 1,
+    activeWithoutPersonalQuality: 0,
   });
 });
 
 test('calculations', 'groups unique clients by their number of connections', () => {
   const report = buildFixtureReport();
   assert.deepEqual(report.analytics.clientConnectionDistribution, [
-    { key: '0', label: '0 קשרים', count: 1 },
-    { key: '1', label: 'קשר אחד', count: 1 },
+    { key: '1', label: 'קשר אחד', count: 2 },
     { key: '2', label: '2 קשרים', count: 0 },
     { key: '3-4', label: '3–4 קשרים', count: 0 },
     { key: '5-9', label: '5–9 קשרים', count: 0 },
@@ -165,8 +167,8 @@ test('calculations', 'keeps row totals and organizational totals consistent', ()
   const report = buildFixtureReport();
   assert.equal(report.rows.reduce((sum, row) => sum + row.totalInteractions, 0), report.totals.totalInteractions);
   assert.equal(report.rows.reduce((sum, row) => sum + row.totalMinutes, 0), report.totals.totalMinutes);
-  assert.equal(report.totals.averageInteractionsPerClient, 11 / 3);
-  assert.equal(report.totals.averageDuration, 130 / 11);
+  assert.equal(report.totals.averageInteractionsPerClient, 4);
+  assert.equal(report.totals.averageDuration, 130 / 12);
 });
 
 test('calculations', 'includes zero rows for project activists without activity', () => {
@@ -187,7 +189,7 @@ test('calculations', 'fails instead of inventing an activist name', () => {
 test('calculations', 'builds the Hebrew summary sentence from actual totals', () => {
   const report = buildFixtureReport();
   assert.match(report.summarySentence, /01\.05\.2026–31\.05\.2026/);
-  assert.match(report.summarySentence, /11 קשרים/);
+  assert.match(report.summarySentence, /12 קשרים/);
   assert.match(report.summarySentence, /5 קשרים תורניים/);
   assert.deepEqual(report.disclosures, [
     'האפליקציה עדיין בפיילוט ראשוני, הערכה שמשקפת 75% מהקשרים והלקוחות האמיתיים',
@@ -265,7 +267,7 @@ test('server', 'loads live project 1 data without filtering inactive contacts', 
   });
   assert.equal(report.meta.projectId, 1);
   assert.equal(report.totals.totalClients, 3);
-  assert.equal(report.totals.totalInteractions, 11);
+  assert.equal(report.totals.totalInteractions, 12);
   const contactsCall = supabase.calls.find(call => call.table === 'contacts');
   assert.equal(contactsCall.filters.some(([, column]) => column === 'is_active'), false);
   const interactionsCall = supabase.calls.find(call => call.table === 'interactions');
@@ -336,7 +338,7 @@ test('excel', 'writes all main metrics and keeps averages numeric', async () => 
   ]);
   const davidRow = sheet.getRows(7, sheet.rowCount - 6).find(row => row.getCell(1).value === 'דוד כהן');
   assert.equal(davidRow.getCell(2).value, 2);
-  assert.equal(davidRow.getCell(3).value, 10);
+  assert.equal(davidRow.getCell(3).value, 11);
   assert.equal(typeof davidRow.getCell(11).value, 'number');
   assert.equal(typeof davidRow.getCell(12).value, 'number');
 });
@@ -383,8 +385,8 @@ test('pdf', 'builds a complete main-table and mitzvot PDF model from the filtere
   const report = buildFixtureReport();
   const model = pdf.buildInteractionPdfModel(report);
   assert.equal(model.main.headers.length, 12);
-  assert.equal(model.main.rows.find(row => row[0] === 'דוד כהן')[2], 10);
-  assert.equal(model.main.totalRow[2], 11);
+  assert.equal(model.main.rows.find(row => row[0] === 'דוד כהן')[2], 11);
+  assert.equal(model.main.totalRow[2], 12);
   assert.equal(model.summarySentence, report.summarySentence);
   assert.deepEqual(model.disclosures, report.disclosures);
   assert.equal(model.analytics.relationshipSegments.generalRelationships, 850);
