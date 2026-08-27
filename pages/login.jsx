@@ -1,73 +1,84 @@
-// pages/login.jsx
 import { useState } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '../lib/AuthStore';
 
 export default function LoginPage() {
-  const { login, loginError } = useAuth();
+  const { login, loginError, requestPasswordReset } = useAuth();
   const router = useRouter();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [resetMessage, setResetMessage] = useState('');
 
-  async function handleSubmit() {
-    if (!username || !password) return;
+  async function handleSubmit(event) {
+    event.preventDefault();
+    if (!username.trim() || !password) return;
+    setLoading(true);
     const ok = await login(username, password);
+    setLoading(false);
     if (ok) router.push('/landing');
   }
 
-  function handleKey(e) {
-    if (e.key === 'Enter') handleSubmit();
+  async function handleReset() {
+    if (!username.trim()) {
+      setResetMessage('הזינו קודם את שם המשתמש.');
+      return;
+    }
+    setLoading(true);
+    try {
+      await requestPasswordReset(username);
+      setResetMessage('אם החשבון קיים, נשלחו אליו הוראות לאיפוס הסיסמה.');
+    } catch {
+      setResetMessage('לא הצלחנו לשלוח כרגע. נסו שוב בעוד כמה דקות.');
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
-    <div style={{
-      minHeight: '100vh', display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center',
-      background: '#0f0e1a', padding: 24,
+    <main dir="rtl" style={{
+      minHeight: '100vh', display: 'grid', placeItems: 'center',
+      padding: 'var(--space-2xl)', background: 'var(--color-bg)',
     }}>
-      <div style={{ marginBottom: 32, textAlign: 'center' }}>
-        <div style={{
-          width: 64, height: 64, borderRadius: '50%',
-          background: '#534ab7', display: 'flex', alignItems: 'center',
-          justifyContent: 'center', fontSize: 28, color: '#fff',
-          margin: '0 auto 12px',
-        }}>מ</div>
-        <h1 style={{ fontSize: 22, fontWeight: 600, color: '#fff' }}>מקרבים</h1>
-        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', marginTop: 4 }}>מערכת ניהול פעילים</p>
-      </div>
+      <section aria-labelledby="login-title" style={{ width: 'min(100%, 400px)' }}>
+        <header style={{ marginBottom: 'var(--space-2xl)', textAlign: 'center' }}>
+          <div aria-hidden="true" style={{
+            width: 56, height: 56, display: 'grid', placeItems: 'center',
+            marginInline: 'auto', marginBottom: 'var(--space-md)',
+            borderRadius: 'var(--radius-full)', background: 'var(--color-brand)',
+            color: 'var(--color-white)', fontSize: 24, fontWeight: 700,
+          }}>מ</div>
+          <h1 id="login-title" style={{ fontSize: 24, letterSpacing: 0 }}>כניסה למקרבים</h1>
+          <p style={{ fontSize: 16, lineHeight: 1.7, marginTop: 'var(--space-sm)' }}>הזינו את פרטי החשבון האישי.</p>
+        </header>
 
-      <div style={{
-        background: '#1a1830', borderRadius: 16, padding: 28,
-        width: '100%', maxWidth: 360,
-        border: '0.5px solid rgba(255,255,255,0.1)',
-      }}>
-        <label className="form-label" style={{ color: 'rgba(255,255,255,0.7)' }}>שם משתמש</label>
-        <input type="text" className="form-input"
-          style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', marginBottom: 16 }}
-          placeholder="הכנס שם משתמש" value={username}
-          onChange={e => setUsername(e.target.value)} onKeyDown={handleKey}
-          autoFocus autoComplete="username" />
-
-        <label className="form-label" style={{ color: 'rgba(255,255,255,0.7)' }}>סיסמה</label>
-        <input type="password" className="form-input"
-          style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.15)', color: '#fff', marginBottom: loginError ? 8 : 24 }}
-          placeholder="הכנס סיסמה" value={password}
-          onChange={e => setPassword(e.target.value)} onKeyDown={handleKey}
-          autoComplete="current-password" />
-
-        {loginError && <p style={{ fontSize: 13, color: '#e24b4a', marginBottom: 16, textAlign: 'center' }}>{loginError}</p>}
-
-        <button className="btn btn-primary" style={{ width: '100%', padding: '12px', fontSize: 15 }} onClick={handleSubmit}>
-          כניסה
-        </button>
-      </div>
-
-      <div style={{ marginTop: 24, fontSize: 12, color: 'rgba(255,255,255,0.25)', textAlign: 'center', lineHeight: 1.8 }}>
-        <div>משתמשי הדגמה:</div>
-        <div>מנכ"ל: ceo / ceo123</div>
-        <div>רכז: coord1 / coord123</div>
-        <div>פעיל: activist1 / activist123</div>
-      </div>
-    </div>
+        <form onSubmit={handleSubmit} style={{
+          display: 'grid', gap: 'var(--space-lg)', background: 'var(--color-card)',
+          border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)',
+          boxShadow: 'var(--shadow-raised)', padding: 'var(--space-2xl)',
+        }}>
+          <div>
+            <label className="form-label" htmlFor="username" style={{ fontSize: 16 }}>שם משתמש</label>
+            <input id="username" type="text" className="form-input" dir="auto"
+              style={{ fontSize: 16 }}
+              value={username} onChange={(event) => setUsername(event.target.value)}
+              autoComplete="username" autoFocus disabled={loading} />
+          </div>
+          <div>
+            <label className="form-label" htmlFor="password" style={{ fontSize: 16 }}>סיסמה</label>
+            <input id="password" type="password" className="form-input" dir="ltr"
+              style={{ fontSize: 16 }}
+              value={password} onChange={(event) => setPassword(event.target.value)}
+              autoComplete="current-password" disabled={loading} />
+          </div>
+          {loginError && <p role="alert" style={{ color: 'var(--color-danger)', fontSize: 16, lineHeight: 1.7 }}>{loginError}</p>}
+          {resetMessage && <p role="status" style={{ fontSize: 16, lineHeight: 1.7 }}>{resetMessage}</p>}
+          <button className="btn btn-primary" style={{ background: 'var(--color-brand)' }} type="submit" disabled={loading || !username.trim() || !password}>
+            {loading ? 'מתחברים…' : 'כניסה'}
+          </button>
+          <button className="btn" type="button" onClick={handleReset} disabled={loading}>איפוס סיסמה</button>
+        </form>
+      </section>
+    </main>
   );
 }

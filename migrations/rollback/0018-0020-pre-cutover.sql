@@ -45,6 +45,8 @@ drop trigger if exists audit_push_subscriptions_changes on public.push_subscript
 drop trigger if exists audit_fcm_tokens_changes on public.fcm_tokens;
 drop trigger if exists audit_feedback_reports_changes on public.feedback_reports;
 
+drop function if exists public.app_user_security_invalidate(uuid,text);
+drop function if exists public.app_identity_resolve(text);
 drop function if exists public.app_membership_change(text,uuid,uuid,integer,text,text);
 drop function if exists public.app_audit_append(uuid,text,integer,text,text,text,text,text,uuid,text,jsonb);
 drop function if exists public.app_rate_limit_consume(text,integer,integer);

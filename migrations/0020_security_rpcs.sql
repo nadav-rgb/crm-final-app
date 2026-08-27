@@ -8,6 +8,47 @@ alter table app_private.auth_sessions
   add column if not exists idle_timeout_seconds integer not null default 28800
     check (idle_timeout_seconds between 60 and 28800);
 
+create or replace function public.app_identity_resolve(p_normalized_username text)
+returns table (user_id uuid, login_email text)
+language sql stable security definer
+set search_path = pg_catalog, public, app_private
+as $$
+  select i.auth_user_id, i.login_email
+  from app_private.auth_identities i
+  where i.normalized_username = lower(btrim(p_normalized_username))
+    and length(btrim(p_normalized_username)) between 1 and 160
+  limit 1
+$$;
+
+revoke all on function public.app_identity_resolve(text) from public, anon, authenticated;
+grant execute on function public.app_identity_resolve(text) to service_role;
+
+create or replace function public.app_user_security_invalidate(p_user_id uuid, p_reason text)
+returns integer
+language plpgsql security definer
+set search_path = pg_catalog, public, app_private
+as $$
+declare v_version integer;
+begin
+  if length(p_reason) not between 1 and 120 then
+    raise exception 'invalid invalidation reason' using errcode = '22023';
+  end if;
+  update public.profiles
+  set security_version = security_version + 1
+  where id = p_user_id
+  returning security_version into v_version;
+  if not found then
+    raise exception 'security profile not found' using errcode = 'P0002';
+  end if;
+  update app_private.auth_sessions
+  set revoked_at = now(), revoke_reason = p_reason
+  where user_id = p_user_id and revoked_at is null;
+  return v_version;
+end $$;
+
+revoke all on function public.app_user_security_invalidate(uuid,text) from public, anon, authenticated;
+grant execute on function public.app_user_security_invalidate(uuid,text) to service_role;
+
 create or replace function public.app_session_create(
   p_session_hash text, p_user_id uuid, p_encrypted_access_token text,
   p_encrypted_refresh_token text, p_token_key_version integer,

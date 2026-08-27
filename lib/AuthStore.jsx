@@ -1,184 +1,142 @@
-// lib/AuthStore.jsx
-import { createContext, useContext, useState, useEffect } from 'react';
-import projects from '../data/projects';
-import { getSupabaseClient } from './supabaseClient';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { createApiClient } from './security/api-client.mjs';
 
 const AuthContext = createContext(null);
 
-// מיפוי username (שם מלא בעברית) → email ב-Supabase Auth.
-// סכמה אחידה — provisioning השקה 2026-06-29. שם המשתמש של כל אחד = השם המלא שלו.
-const USERNAME_TO_EMAIL = {
-  // === רכזים ===
-  'נדב לבון':         'nadav@achdut-crm.test',
-  'שמעון קורלנסקי':   'korlansky@achdut-crm.test',
-  'הדס לוי':          'hadaslevi@achdut-crm.test',   // רכזת נעים להכיר (project 2 בלבד)
-  'הרבנית אילני':     'ilani@achdut-crm.test',       // רכזת אחדות יהודית (project 1 בלבד)
-  // === פעילים (אחדות יהודית) ===
-  'אלעזר באום':       'mekarvim01@achdut-crm.test',
-  'בנימין קליימן':    'mekarvim02@achdut-crm.test',
-  'דבורה ידיד':       'mekarvim03@achdut-crm.test',
-  'דוד הרשל':         'mekarvim04@achdut-crm.test',
-  'דוד רוזנצוויג':    'mekarvim05@achdut-crm.test',
-  'חדוה מור יוסף':    'mekarvim06@achdut-crm.test',
-  'חיים פייגנבוים':   'mekarvim07@achdut-crm.test',
-  'יהושע לוונשטיין':  'mekarvim08@achdut-crm.test',
-  'יהושע מן':         'mekarvim09@achdut-crm.test',
-  'יהלי ברזל':        'mekarvim10@achdut-crm.test',
-  'יוחנן סלייטר':     'mekarvim11@achdut-crm.test',
-  'יעקב הופט':        'mekarvim12@achdut-crm.test',
-  'יעקב פינקלשטיין':  'mekarvim13@achdut-crm.test',
-  'יצחק וינטר':       'mekarvim14@achdut-crm.test',
-  'ליזי וידרקר':      'mekarvim15@achdut-crm.test',
-  'מוטי שטרלינג':     'mekarvim17@achdut-crm.test',
-  'מירי אריאלי':      'mekarvim18@achdut-crm.test',
-  'נחמיה גרטש':       'mekarvim19@achdut-crm.test',
-  'ניר קובי':         'mekarvim20@achdut-crm.test',
-  'נתי סלומון':       'mekarvim21@achdut-crm.test',
-  'פסח זאק':          'mekarvim22@achdut-crm.test',
-  'צביקה רוזנצוייג':  'mekarvim23@achdut-crm.test',
-  'רונן ישראלי':      'mekarvim24@achdut-crm.test',
-  'ריקי וילינגר':     'mekarvim25@achdut-crm.test',
-  'רפאל טפר':         'mekarvim26@achdut-crm.test',
-  'רפאל רייטן':       'mekarvim27@achdut-crm.test',
-  'שירה שם טוב':      'mekarvim28@achdut-crm.test',
-  'מוטי גלעד':        'mekarvim29@achdut-crm.test',
-  'רוזי גרטש':        'mekarvim16@achdut-crm.test',
-  'נעמי סלומון':      'mekarvim30@achdut-crm.test',
-  'עמיחי וילינגר':    'mekarvim31@achdut-crm.test',
-  'חגית אריאלי':      'mekarvim35@achdut-crm.test',
-  // === פעילים (נעים להכיר) ===
-  'רפאל קליימן':      'mekarvim32@achdut-crm.test',
-  'אלי לינקר':        'mekarvim33@achdut-crm.test',
-  'דרור הראל':        'mekarvim34@achdut-crm.test',
-  // === מנכ"ל ===
-  'הרב גרינבוים':     'rabbigreenboim@achdut-crm.test',
-  'מנכ״ל':            'rabbigreenboim@achdut-crm.test',
-};
-
-// קלט יכול להיות email מלא או username — מחזיר תמיד email
-function resolveEmail(input) {
-  const value = (input || '').trim();
-  if (value.includes('@')) return value;                      // הוקלד email מלא
-  const key = value.toLowerCase();
-  return USERNAME_TO_EMAIL[key] || `${key}@achdut-crm.test`;  // username → email
-}
-
 export function AuthProvider({ children }) {
-  const [currentUser,    setCurrentUser]    = useState(null);
-  const [activeProject,  setActiveProject]  = useState(null);
-  const [filterProject,  setFilterProject]  = useState(null); // null = כל הפרויקטים
-  const [loginError,     setLoginError]     = useState('');
-  const [authLoading,    setAuthLoading]    = useState(true);  // אמת בזמן שחזור session ראשוני
+  const [currentUser, setCurrentUser] = useState(null);
+  const [projects, setProjects] = useState([]);
+  const [activeProject, setActiveProject] = useState(null);
+  const [filterProject, setFilterProject] = useState(null);
+  const [loginError, setLoginError] = useState('');
+  const [authLoading, setAuthLoading] = useState(true);
+  const [requiresMfa, setRequiresMfa] = useState(false);
+  const [authState, setAuthState] = useState(null);
+  const [mfaFactors, setMfaFactors] = useState([]);
+  const csrfRef = useRef(null);
+  const clientRef = useRef(null);
 
-  // עזר משותף: שולף profile מ-Auth user ובונה את currentUser (זהה ל-login ולשחזור)
-  async function applyProfile(supabase, authUser) {
-    const { data: profile, error } = await supabase
-      .from('profiles')
-      .select('activist_code, name, role, project_id, project_ids')
-      .eq('id', authUser.id)
-      .single();
-    if (error || !profile) return false;
-
-    const user = {
-      id:         Number(profile.activist_code), // נשאר int כמו בקוד הישן
-      name:       profile.name,
-      role:       profile.role,
-      project_id: profile.project_id,
-      // כל הפרויקטים שהמשתמש חבר בהם (migration 0009). fallback: הפרויקט הראשי בלבד.
-      project_ids: Array.isArray(profile.project_ids) && profile.project_ids.length > 0
-        ? profile.project_ids.map(Number)
-        : (profile.project_id ? [Number(profile.project_id)] : []),
-      email:      authUser.email,
-    };
-    setCurrentUser(user);
-    const proj = user.project_id ? projects.find(p => p.id === user.project_id) : projects[0];
-    setActiveProject(proj);
-    // מנכ"ל מתחיל עם כל הפרויקטים, פעיל/רכז עם הפרויקט שלו
-    setFilterProject(user.project_id ?? null);
-    return true;
+  function api() {
+    if (typeof window === 'undefined') throw new Error('Browser API is unavailable');
+    if (!clientRef.current) {
+      clientRef.current = createApiClient({
+        origin: window.location.origin,
+        getCsrfToken: () => csrfRef.current,
+      });
+    }
+    return clientRef.current;
   }
 
-  // שחזור session בעת טעינת האפליקציה + סנכרון logout בין טאבים
+  function clearAuthState() {
+    csrfRef.current = null;
+    setCurrentUser(null);
+    setProjects([]);
+    setActiveProject(null);
+    setFilterProject(null);
+    setRequiresMfa(false);
+    setAuthState(null);
+    setMfaFactors([]);
+  }
+
+  function applyAuthResult(result) {
+    csrfRef.current = result.csrfToken ?? csrfRef.current;
+    const authorizedProjects = Array.isArray(result.projects) ? result.projects : [];
+    setProjects(authorizedProjects);
+    setCurrentUser(result.user ?? null);
+    setAuthState(result.authState ?? null);
+    setRequiresMfa(result.authState === 'mfa_required');
+    setMfaFactors(Array.isArray(result.mfaFactors) ? result.mfaFactors : []);
+    const initialProjectId = result.user?.project_id ?? authorizedProjects[0]?.id ?? null;
+    setActiveProject(authorizedProjects.find((project) => project.id === initialProjectId) ?? null);
+    setFilterProject(result.user?.role === 'ceo' ? null : initialProjectId);
+  }
+
   useEffect(() => {
-    const supabase = getSupabaseClient();
     let active = true;
-
-    supabase.auth.getSession().then(async ({ data }) => {
-      if (active && data?.session?.user) await applyProfile(supabase, data.session.user);
-      if (active) setAuthLoading(false);
-    });
-
-    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
-      if (!active) return;
-      if (event === 'SIGNED_OUT' || !session?.user) {
-        setCurrentUser(null); setActiveProject(null); setFilterProject(null);
-      }
-    });
-
-    return () => { active = false; sub?.subscription?.unsubscribe(); };
+    api()('/api/auth/session', { method: 'GET' })
+      .then((result) => { if (active) applyAuthResult(result); })
+      .catch(() => { if (active) clearAuthState(); })
+      .finally(() => { if (active) setAuthLoading(false); });
+    return () => { active = false; };
   }, []);
 
-  async function login(usernameOrEmail, password) {
-    const supabase = getSupabaseClient();
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: resolveEmail(usernameOrEmail),
-      password,
-    });
-    if (error || !data?.user) { setLoginError('שם משתמש או סיסמה שגויים'); return false; }
-
-    // שליפת הפרופיל המקושר ל-Auth (activist_code שומר על תאימות ל-Number(currentUser.id))
-    const ok = await applyProfile(supabase, data.user);
-    if (!ok) { setLoginError('לא נמצא פרופיל למשתמש'); return false; }
-
-    setLoginError('');
-    return true;
+  async function login(username, password) {
+    try {
+      const result = await api()('/api/auth/login', {
+        method: 'POST', body: { username, password }, csrf: false,
+      });
+      applyAuthResult(result);
+      setLoginError('');
+      return true;
+    } catch {
+      setLoginError('שם המשתמש או הסיסמה לא נכונים. נסו שוב.');
+      return false;
+    }
   }
 
   async function logout() {
-    const supabase = getSupabaseClient();
-    await supabase.auth.signOut();
-    setCurrentUser(null); setActiveProject(null); setFilterProject(null);
+    await api()('/api/auth/logout', { method: 'POST', body: {} });
+    clearAuthState();
   }
 
-  // מעבר פרויקט — מאומת מול חברות בפועל (project_ids). מונע ממשתמש (למשל רכז פרויקט אחד)
-  // לעבור לפרויקט שהוא לא חבר בו ולחשוף את נתוניו, גם אם רכיב כלשהו מציע לו את האפשרות.
+  const enrollMfa = () => api()('/api/auth/mfa/enroll', { method: 'POST', body: {} });
+  const challengeMfa = (factorId) => api()('/api/auth/mfa/challenge', { method: 'POST', body: { factorId } });
+
+  async function verifyMfa(input) {
+    const result = await api()('/api/auth/mfa/verify', { method: 'POST', body: input });
+    applyAuthResult({ ...result, user: currentUser, projects });
+    return result;
+  }
+
+  const requestPasswordReset = (username) => api()('/api/auth/password-reset/request', {
+    method: 'POST', body: { username }, csrf: false,
+  });
+
+  async function completePasswordReset(password) {
+    const result = await api()('/api/auth/password-reset/complete', {
+      method: 'POST', body: { password },
+    });
+    clearAuthState();
+    return result;
+  }
+
   function switchProject(projectId) {
     if (projectId === 0) {
-      if (currentUser?.role !== 'ceo') return; // "כל הפרויקטים" — מנכ"ל בלבד
+      if (currentUser?.role !== 'ceo') return;
       setFilterProject(null);
       return;
     }
-    const isMember = currentUser?.role === 'ceo' || (currentUser?.project_ids || []).includes(projectId);
-    if (!isMember) return;
-    const proj = projects.find(p => p.id === projectId);
-    if (proj) {
-      setActiveProject(proj);
-      setFilterProject(projectId);
-    }
+    const project = projects.find((candidate) => Number(candidate.id) === Number(projectId));
+    if (!project) return;
+    setActiveProject(project);
+    setFilterProject(Number(project.id));
   }
 
   const role = currentUser?.role;
-  const MEETING_HOUSE_RESULTS_WHITELIST = []; // מזהי משתמשים עם גישה מיוחדת — להרחבה עתידית
-  const can  = {
-    seeSensitiveData:       ['activist', 'coord', 'head', 'ceo'].includes(role),
-    addContact:             role === 'activist',
-    callContact:            role === 'activist',
-    seeActivists:           role !== 'activist' && role !== 'finance',
-    seePayments:            role === 'finance' || role === 'head' || role === 'ceo' || role === 'coord',
-    seeMeetingHouses:       role === 'ceo' || role === 'head' || role === 'coord' || role === 'finance',
-    seeMeetingHouseResults: role === 'ceo' || role === 'head' || role === 'coord' || MEETING_HOUSE_RESULTS_WHITELIST.includes(currentUser?.id),
-    ownProjectId:           currentUser?.project_id ?? null,
+  const can = {
+    seeSensitiveData: ['activist', 'coord', 'head', 'ceo'].includes(role),
+    addContact: role === 'activist',
+    callContact: role === 'activist',
+    seeActivists: role !== 'activist' && role !== 'finance',
+    seePayments: ['finance', 'head', 'ceo', 'coord'].includes(role),
+    seeMeetingHouses: ['ceo', 'head', 'coord', 'finance'].includes(role),
+    seeMeetingHouseResults: ['ceo', 'head', 'coord'].includes(role),
+    ownProjectId: currentUser?.project_id ?? null,
   };
 
   return (
-    <AuthContext.Provider value={{ currentUser, activeProject, filterProject, loginError, authLoading, login, logout, switchProject, can, projects }}>
+    <AuthContext.Provider value={{
+      currentUser, projects, activeProject, filterProject, loginError, authLoading,
+      requiresMfa, authState, login, logout, enrollMfa, challengeMfa, verifyMfa,
+      mfaFactors, requestPasswordReset, completePasswordReset, switchProject, can,
+    }}>
       {children}
     </AuthContext.Provider>
   );
 }
 
 export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used inside <AuthProvider>');
-  return ctx;
+  const context = useContext(AuthContext);
+  if (!context) throw new Error('useAuth must be used inside <AuthProvider>');
+  return context;
 }
