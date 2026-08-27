@@ -6,6 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "test:security": "node scripts/security/run-tests.mjs",
+    "test:baseline": "npm run verify:interaction-report && node scripts/verify-payment-order.cjs",
     "generate:interaction-report": "node scripts/generate-interaction-report-files.cjs",
     "verify:interaction-report": "node scripts/verify-interaction-report.cjs"
   },
