@@ -27,7 +27,7 @@ const EMPTY_SOURCE = { source: 'meeting_house', meeting_place_city: '', meeting_
 
 export default function AddContactPage() {
   const router = useRouter();
-  const { activeProject, currentUser, can } = useAuth();
+  const { activeProject, currentUser, can, apiFetch } = useAuth();
   const { addContact } = useCrm();
   const [form,   setForm]   = useState(EMPTY);
   const [errors, setErrors] = useState({});
@@ -70,9 +70,9 @@ export default function AddContactPage() {
   useEffect(() => {
     if (!needsTours) return;
     let active = true;
-    fetchToursFromSupabase().then(ts => { if (active) setTourOptions(ts); });
+    fetchToursFromSupabase(apiFetch).then(ts => { if (active) setTourOptions(ts); }).catch(() => { if (active) setTourOptions([]); });
     return () => { active = false; };
-  }, [needsTours]);
+  }, [needsTours, apiFetch]);
 
   // חייב לבוא אחרי כל ה-hooks (כלל React) — אחרת מספר ה-hooks משתנה בין רינדורים
   // אם משתמש שאינו פעיל (coord/ceo) מנווט לכאן ישירות אחרי שה-currentUser נטען.

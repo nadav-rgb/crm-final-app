@@ -6,7 +6,7 @@ import { useRouter } from 'next/router';
 import DesktopLayout from '../components/DesktopLayout';
 import { useAuth } from '../lib/AuthStore';
 import { useCrm } from '../lib/CrmStore';
-import { fetchToursFromSupabase, upsertTourApi, updateTourApi, cancelTourApi, deleteTourApi, submitTourReportApi, notifyTourCreatedApi } from '../lib/toursSupabase';
+import { fetchToursFromSupabase, upsertTourApi, updateTourApi, cancelTourApi, deleteTourApi, submitTourReportApi, notifyTourCreatedApi, updateTourAssignmentsApi } from '../lib/toursSupabase';
 import { createDemoNotification } from '../lib/notificationDemo';
 import { inProject } from '../lib/projectUtils';
 import { formatDateHe } from '../lib/formatDate';
@@ -57,7 +57,7 @@ const MONTH_NAMES_HE = ['ינואר', 'פברואר', 'מרץ', 'אפריל', '�
 const WEEKDAY_NAMES_HE = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'];
 
 export default function ToursPage() {
-  const { can, currentUser } = useAuth();
+  const { can, currentUser, apiFetch } = useAuth();
   const { activists } = useCrm();
   const [tours, setTours] = useState([]);
   const [creating, setCreating] = useState(false);
@@ -88,7 +88,7 @@ export default function ToursPage() {
   // רשימת המדריכים לבחירה: כל הפעילים (מדריך יכול להיות פעיל מכל פרויקט)
   const guideOptions = activists.filter(a => a.role === 'activist');
 
-  async function load() { setTours(await fetchToursFromSupabase()); }
+  async function load() { setTours(await fetchToursFromSupabase(apiFetch)); }
   useEffect(() => { if (currentUser) load(); }, [currentUser?.id]);
 
   const visibleTours = tours.filter(t => {
@@ -189,7 +189,7 @@ export default function ToursPage() {
     // שולחים את הסיור המלא כדי לשמר id; השרת מתעלם משדות שאינם ניתנים לעריכה
     // (status / assigned_activists / report) — תיקון פרטים לא דורס שיבוץ או דיווח.
     if (editingTour) {
-      const result = await updateTourApi({ ...editingTour, ...fields });
+      const result = await updateTourApi(apiFetch, { ...editingTour, ...fields });
       setBusy(false);
       if (!result) { setErrors({ submit: 'שמירת השינויים נכשלה — נסה שוב' }); return; }
       setTours(prev => prev.map(t => (t.id === result.tour.id ? result.tour : t)));
@@ -204,12 +204,9 @@ export default function ToursPage() {
       return;
     }
 
-    const saved = await upsertTourApi({
+    const saved = await upsertTourApi(apiFetch, {
       ...fields,
-      id: `tour-${Date.now()}`,
-      assignedActivists: [],
-      status: 'upcoming',
-      project_id: 2,
+      id: globalThis.crypto.randomUUID(),
     });
     setBusy(false);
     if (!saved) { setErrors({ submit: 'שמירת הסיור נכשלה — נסה שוב' }); return; }
@@ -217,7 +214,12 @@ export default function ToursPage() {
     // התראות (פעמון + push) לכל הנמענים — בצד השרת (admin, עוקף RLS): משפחה מארחת, מדריך,
     // וניהול "נעים להכיר" (מנכ"ל + רכזים/ראשי-פרויקט — כולל הדס לוי ונדב). ראה pages/api/tours/notify.js.
     // (בעבר נוצרו בצד-לקוח ונכשלו לכל נמען שאינו יוצר הסיור, בגלל RLS על notifications.)
-    await notifyTourCreatedApi(saved.id);
+    const host = guideOptions.find(a => String(a.id) === String(form.hostActivistId));
+    await updateTourAssignmentsApi(apiFetch, saved.id, [], {
+      guideUserId: guideActivist?.userId ?? null,
+      hostUserId: host?.userId ?? null,
+    });
+    await notifyTourCreatedApi(apiFetch, saved.id);
 
     closeForm();
     load();
@@ -235,7 +237,7 @@ export default function ToursPage() {
     if (!tour) return;
     setBusy(true);
     setActionError('');
-    const result = await cancelTourApi(tour.id, cancelReason);
+    const result = await cancelTourApi(apiFetch, tour.id, cancelReason);
     setBusy(false);
     if (!result) { setActionError('ביטול הסיור נכשל — נסה שוב'); return; }
     setTours(prev => prev.map(t => (t.id === result.tour.id ? result.tour : t)));
@@ -249,7 +251,7 @@ export default function ToursPage() {
     if (!tour) return;
     setBusy(true);
     setActionError('');
-    const result = await deleteTourApi(tour.id);
+    const result = await deleteTourApi(apiFetch, tour.id);
     setBusy(false);
     // חסימה מכוונת מהשרת (דיווח קיים / לקוחות מקושרים) — נשארים במודאל ומציעים ביטול במקום
     if (!result.ok) { setActionError(result.message); return; }
@@ -275,7 +277,7 @@ export default function ToursPage() {
   async function handleSubmitReport() {
     if (!reportingTour || !reportValid(reportForm)) return;
     setBusy(true);
-    const updated = await submitTourReportApi(reportingTour.id, reportForm);
+    const updated = await submitTourReportApi(apiFetch, reportingTour.id, reportForm);
     setBusy(false);
     if (!updated) return;
     setTours(prev => prev.map(t => t.id === updated.id ? updated : t));
