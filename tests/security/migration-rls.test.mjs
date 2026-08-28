@@ -100,7 +100,7 @@ test('self-service policies require active authorization and limit mutable colum
 });
 
 test('pre-cutover rollback removes RLS policies before dependent helpers', async () => {
-  const rollback = await readFile('migrations/rollback/0018-0020-pre-cutover.sql', 'utf8');
+  const rollback = await readFile('migrations/rollback/0018-0024-pre-cutover.sql', 'utf8');
   const policyCleanup = rollback.search(/select tablename, policyname from pg_policies/i);
   const helperDrop = rollback.search(/drop function if exists public\.app_has_project_role/i);
 

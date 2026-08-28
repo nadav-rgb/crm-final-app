@@ -37,5 +37,11 @@
 | SEC-033 | Secret values are absent from scan output and bundle | `secret-hygiene.test.mjs` | G4 | Negative |
 | SEC-034 | Finance projection excludes contact and religious PII | `finance-reports-feedback.test.mjs` | G3 | Negative |
 | SEC-035 | Android blocks backup, cleartext, broad provider and debug release | `android-hardening.test.mjs` | G4 | Negative |
+| SEC-036 | Every custom RPC dependency in migrations 0018–0024 resolves in chain order | `db-contract-reconciliation.test.mjs` | G3 | Static |
+| SEC-037 | Direct JWT cannot cancel another recipient/project reminder | `db-contracts-live.test.mjs` | G5 | Direct JWT negative |
+| SEC-038 | Direct JWT cannot submit a tour report outside assignment/project or forge reporter | `db-contracts-live.test.mjs` | G5 | Direct JWT negative |
+| SEC-039 | Notification event derives project/recipients and enforces event capability | `db-contracts-live.test.mjs` | G5 | Direct JWT negative |
+| SEC-040 | Finance filters cannot expand project/user scope and output is allowlisted | `db-contracts-live.test.mjs` | G5 | Direct JWT positive/negative |
+| SEC-041 | Finance RPC resists search-path hijack and fails closed when audit append fails | `db-contract-reconciliation.test.mjs` and G5 PostgreSQL verification | G3/G5 | Static/live |
 
 Rows marked G5 remain unverified against a real database until the separately approved isolated test-environment gate.

@@ -245,7 +245,7 @@ test('auth identity lookup and global session invalidation RPCs are service-only
     assert.match(sql, new RegExp(`revoke all on function public\\.${name}[^;]* from public, anon, authenticated`, 'i'));
     assert.match(sql, new RegExp(`grant execute on function public\\.${name}[^;]* to service_role`, 'i'));
   }
-  const rollback = await readFile('migrations/rollback/0018-0020-pre-cutover.sql', 'utf8');
+  const rollback = await readFile('migrations/rollback/0018-0024-pre-cutover.sql', 'utf8');
   assert.match(rollback, /drop function if exists public\.app_identity_resolve/i);
   assert.match(rollback, /drop function if exists public\.app_user_security_invalidate/i);
 });

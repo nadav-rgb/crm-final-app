@@ -274,7 +274,7 @@ test('session and rate RPC migration is service-only, atomic and rollback-safe',
   assert.match(sql, /on conflict \(bucket_hash\) do update set/i);
   assert.doesNotMatch(sql, /security definer[\s\S]{0,200}set search_path\s*=\s*(?:''|public\s*;)/i);
 
-  const rollback = await readFile('migrations/rollback/0018-0020-pre-cutover.sql', 'utf8');
+  const rollback = await readFile('migrations/rollback/0018-0024-pre-cutover.sql', 'utf8');
   assert.match(rollback, /drop function if exists public\.app_session_rotate/i);
   assert.doesNotMatch(rollback, /\bcascade\b/i);
 });

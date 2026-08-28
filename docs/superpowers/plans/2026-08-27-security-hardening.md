@@ -79,9 +79,13 @@
 ### Database and evidence
 
 - `migrations/0018_security_foundation.sql` — memberships, UUID ownership, private session/audit/rate tables ו־backfill assertions.
-- `migrations/0019_security_rls.sql` — explicit grants, helpers ו־CRUD policies לכל טבלה/view.
+- `migrations/0019_security_rls.sql` — explicit grants, helpers (כולל `app_has_active_membership`) ו־CRUD policies לכל טבלה/view.
 - `migrations/0020_security_rpcs.sql` — session/rate/audit/membership RPCs אטומיים עם grants מצומצמים.
-- `migrations/rollback/0018-0020-pre-cutover.sql` — rollback מוגן לשלב pre-cutover בלבד.
+- `migrations/0021_meetings_security.sql` — reminder idempotency/cancellation schema ו־cancel RPC צר; single-apply, not fully idempotent.
+- `migrations/0022_tours_security.sql` — tour reporter/cancellation schema ו־report RPC צר; single-apply, not fully idempotent.
+- `migrations/0023_notifications_security.sql` — UUID-only ownership ו־event-specific notification authority.
+- `migrations/0024_finance_security.sql` — aggregate finance projection, server-derived scope ו־atomic redacted audit.
+- `migrations/rollback/0018-0024-pre-cutover.sql` — rollback מוגן לשלב pre-cutover בלבד, בסדר הפוך.
 - `tests/security/**/*.test.mjs` — unit/static/API/negative tests.
 - `scripts/security/run-tests.mjs` — Node test runner דטרמיניסטי.
 - `scripts/security/provision-test-fixtures.mjs` — fixtures בסביבת Supabase test בלבד.
@@ -297,7 +301,7 @@ git commit -m "test: establish security evidence harness"
 
 **Files:**
 - Create: `migrations/0018_security_foundation.sql`
-- Create: `migrations/rollback/0018-0020-pre-cutover.sql`
+- Create: `migrations/rollback/0018-0024-pre-cutover.sql`
 - Create: `tests/security/migration-foundation.test.mjs`
 - Modify: `migrations/README.md`
 
@@ -468,7 +472,7 @@ Expected: exit 0.
 - [ ] **Step 7: Commit**
 
 ```powershell
-git add -- migrations/0018_security_foundation.sql migrations/rollback/0018-0020-pre-cutover.sql migrations/README.md tests/security/migration-foundation.test.mjs
+git add -- migrations/0018_security_foundation.sql migrations/rollback/0018-0024-pre-cutover.sql migrations/README.md tests/security/migration-foundation.test.mjs
 git commit -m "feat: define hardened identity and session schema"
 ```
 
@@ -709,7 +713,7 @@ git commit -m "feat: add fail-closed HTTP validation boundary"
 - Create: `lib/security/session-store.mjs`
 - Create: `lib/security/session.mjs`
 - Create: `tests/security/session-csrf-rate.test.mjs`
-- Modify: `migrations/rollback/0018-0020-pre-cutover.sql`
+- Modify: `migrations/rollback/0018-0024-pre-cutover.sql`
 - Modify: `migrations/README.md`
 
 **Interfaces:**
@@ -1133,6 +1137,7 @@ git commit -m "feat: enforce governed project memberships"
 **Files:**
 - Create: `lib/security/domains/meetings.mjs`
 - Create: `tests/security/meetings-reminders-api.test.mjs`
+- Create: `migrations/0021_meetings_security.sql`
 - Modify: `pages/api/meeting-houses/_auth.js`
 - Modify: `pages/api/meeting-houses/assign.js`
 - Modify: `pages/api/meeting-houses/upsert.js`
@@ -1151,13 +1156,13 @@ git commit -m "feat: enforce governed project memberships"
 - Modify: `pages/reminders.jsx`
 
 **Interfaces:**
-- Produces: project-scoped house/report/reminder commands; recipient נגזר מ־assignment.
+- Produces: project-scoped house/report/reminder commands; recipient נגזר מ־assignment; cancel עובר רק דרך `app_cancel_meeting_reminders(p_meeting_id)` שטוען את rows, גוזר recipient/project ומשנה `cancelled_at` בלבד.
 
 **Dependencies:** Tasks 7 ו־9.
 
 **External blockers:** live scheduler validation needs staging cron approval.
 
-**Rollback point:** disable reminder cron and meeting mutation feature flags; revert commit; existing DB rows remain compatible.
+**Rollback point:** disable reminder cron and meeting mutation feature flags; לפני cutover בלבד ודא שאין `idempotency_key`/`cancelled_at`, הסר RPC → constraint/index → columns; לאחר cutover restore backup.
 
 - [ ] **Step 1: כתוב BOLA tests**
 
@@ -1190,7 +1195,7 @@ Expected: exit 0.
 - [ ] **Step 6: Commit**
 
 ```powershell
-git add -- lib/security/domains/meetings.mjs pages/api/meeting-houses pages/api/base-meetings pages/api/reminders lib/meetingReminderScheduler.js lib/meetingHousesSupabase.js lib/CrmStore.jsx pages/base-meetings.jsx pages/meeting-houses pages/meeting-house-results.jsx pages/reminders.jsx tests/security/meetings-reminders-api.test.mjs
+git add -- migrations/0021_meetings_security.sql lib/security/domains/meetings.mjs pages/api/meeting-houses pages/api/base-meetings pages/api/reminders lib/meetingReminderScheduler.js lib/meetingHousesSupabase.js lib/CrmStore.jsx pages/base-meetings.jsx pages/meeting-houses pages/meeting-house-results.jsx pages/reminders.jsx tests/security/meetings-reminders-api.test.mjs
 git commit -m "feat: isolate meeting and reminder workflows"
 ```
 
@@ -1201,6 +1206,7 @@ git commit -m "feat: isolate meeting and reminder workflows"
 **Files:**
 - Create: `lib/security/domains/tours.mjs`
 - Create: `tests/security/tours-api.test.mjs`
+- Create: `migrations/0022_tours_security.sql`
 - Modify: `pages/api/tours/assign.js`
 - Modify: `pages/api/tours/cancel.js`
 - Modify: `pages/api/tours/delete.js`
@@ -1213,13 +1219,13 @@ git commit -m "feat: isolate meeting and reminder workflows"
 - Modify: `pages/tours.jsx`
 
 **Interfaces:**
-- Produces: `getTour`, `createTour`, `assignTour`, `updateTour`, `cancelTour`, `submitTourReport`, `deleteTour` עם project/assignment authorization.
+- Produces: `getTour`, `createTour`, `assignTour`, `updateTour`, `cancelTour`, `submitTourReport`, `deleteTour` עם project/assignment authorization. הגשת report עוברת דרך `app_submit_tour_report`; reporter נגזר מ־`auth.uid()` ו־report columns אינם נכללים ב־direct UPDATE grants.
 
 **Dependencies:** Tasks 7 ו־9.
 
 **External blockers:** אין ל־unit; sheet sync מטופל במשימה 14.
 
-**Rollback point:** disable tour mutations; keep read projection; revert commit.
+**Rollback point:** disable tour mutations; לפני cutover ודא שאין data חדש ב־`reported_by_user_id`/`cancellation_reason`/`cancelled`, הסר RPC → index/constraints → columns; לאחר cutover restore backup.
 
 - [ ] **Step 1: כתוב cross-project ו־mass-assignment tests**
 
@@ -1252,7 +1258,7 @@ Expected: exit 0.
 - [ ] **Step 6: Commit**
 
 ```powershell
-git add -- lib/security/domains/tours.mjs pages/api/tours lib/toursSupabase.js lib/tourAudience.js pages/tours.jsx tests/security/tours-api.test.mjs
+git add -- migrations/0022_tours_security.sql lib/security/domains/tours.mjs pages/api/tours lib/toursSupabase.js lib/tourAudience.js pages/tours.jsx tests/security/tours-api.test.mjs
 git commit -m "feat: enforce tour resource authorization"
 ```
 
@@ -1263,6 +1269,7 @@ git commit -m "feat: enforce tour resource authorization"
 **Files:**
 - Create: `lib/security/domains/notifications.mjs`
 - Create: `tests/security/notifications-push-api.test.mjs`
+- Create: `migrations/0023_notifications_security.sql`
 - Modify: `pages/api/push/register-fcm.js`
 - Modify: `pages/api/push/send.js`
 - Modify: `pages/api/push/status.js`
@@ -1278,7 +1285,7 @@ git commit -m "feat: enforce tour resource authorization"
 - Modify: `pages/notifications.jsx`
 
 **Interfaces:**
-- Produces: owner-only token CRUD, service/RPC-only notification insertion, generic lock-screen payload ו־`normalizeInternalPath(value)`.
+- Produces: owner-only token CRUD, service/RPC-only notification insertion, generic lock-screen payload ו־`normalizeInternalPath(value)`. ה־RPC גוזר project/recipients מה־resource, בודק capability נפרד לכל event, ו־`p_project_id` הוא narrowing assertion בלבד.
 
 **Dependencies:** Tasks 7–11.
 
@@ -1320,7 +1327,7 @@ Expected: PASS לכל spoofing/PII/deep-link/owner case.
 - [ ] **Step 6: Commit**
 
 ```powershell
-git add -- lib/security/domains/notifications.mjs pages/api/push pages/api/mitzvot/notify.js lib/notifyRecipients.js lib/fcmAdmin.js lib/webPushSend.js lib/notificationDemo.js lib/pushClient.js public/sw.js pages/notifications.jsx tests/security/notifications-push-api.test.mjs
+git add -- migrations/0023_notifications_security.sql lib/security/domains/notifications.mjs pages/api/push pages/api/mitzvot/notify.js lib/notifyRecipients.js lib/fcmAdmin.js lib/webPushSend.js lib/notificationDemo.js lib/pushClient.js public/sw.js pages/notifications.jsx tests/security/notifications-push-api.test.mjs
 git commit -m "feat: secure notification and push delivery"
 ```
 
@@ -1337,6 +1344,7 @@ git commit -m "feat: secure notification and push delivery"
 - Create: `pages/api/payments/[userId].js`
 - Create: `pages/api/feedback/index.js`
 - Create: `tests/security/finance-reports-feedback.test.mjs`
+- Create: `migrations/0024_finance_security.sql`
 - Modify: `pages/api/reports/interaction-report.js`
 - Modify: `lib/interactionReportServer.js`
 - Modify: `pages/expenses.jsx`
@@ -1346,9 +1354,9 @@ git commit -m "feat: secure notification and push delivery"
 - Modify: `pages/feedback.jsx`
 
 **Interfaces:**
-- Produces: Finance DTO ללא contact PII; self/project expense commands; CEO AAL2 reports; actor-derived feedback.
+- Produces: Finance DTO ללא contact PII; self/project expense commands; CEO/Head AAL2 reports; actor-derived feedback. `app_finance_summary` מחזירה allowlist מצרפי בלבד ומבצעת audit אטומי ומצונזר.
 
-**Dependencies:** Tasks 7–9.
+**Dependencies:** Tasks 7–9 ושרשרת DB ‏0018–0024. סכמת `expenses` הקנונית נשארת `date,amount,description,project_id,actor_user_id,activist_id`; שמות DTO מודרניים ממופים ב־repository בלבד, ללא schema migration או dual-write.
 
 **External blockers:** live export validation uses approved Supabase test data; production report generation remains disabled until G5.
 
@@ -1385,7 +1393,7 @@ Expected: כל security tests עוברים; 27 + 24 baseline tests עוברים.
 - [ ] **Step 6: Commit**
 
 ```powershell
-git add -- lib/security/domains/finance.mjs lib/security/domains/feedback.mjs pages/api/expenses pages/api/payments pages/api/feedback pages/api/reports/interaction-report.js lib/interactionReportServer.js pages/expenses.jsx pages/payments pages/interaction-report.jsx pages/feedback.jsx tests/security/finance-reports-feedback.test.mjs
+git add -- migrations/0024_finance_security.sql lib/security/domains/finance.mjs lib/security/domains/feedback.mjs pages/api/expenses pages/api/payments pages/api/feedback pages/api/reports/interaction-report.js lib/interactionReportServer.js pages/expenses.jsx pages/payments pages/interaction-report.jsx pages/feedback.jsx tests/security/finance-reports-feedback.test.mjs
 git commit -m "feat: minimize financial and report data exposure"
 ```
 
@@ -1813,7 +1821,7 @@ git commit -m "fix: harden Android data and release boundaries"
 - Modify: `docs/security/SECURITY_TEST_MATRIX.md`
 
 **Interfaces:**
-- Consumes: isolated Supabase test project, migrations 0018–0020, local/staging BFF URL.
+- Consumes: isolated Supabase test project, migrations 0018–0024, local/staging BFF URL.
 - Produces: two-project fixture IDs, role credentials in environment only, machine-readable pass/fail summary ללא PII.
 
 **Dependencies:** G0–G4 complete.
@@ -1840,7 +1848,7 @@ Expected: tests skip with explicit isolated-environment reason; refusal unit cas
 
 - [ ] **Step 3: לאחר אישור בלבד, backup והרץ migrations על test project**
 
-Runbook order: capture `pg_policies/grants/functions` snapshot → DB backup → apply `0018` → run foundation assertions → apply `0019` → run `app_security_posture()` → apply `0020` → verify RPC grants. כל failure עוצר לפני הקובץ הבא.
+Runbook order: capture `pg_policies/grants/functions` snapshot → DB backup → `0018` + foundation assertions → `0019` + helper/RLS matrix → `0020` + RPC dependency/grant checks → `0021` + reminder cancel direct-JWT matrix → `0022` + tour report direct-JWT matrix → `0023` + endpoint/notification authority checks → `0024` + finance parity/output/audit checks. כל failure עוצר לפני הקובץ הבא; אין retry עיוור ל־0021/0022.
 
 - [ ] **Step 4: provision synthetic actors/resources**
 

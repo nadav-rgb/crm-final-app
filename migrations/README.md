@@ -16,8 +16,10 @@
 (`create table` / `create policy` / `alter table`). גם אין ב-DB פונקציית `exec_sql` וכדומה.
 לכן סוכן AI **לא יכול** להריץ מיגרציה בעצמו — זו פעולה ידנית של בעל הפרויקט בלבד.
 
-כל הקבצים כתובים כ-idempotent (`if not exists` / `drop policy if exists` לפני `create`) —
-בטוח להריץ שוב.
+רוב הקבצים משתמשים ב־guards, אך אין הנחת idempotency גורפת. בפרט, `0021` ו־`0022`
+הם **single-apply; not fully idempotent** במצבם המאושר, משום ש־`ADD CONSTRAINT` אינו guarded.
+ב־G5 אין לבצע retry עיוור: כשל עוצר את השרשרת, נבדק מול snapshot/backup, ורק אז מחליטים
+אם לשחזר או לבצע תיקון review חדש.
 
 ## מצב נוכחי
 אומת מול ה-DB החי ב-2026-07-21 (בדיקת קיום האובייקטים דרך PostgREST):
@@ -44,6 +46,26 @@
 | 0018_security_foundation | memberships, UUID ownership, private sessions/audit/rate-limit | ⛔ לא הורץ — נדרש G5 מאושר |
 | 0019_security_rls | explicit grants, forced RLS, UUID assignment, audit triggers | ⛔ לא הורץ — נדרש G5 מאושר |
 | 0020_security_rpcs | service-only sessions, rate-limit, audit and membership RPCs | ⛔ לא הורץ — נדרש G5 מאושר |
+| 0021_meetings_security | reminder idempotency/cancellation schema + narrow cancel RPC | ⛔ לא הורץ — נדרש G5 מאושר; single-apply; not fully idempotent |
+| 0022_tours_security | tour reporter/cancellation schema + narrow report RPC | ⛔ לא הורץ — נדרש G5 מאושר; single-apply; not fully idempotent |
+| 0023_notifications_security | UUID-only notification/push ownership + event-authorized enqueue RPC | ⛔ לא הורץ — נדרש G5 מאושר |
+| 0024_finance_security | aggregate finance projection with caller-derived scope and atomic audit | ⛔ לא הורץ — נדרש G5 מאושר |
+
+## שרשרת Security Hardening הרשמית — לא להרצה ללא G5
+
+הסדר היחיד המאושר הוא `0018 → 0019 → 0020 → 0021 → 0022 → 0023 → 0024`.
+כל קובץ תלוי בהצלחת ה־preconditions וה־verification של קודמו. הוראות מפורטות נמצאות
+ב־`docs/security/STAGING_RUNBOOK.md`; rollback pre-cutover נמצא ב־
+`migrations/rollback/0018-0024-pre-cutover.sql` ופועל בסדר ההפוך בלבד.
+
+- `0018`: UUID mappings, memberships ו־private storage; כל owner mapping חייב להיות מלא.
+- `0019`: deny-by-default grants/RLS וה־helper `app_has_active_membership`.
+- `0020`: session/rate/audit/governance RPCs; כל function reference חייב להיפתר.
+- `0021`: תלויה ב־recipient/project UUID contract; validate constraint רק אחרי inventory.
+- `0022`: תלויה ב־tour UUID contract; report actor נגזר רק ב־RPC.
+- `0023`: תלויה ב־0018 ownership וב־0019 helpers; duplicate endpoints עוצרים לפני index.
+- `0024`: תלויה בכל finance source tables וב־`app_private.audit_events`; parity מול
+  `paymentCalc.js` היא precondition ל־G5, לא evidence שנאסף כעת.
 
 ### 0016 — אימות שבוצע (2026-07-21)
 - הטבלה קיימת עם כל 10 העמודות ✅

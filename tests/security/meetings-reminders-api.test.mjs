@@ -118,4 +118,6 @@ test('meeting business routes use secureHandler/user DB and scheduler uses RPC o
   }
   assert.match(sources[5], /\.rpc\('app_schedule_meeting_reminders'/);
   assert.doesNotMatch(sources[5], /\.from\(/);
+  assert.match(sources[3], /\.rpc\('app_cancel_meeting_reminders'/);
+  assert.doesNotMatch(sources[3], /\.from\(['"]meeting_reminders['"]\)[\s\S]*?\.update\(/);
 });

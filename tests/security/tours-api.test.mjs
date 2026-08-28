@@ -104,4 +104,6 @@ test('tour business routes contain no service-role table access', async () => {
     const source = await readFile(new URL(`../../pages/api/tours/${name}.js`, import.meta.url), 'utf8');
     assert.doesNotMatch(source, /getSupabaseAdmin|\.auth\.getUser|Authorization\s*:/);
   }
+  const domain = await readFile(new URL('../../lib/security/domains/tours.mjs', import.meta.url), 'utf8');
+  assert.match(domain, /\.rpc\(['"]app_submit_tour_report['"]/);
 });

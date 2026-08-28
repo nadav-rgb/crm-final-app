@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { escapeRegex } from './helpers.mjs';
 
 const migrationPath = 'migrations/0018_security_foundation.sql';
-const rollbackPath = 'migrations/rollback/0018-0020-pre-cutover.sql';
+const rollbackPath = 'migrations/rollback/0018-0024-pre-cutover.sql';
 
 test('foundation migration creates private security stores and membership authority', async () => {
   const migration = await readFile(migrationPath, 'utf8');

@@ -56,6 +56,21 @@ returns boolean language sql stable security definer set search_path = pg_catalo
   )
 $$;
 
+-- Boolean-only membership predicate. The caller identity always comes from the
+-- authenticated JWT; the project argument can only narrow that caller's scope.
+create or replace function public.app_has_active_membership(p_project_id integer)
+returns boolean language sql stable security definer set search_path = pg_catalog, public as $$
+  select exists (
+    select 1
+    from public.project_memberships pm
+    join public.profiles p on p.id = pm.user_id
+    where pm.project_id = p_project_id
+      and pm.user_id = auth.uid()
+      and pm.status = 'active'
+      and p.disabled_at is null
+  )
+$$;
+
 create or replace function public.app_is_ceo()
 returns boolean language sql stable security definer set search_path = pg_catalog, public as $$
   select exists (
@@ -106,12 +121,14 @@ returns text language sql stable security definer set search_path = pg_catalog, 
 $$;
 
 revoke all on function public.app_user_active() from public, anon;
+revoke all on function public.app_has_active_membership(integer) from public, anon;
 revoke all on function public.app_is_ceo() from public, anon;
 revoke all on function public.app_has_project_role(integer,text[]) from public, anon;
 revoke all on function public.app_current_activist_code() from public, anon;
 revoke all on function public.app_current_project_ids() from public, anon;
 revoke all on function public.app_current_role() from public, anon;
 grant execute on function public.app_user_active() to authenticated;
+grant execute on function public.app_has_active_membership(integer) to authenticated;
 grant execute on function public.app_is_ceo() to authenticated;
 grant execute on function public.app_has_project_role(integer,text[]) to authenticated;
 grant execute on function public.app_current_activist_code() to authenticated;
@@ -178,8 +195,14 @@ grant select, insert, update, delete on public.contacts to authenticated;
 grant select, insert, update, delete on public.interactions to authenticated;
 grant select, insert, update, delete on public.base_meeting_reports to authenticated;
 grant select, insert, update, delete on public.meeting_houses to authenticated;
-grant select, insert, update, delete on public.meeting_reminders to authenticated;
-grant select, insert, update, delete on public.tours to authenticated;
+grant select, insert on public.meeting_reminders to authenticated;
+grant select, insert, delete on public.tours to authenticated;
+grant update (
+  tour_number, settlement, date, start_time, guide_name,
+  guide_activist_id, host_activist_id, assigned_activists,
+  guide_user_id, host_user_id, assigned_user_ids,
+  status, notes
+) on public.tours to authenticated;
 grant select, insert, update, delete on public.expenses to authenticated;
 grant select, insert, delete on public.bonus_cancellations to authenticated;
 grant select, insert, update on public.payment_config to authenticated;
@@ -309,13 +332,8 @@ create policy meeting_reminders_select on public.meeting_reminders for select to
 create policy meeting_reminders_insert on public.meeting_reminders for insert to authenticated with check (
   recipient_user_id = auth.uid() and public.app_has_project_role(project_id, array['activist'])
 );
-create policy meeting_reminders_update on public.meeting_reminders for update to authenticated
-using (public.app_is_ceo() or public.app_has_project_role(project_id, array['head','coord']))
-with check (public.app_is_ceo() or public.app_has_project_role(project_id, array['head','coord']));
-create policy meeting_reminders_delete on public.meeting_reminders for delete to authenticated using (
-  (recipient_user_id = auth.uid() and public.app_user_active())
-  or public.app_is_ceo() or public.app_has_project_role(project_id, array['head','coord'])
-);
+-- UPDATE/DELETE are intentionally absent. Cancellation is exposed only through
+-- app_cancel_meeting_reminders(), which derives recipient and project from rows.
 
 create policy tours_select on public.tours for select to authenticated using (
   public.app_is_ceo() or public.app_has_project_role(project_id, array['head','coord'])
