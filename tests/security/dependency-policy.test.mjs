@@ -39,6 +39,20 @@ test('Next uses the approved Node floor and explicit Webpack scripts', async () 
   assert.equal(manifest.dependencies['react-dom'], '^18');
 });
 
+test('ExcelJS resolves through the exact patched UUID override', async () => {
+  const manifest = await readJson('package.json');
+  const lock = await readJson('package-lock.json');
+  const uuidPackages = Object.entries(lock.packages)
+    .filter(([packagePath]) => packagePath === 'node_modules/uuid' || packagePath.endsWith('/node_modules/uuid'));
+
+  assert.equal(manifest.dependencies.exceljs, '^4.4.0');
+  assert.deepEqual(manifest.overrides?.exceljs, { uuid: '11.1.1' });
+  assert.deepEqual(
+    uuidPackages.map(([packagePath, metadata]) => [packagePath, metadata.version]),
+    [['node_modules/uuid', '11.1.1']],
+  );
+});
+
 test('lockfile direct versions agree with the manifest security pins', async () => {
   const manifest = await readJson('package.json');
   const lock = await readJson('package-lock.json');
