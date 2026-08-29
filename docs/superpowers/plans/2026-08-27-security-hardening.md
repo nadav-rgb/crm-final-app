@@ -6,7 +6,7 @@
 
 **Architecture:** הדפדפן מתקשר רק עם API מאותו origin ומחזיק session cookie אטום; Supabase tokens נשמרים מוצפנים בצד השרת. כל business query רץ עם JWT של המשתמש כדי ש־RLS יאכוף מחדש RBAC ו־tenant isolation, בעוד service role מוגבל ל־session/auth/audit/rate-limit/cron wrappers מפורשים.
 
-**Tech Stack:** Next.js 14 Pages Router, React 18, Node.js 24 built-in test runner, Supabase Auth/PostgreSQL/PostgREST, Zod 3.25.76, Web Crypto/Node `crypto`, Capacitor Android 8.
+**Tech Stack:** Next.js 16.3.3 Pages Router על Webpack, React 18.3.1, Node.js 24 built-in test runner עם runtime floor של Node 20.9, Supabase Auth/PostgreSQL/PostgREST, Zod 3.25.76, Web Crypto/Node `crypto`, Capacitor Android 8.
 
 **Spec:** `docs/superpowers/specs/2026-08-27-security-hardening-design.md`
 
@@ -1699,20 +1699,26 @@ git commit -m "chore: enforce secret and artifact hygiene"
 
 **Dependencies:** כל functional tests של G3 זמינים כדי לזהות regression.
 
-**External blockers:** advisory ללא fix מקבל residual-risk decision. חריגת major ל־`jspdf@4.2.1` אושרה במפורש ב־2026-08-30; היא אינה מאשרת major אחר.
+**External blockers:** advisory ללא fix מקבל residual-risk decision. חריגות major ל־`jspdf@4.2.1` ול־`next@16.3.3` אושרו במפורש ב־2026-08-30 כקבוצות remediation נפרדות; הן אינן מאשרות React, ReactDOM, ExcelJS, UUID או major אחר.
 
 **Rollback point:** commit נפרד לכל dependency group: Next, PDF, Capacitor assets. revert group אם regression, וה־verdict נשאר not ready עד fix חלופי.
 
 - [ ] **Step 1: כתוב version policy test**
 
 ```js
-assert.notEqual(pkg.dependencies.next, '14.2.3');
+assert.equal(pkg.dependencies.next, '16.3.3');
+assert.equal(pkg.engines.node, '>=20.9.0');
+assert.equal(pkg.scripts.dev, 'next dev --webpack');
+assert.equal(pkg.scripts.build, 'next build --webpack');
+assert.equal(pkg.scripts.start, 'next start');
+assert.equal(pkg.dependencies.react, '^18');
+assert.equal(pkg.dependencies['react-dom'], '^18');
 assert.equal(pkg.dependencies.jspdf, '4.2.1');
 assert.equal(pkg.dependencies['jspdf-autotable'], '5.0.8');
 assert.equal(pkg.devDependencies?.['@capacitor/assets'], undefined);
 ```
 
-הבדיקה גם קוראת lockfile ומוודאת שאין direct package עם version שונה מ־manifest pin עבור Next/jsPDF.
+הבדיקה גם קוראת lockfile ומוודאת ש־Next/jsPDF תואמים ל־manifest pins, ש־React/ReactDOM בפועל נשארו `18.3.1`, וש־PostCSS הטרנזיטיבי אינו נמוך מ־`8.5.23`.
 
 - [ ] **Step 2: אמת RED ותעד audit לפני**
 
@@ -1720,15 +1726,21 @@ Run: `npm run test:security -- tests/security/dependency-policy.test.mjs`
 
 Expected ב־remediation המאושר ל־PDF: שתי בדיקות policy נכשלות על manifest/lockfile שמכילים `jspdf@3.0.4`; focused compatibility tests עוברים מול ההתנהגות הקיימת לפני השדרוג.
 
+Expected ב־remediation המאושר ל־Next: policy נכשלת על Next `<16.3.3`, PostCSS `<8.5.23`, Node floor חסר/נמוך או scripts שאינם explicit Webpack. React/ReactDOM אינם משתנים.
+
 Run: `npm audit --json`
 
 Historical baseline בתחילת התוכנית: 3 Critical, 10 High, 3 Moderate. Baseline לפני follow-up של jsPDF ב־2026-08-30: 1 Critical, 2 High ו־2 Moderate.
 
 - [ ] **Step 3: שדרג קבוצות קטנות**
 
-Run: `npm.cmd install --save-exact next@14.2.35`
+Run: `npm.cmd install --save-exact next@16.3.3`
+
+לפני ואחרי ההתקנה יש לאמת `npm ls next react react-dom postcss`: עותק יחיד של Next, React/ReactDOM `18.3.1`, PostCSS `>=8.5.23`, וללא peer conflict. סקריפטי dev/build עוברים ל־Webpack מפורש ונוסף `engines.node: >=20.9.0`. אין codemod, App Router migration או המרת `middleware.js` ל־`proxy.js` במסגרת הקבוצה.
 
 Run: `npm run build && npm run test:baseline && npm run test:security`
+
+לאחר build יש לאמת 32 מסלולי Pages כולל `/404` הסינתטי ו־56 מסלולי API, `next start` עם CSP nonce ייחודי וכותרות security/cache מלאות, cross-origin rejection, auth/session regressions, client render, bundle/secret scans, `npx --no-install cap sync android` ללא native drift, `testDebugUnitTest`, `assembleDebug` ו־release fail-closed ללא keystore. אזהרת `optimizeFonts` או deprecation של middleware שאינה שוברת build מתועדת ואינה מרחיבה scope.
 
 Run: `npm.cmd install --save-exact jspdf@4.2.1`
 
@@ -1758,11 +1770,18 @@ Expected: אפס Critical ואפס High. Moderate שנותר מפורט עם pac
 
 אחרי קבוצת jsPDF בלבד, Expected: ה־Critical של jsPDF נעלם; 2 High של Next/PostCSS ו־2 Moderate של ExcelJS/UUID יכולים להישאר. זהו מצב ביניים בלבד ו־G4 נשאר `BLOCKED` עד הקבוצות המאושרות הבאות.
 
+אחרי קבוצת Next בלבד, Expected: Next/PostCSS אינם מופיעים עוד כ־Critical/High; audit מלא ו־`--omit=dev` מציגים `0 Critical / 0 High / 2 Moderate`, כאשר רק ExcelJS/UUID נשארים לדיון נפרד ומחוץ לקומיט זה. הקומיט אינו משנה לבדו את סטטוס G4 ואינו מתחיל או מאשר את G5.
+
 - [ ] **Step 5: Commit נפרד לכל קבוצה**
 
 ```powershell
 git add -- package.json package-lock.json tests/security/dependency-policy.test.mjs tests/security/jspdf-compatibility.test.mjs docs/superpowers/specs/2026-08-27-security-hardening-design.md docs/superpowers/plans/2026-08-27-security-hardening.md
 git commit -m "fix: upgrade jsPDF to patched major"
+```
+
+```powershell
+git add -- package.json package-lock.json tests/security/dependency-policy.test.mjs tests/security/jspdf-compatibility.test.mjs docs/superpowers/specs/2026-08-27-security-hardening-design.md docs/superpowers/plans/2026-08-27-security-hardening.md
+git commit -m "fix: upgrade Next to patched LTS"
 ```
 
 ---

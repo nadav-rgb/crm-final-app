@@ -392,7 +392,6 @@ test('real browser bundle generates the production PDF through the btoa path', {
     fs.writeFileSync(htmlPath, '<!doctype html><html><body><script src="./bundle.js"></script></body></html>', 'utf8');
 
     const webpackBridge = require('next/dist/compiled/webpack/webpack');
-    webpackBridge.init();
     await new Promise((resolve, reject) => {
       webpackBridge.webpack({
         mode: 'production',

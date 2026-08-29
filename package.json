@@ -2,9 +2,12 @@
   "name": "crm-activist",
   "version": "1.0.0",
   "private": true,
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "next dev --webpack",
+    "build": "next build --webpack",
     "start": "next start",
     "test:security": "node scripts/security/run-tests.mjs",
     "test:baseline": "npm run verify:interaction-report && node scripts/verify-payment-order.cjs",
@@ -24,7 +27,7 @@
     "jspdf": "4.2.1",
     "jspdf-autotable": "5.0.8",
     "lucide-react": "^1.14.0",
-    "next": "14.2.35",
+    "next": "16.3.3",
     "react": "^18",
     "react-dom": "^18",
     "web-push": "^3.6.7",

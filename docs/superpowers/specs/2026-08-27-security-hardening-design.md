@@ -314,7 +314,7 @@ headers יוגדרו ב־Next/Vercel וייבדקו הן unit/integration והן
 
 ## Dependencies ו־Supply Chain
 
-- `next` ישודרג בתוך 14.x לגרסה המתוקנת האחרונה התואמת, עם build וכל regression אחרי השדרוג; major אינו מתבצע אוטומטית.
+- `next` ישודרג בחריגת major מאושרת ל־`16.3.3`, תוך שמירת Pages Router ו־React/ReactDOM `18.3.1`. סקריפטי dev/build נשארים במפורש על Webpack (`next dev --webpack`, `next build --webpack`), ו־Node מקבל floor של `>=20.9.0`. השדרוג מחייב PostCSS `>=8.5.23`, build מלא, inventory של כל 32 מסלולי הדפים ו־56 מסלולי ה־API, בדיקות auth/session/CSP/HTTP, bundle/secret scans ו־Capacitor/Android regression. אזהרת deprecation לבדה אינה מאשרת המרת `middleware.js` ל־`proxy.js`, ושינוי runtime ב־middleware, `_app`, `_document`, API/auth או CSP מחייב עצירה ואישור נפרד.
 - `jspdf` ישודרג בחריגת major מאושרת ל־`4.2.1`, משום שאין תיקון מלא ב־3.x ל־Critical/High העדכניים. `jspdf-autotable` נשאר pinned ל־`5.0.8`, שתומך ב־jsPDF 4. השדרוג מחייב בדיקות Node/browser, PDF עברי, Assistant font embedding, RTL, ספרות ופיסוק, A3 landscape, AutoTable רב־עמודים, repeated headers, `rowPageBreak: 'avoid'`, שלמות שורות ובדיקת render חזותית. שינוי runtime ב־PDF generator אינו מאושר אוטומטית ונדרש לעצור לפניו אם מתגלה incompatibility.
 - `exceljs`, `@capacitor/assets` והתלויות הטרנזיטיביות יטופלו לפי advisory ו־fix path. dependency ללא fix תקבל הסרה/החלפה, isolation או blocker מתועד.
 - lockfile הוא מקור מחייב; ההתקנה ב־CI משתמשת ב־`npm ci`.
