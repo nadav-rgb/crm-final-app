@@ -6,6 +6,20 @@ def keystoreProps = new Properties()
 if (keystorePropsFile.exists()) {
     keystoreProps.load(new FileInputStream(keystorePropsFile))
 }
+def releaseSigningKeys = ['storeFile', 'storePassword', 'keyAlias', 'keyPassword']
+def releaseBuildRequested = gradle.startParameter.taskNames.any {
+    it.toLowerCase(Locale.ROOT).contains('release')
+}
+def missingReleaseSigningKeys = releaseSigningKeys.findAll {
+    !keystoreProps[it]?.toString()?.trim()
+}
+def releaseStoreFile = missingReleaseSigningKeys.isEmpty() && keystorePropsFile.exists()
+    ? rootProject.file(keystoreProps['storeFile'])
+    : null
+
+def releaseSigningConfigured = keystorePropsFile.exists()
+    && missingReleaseSigningKeys.isEmpty()
+    && releaseStoreFile?.isFile()
 
 android {
     namespace = "com.achdutyehudit.crm"
@@ -24,9 +38,9 @@ android {
         }
     }
     signingConfigs {
-        release {
-            if (keystorePropsFile.exists()) {
-                storeFile file(keystoreProps['storeFile'])
+        if (releaseSigningConfigured) {
+            release {
+                storeFile releaseStoreFile
                 storePassword keystoreProps['storePassword']
                 keyAlias keystoreProps['keyAlias']
                 keyPassword keystoreProps['keyPassword']
@@ -35,10 +49,25 @@ android {
     }
     buildTypes {
         release {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-            signingConfig keystorePropsFile.exists() ? signingConfigs.release : signingConfigs.debug
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (releaseSigningConfigured) {
+                signingConfig signingConfigs.release
+            }
         }
+    }
+}
+
+if (releaseBuildRequested) {
+    if (!keystorePropsFile.exists()) {
+        throw new GradleException("Release signing configuration missing: android/keystore.properties")
+    }
+    if (!missingReleaseSigningKeys.isEmpty()) {
+        throw new GradleException("Release signing configuration missing required properties: ${missingReleaseSigningKeys.join(', ')}")
+    }
+    if (!releaseStoreFile?.isFile()) {
+        throw new GradleException("Release signing keystore file is missing")
     }
 }
 
