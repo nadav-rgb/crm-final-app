@@ -31,6 +31,7 @@ function AppShell({ Component, pageProps }) {
 }
 
 export default function App({ Component, pageProps }) {
+  if (Component.isPublicErrorPage === true) return <Component {...pageProps} />;
   return (
     <AuthProvider>
       <AppShell Component={Component} pageProps={pageProps} />

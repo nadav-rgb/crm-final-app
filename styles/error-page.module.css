@@ -1,0 +1,57 @@
+.page {
+  --error-body-size: 1rem;
+  --error-title-size: clamp(1.5rem, 4vw, 2rem);
+  --error-code-size: clamp(3.5rem, 12vw, 6rem);
+  --error-page-background: var(--color-bg);
+  --error-surface: var(--color-card);
+  --error-heading: var(--text-primary);
+  --error-copy: var(--text-secondary);
+  --error-accent: var(--color-brand);
+  --error-border: var(--color-border);
+
+  min-block-size: 100dvh;
+  display: grid;
+  place-items: center;
+  padding-block: var(--space-2xl);
+  padding-inline: var(--space-2xl);
+  direction: rtl;
+  background: var(--error-page-background);
+  color: var(--error-heading);
+  font-family: inherit;
+  text-align: center;
+}
+
+.panel {
+  inline-size: min(100%, 32rem);
+  padding-block: var(--space-page);
+  padding-inline: var(--space-2xl);
+  border: 1px solid var(--error-border);
+  border-radius: var(--radius-lg);
+  background: var(--error-surface);
+  box-shadow: var(--shadow-raised);
+  overflow-wrap: anywhere;
+}
+
+.code {
+  margin-block-end: var(--space-sm);
+  color: var(--error-accent);
+  font-size: var(--error-code-size);
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.title {
+  margin-block-end: var(--space-sm);
+  color: var(--error-heading);
+  font-size: var(--error-title-size);
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+
+.message {
+  color: var(--error-copy);
+  font-size: var(--error-body-size);
+  line-height: 1.75;
+}
