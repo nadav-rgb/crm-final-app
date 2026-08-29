@@ -47,12 +47,17 @@ export default function ContactDetail() {
 
   // בתי מפגש אמיתיים — לבחירת "בית מפגש משויך" בעריכת הלקוח (במקום טקסט חופשי בלבד).
   const [houses, setHouses]   = useState([]);
+  const [housesError, setHousesError] = useState('');
   const [houseSel, setHouseSel] = useState(''); // מפתח הבית שנבחר, '' = לא נבחר, '__manual__' = הזנה ידנית
   useEffect(() => {
     let active = true;
     (async () => {
-      const remote = await fetchMeetingHousesFromSupabase(apiFetch);
-      if (active) setHouses(remote);
+      try {
+        const authorized = await fetchMeetingHousesFromSupabase(apiFetch);
+        if (active) { setHouses(authorized); setHousesError(''); }
+      } catch {
+        if (active) { setHouses([]); setHousesError('רשימת בתי המפגש אינה זמינה כרגע.'); }
+      }
     })();
     return () => { active = false; };
   }, [apiFetch]);
@@ -209,6 +214,7 @@ export default function ContactDetail() {
       backLabel={backLabel}
       actions={showSensitive ? <StatusBadge status={enriched.status} /> : null}
     >
+      {housesError && <div role="alert" style={{ marginBottom:14, color:'#a63230', background:'#fff1f1', borderRadius:10, padding:'9px 12px', fontWeight:700 }}>{housesError}</div>}
       <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: 20 }}>
 
         {/* עמודה שמאל — פרטים */}

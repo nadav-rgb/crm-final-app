@@ -2,7 +2,6 @@ import '../styles/globals.css';
 import '../styles/components.css';
 import { CrmProvider } from '../lib/CrmStore';
 import { AuthProvider, useAuth } from '../lib/AuthStore';
-import ReminderSchedulerMount from '../components/ReminderSchedulerMount';
 import PushRegistrationMount from '../components/PushRegistrationMount';
 import MfaEnrollment from '../components/auth/MfaEnrollment';
 import LoginPage from './login';
@@ -15,7 +14,6 @@ function BusinessApp({ Component, pageProps }) {
   if (router.pathname === '/landing') return <LandingPage />;
   return (
     <CrmProvider>
-      <ReminderSchedulerMount />
       <PushRegistrationMount />
       <Component {...pageProps} />
     </CrmProvider>

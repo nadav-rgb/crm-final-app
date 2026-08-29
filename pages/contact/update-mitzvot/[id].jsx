@@ -14,7 +14,7 @@ export default function UpdateMitzvotPage() {
   const { id }    = router.query;
   const contactId = Number(id);
   const { contacts, updateMitzvot } = useCrm();
-  const { currentUser } = useAuth();
+  const { currentUser, apiFetch } = useAuth();
 
   const contact = contacts.find(c => c.id === contactId);
   if (!contact) return <DesktopLayout title="עדכון סרגל מצוות"><div>לקוח לא נמצא</div></DesktopLayout>;
@@ -45,7 +45,7 @@ export default function UpdateMitzvotPage() {
     if (error) { setSaveErr(error.message || 'השמירה נכשלה. נסה שוב.'); setSaving(false); return; }
     // ההתראה נשלחת רק אחרי שהעדכון נחת: השרת קורא את mitzvot_history מה-DB, ולפני
     // כן הוא היה מרכיב הודעה על המצב הישן. fire-and-forget — כשל התראה לא מבטל שמירה.
-    if (changes.length > 0) notifyMitzvotApi(contactId);
+    if (changes.length > 0) notifyMitzvotApi(apiFetch, contactId);
     setSaved(true);
   }
 

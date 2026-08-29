@@ -38,7 +38,7 @@ export default function AddInteractionPage() {
   const router    = useRouter();
   const { id }    = router.query;
   const contactId = Number(id);
-  const { contacts, interactions, addInteraction, addParticipantInteractions, updateInteraction, paymentConfig } = useCrm();
+  const { contacts, interactions, addInteraction, addParticipantInteractions, updateInteraction, paymentConfig, paymentConfigError } = useCrm();
   const { currentUser, activeProject, apiFetch } = useAuth();
   const contact = contacts.find(c => c.id === contactId);
 
@@ -74,6 +74,10 @@ export default function AddInteractionPage() {
         </div>
       </DesktopLayout>
     );
+  }
+
+  if (!paymentConfig) {
+    return <DesktopLayout title="הוסף קשר"><div role={paymentConfigError ? 'alert' : undefined} style={{ padding: 40, color: paymentConfigError ? '#a63230' : '#aaa' }}>{paymentConfigError || 'טוען תצורת תשלום…'}</div></DesktopLayout>;
   }
 
   // פרויקט בתשלום: אחדות יהודית (1) או נעים להכיר (2) — כללי תשלום זהים, תקרות משותפות.
@@ -345,7 +349,7 @@ export default function AddInteractionPage() {
       // לא חוסם את השמירה, וכשל AI מאבד רק את הסיכום — הקשר כבר נשמר.
       summarizeInteractionText(apiFetch, interactionPayload.id).then(async summary => {
         if (!summary) return;
-        notifyInteractionApi({ interactionId: interactionPayload.id, kind: 'summary' });
+        notifyInteractionApi(apiFetch, { interactionId: interactionPayload.id, kind: 'summary' });
       }).catch(() => {});
 
       if (isAchdut && payableCheck) {
@@ -361,14 +365,14 @@ export default function AddInteractionPage() {
           // קיימים בדפדפן). ה-client_id זהה לשורה שנכתבה למעלה, אז זו לא התראה שנייה.
           // רק לדיווח מזכה: על דיווח שלא זיכה, שורת הפעמון של הדפדפן מפרטת גם את
           // סיבת אי-הזכאות, וכתיבה מהשרת הייתה דורסת אותה בטקסט דל יותר.
-          notifyInteractionApi({
+          notifyInteractionApi(apiFetch, {
             interactionId: interactionPayload.id,
             kind: 'self_payment',
             amount: payableCheck.amount,
           });
 
           // התראה + Push לניהול הפרויקט — צד-שרת.
-          notifyInteractionApi({
+          notifyInteractionApi(apiFetch, {
             interactionId: interactionPayload.id,
             kind: 'payment',
             amount: payableCheck.amount,

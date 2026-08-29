@@ -10,10 +10,13 @@ export default function MeetingHouseResultsPage() {
   const { contacts, baseMeetings, activists } = useCrm();
   const { can, apiFetch } = useAuth();
   const [houses, setHouses] = useState([]);
+  const [loadError, setLoadError] = useState('');
   const achdutActivists = useMemo(() => activists.filter(a => a.role === 'activist' && inProject(a, 1)), [activists]);
 
   useEffect(() => {
-    fetchMeetingHousesFromSupabase(apiFetch).then(setHouses).catch(() => setHouses([]));
+    fetchMeetingHousesFromSupabase(apiFetch)
+      .then((authorized) => { setHouses(authorized); setLoadError(''); })
+      .catch(() => { setHouses([]); setLoadError('טעינת בתי המפגש נכשלה. לא מוצגים נתוני דמו.'); });
   }, [apiFetch]);
 
   const achdutContacts = contacts.filter(c =>
@@ -35,7 +38,7 @@ export default function MeetingHouseResultsPage() {
       return hn === number || h.settlement === city || h.city === city;
     });
     const assignedActivistNames = (houseData?.assignedActivists || [])
-      .map(id => achdutActivists.find(u => u.id === id)?.name || `פעיל ${id}`)
+      .map(id => achdutActivists.find(u => String(u.userId ?? u.id) === String(id))?.name || 'פעיל')
       .join(', ');
     return {
       key, number, city,
@@ -90,6 +93,7 @@ export default function MeetingHouseResultsPage() {
       title="תוצאות בתי מפגש"
       subtitle={`${houseCards.length} בתי מפגש · ${achdutContacts.length} משתתפים · אחדות יהודית`}
     >
+      {loadError && <div role="alert" style={{ marginBottom:14, color:'#a63230', background:'#fff1f1', borderRadius:10, padding:'9px 12px', fontWeight:700 }}>{loadError}</div>}
       {/* House cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14, marginBottom: 36 }}>
         {houseCards.length === 0 ? (

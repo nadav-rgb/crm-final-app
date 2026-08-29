@@ -16,17 +16,29 @@ export default function CompletedMeetingHousesPage() {
   const { can, apiFetch } = useAuth();
   const { baseMeetings, activists } = useCrm();
   const [houses, setHouses] = useState([]);
+  const [loadError, setLoadError] = useState('');
   const [selectedHouse, setSelectedHouse] = useState(null);
 
   // שם פעיל מתוך הרשימה החיה (activist_directory) — לא מנתונים סטטיים.
-  const activistName = (id) => activists.find(a => Number(a.id) === Number(id))?.name || `פעיל ${id}`;
+  const activistName = (id) => activists.find(a => (
+    String(a.userId ?? '') === String(id) || String(a.id ?? '') === String(id)
+  ))?.name || 'פעיל';
 
-  // מקור אמת: Supabase. בתי מפגש דמו ישנים מ-localStorage כ-fallback בלבד (זהה ל-index.jsx).
   useEffect(() => {
     let active = true;
     (async () => {
-      const remote = await fetchMeetingHousesFromSupabase(apiFetch);
-      if (active) setHouses(remote.filter(h => h.status === 'completed'));
+      try {
+        const authorized = await fetchMeetingHousesFromSupabase(apiFetch);
+        if (active) {
+          setHouses(authorized.filter(h => h.status === 'completed'));
+          setLoadError('');
+        }
+      } catch {
+        if (active) {
+          setHouses([]);
+          setLoadError('טעינת בתי המפגש נכשלה. לא מוצגים נתוני דמו.');
+        }
+      }
     })();
     return () => { active = false; };
   }, [activists, apiFetch]);
@@ -47,6 +59,7 @@ export default function CompletedMeetingHousesPage() {
       title="בתי מפגש שהסתיימו"
       subtitle={`${houses.length} בתי מפגש שהשלימו את כל 4 המפגשים · אחדות יהודית`}
     >
+      {loadError && <div role="alert" style={{ marginBottom:14, color:'#a63230', background:'#fff1f1', borderRadius:12, padding:'10px 14px', fontWeight:700 }}>{loadError}</div>}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
         {houses.length === 0 ? (
           <div style={{ gridColumn: '1/-1', textAlign: 'center', color: '#ccc', padding: 48, fontSize: 14 }}>

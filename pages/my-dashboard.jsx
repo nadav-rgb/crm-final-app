@@ -61,7 +61,7 @@ function CounterCard({ counter, monthLabel }) {
 }
 
 export default function MyDashboardPage() {
-  const { interactions, contacts, mitzvotBonuses, newParticipantBonuses, paymentConfig, expenses, tours } = useCrm();
+  const { interactions, contacts, mitzvotBonuses, newParticipantBonuses, paymentConfig, paymentConfigError, expenses, tours } = useCrm();
   const { currentUser, apiFetch } = useAuth();
   const [cancelledBonusKeys, setCancelledBonusKeys] = useState(null);
   const [cancellationError, setCancellationError] = useState('');
@@ -98,7 +98,7 @@ export default function MyDashboardPage() {
   }, [currentUser, apiFetch, periodKey]);
 
   const data = useMemo(() => {
-    if (!currentUser || !cancelledBonusKeys) return null;
+    if (!currentUser || !cancelledBonusKeys || !paymentConfig) return null;
     // סינון בונוסים ליועץ הנוכחי ולחודש הנבחר — זהה לעמוד התשלומים של הרכז (כדי שהמספרים יתאימו).
     const myMitzvot = mitzvotBonuses.filter(b => b.activist_id === currentUser.id && b.month === monthKey);
     const myNew     = newParticipantBonuses.filter(b => b.activist_id === currentUser.id && b.month === monthKey);
@@ -108,7 +108,7 @@ export default function MyDashboardPage() {
   if (!data) return (
     <DesktopLayout title="הדשבורד שלי">
       <div role={cancellationError ? 'alert' : undefined} style={{ padding: 40, color: cancellationError ? '#a63230' : '#aaa' }}>
-        {cancellationError || 'טוען…'}
+        {paymentConfigError || cancellationError || 'טוען…'}
       </div>
     </DesktopLayout>
   );

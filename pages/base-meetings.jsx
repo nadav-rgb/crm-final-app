@@ -4,7 +4,6 @@ import { useRouter } from 'next/router';
 import DesktopLayout from '../components/DesktopLayout';
 import { useCrm } from '../lib/CrmStore';
 import { useAuth } from '../lib/AuthStore';
-import { summarizeBaseMeetingDemo } from '../lib/aiDemo';
 import { summarizeReportText } from '../lib/aiService';
 import VoiceInput from '../components/VoiceInput';
 import { fetchMeetingHousesFromSupabase } from '../lib/meetingHousesSupabase';
@@ -13,22 +12,6 @@ import { getReminderStatus } from '../lib/reminderSchedulerDemo';
 import { notifyBaseMeetingReportApi } from '../lib/notifyApi';
 
 const MEETING_NUMBER_LABELS = { 1:'מפגש ראשון 🌱', 2:'מפגש שני 🌿', 3:'מפגש שלישי 🌳', 4:'מפגש רביעי 🏆' };
-
-// מיפוי שורת meeting_houses מ-Supabase (snake_case) ל-shape ש-buildBaseMeetingsFromHouses מצפה לו
-function mapHouseRow(row) {
-  return {
-    id:               row.id,
-    houseNumber:      row.house_number,
-    settlement:       row.settlement,
-    city:             row.city,
-    hostName:         row.host_name,
-    facilitatorName:  row.facilitator_name,
-    project_id:       row.project_id,
-    status:           row.status,
-    assignedActivists: Array.isArray(row.assigned_activists) ? row.assigned_activists : [],
-    meetings:         Array.isArray(row.meetings) ? row.meetings : [],
-  };
-}
 
 const GENDER_OPTIONS     = ['רוב גברים (70%+)', 'רוב נשים (70%+)', 'מאוזן (40–60)'];
 const RELIGION_OPTIONS   = ['רוב חילונים', 'רוב מסורתיים', 'רוב דתיים', 'רוב חרדים', 'מעורב חזק (אין רוב ברור)'];
@@ -93,6 +76,7 @@ export default function BaseMeetingsPage() {
   const { currentUser, apiFetch } = useAuth();
   const router = useRouter();
   const [houses, setHouses] = useState([]);
+  const [housesError, setHousesError] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -101,7 +85,13 @@ export default function BaseMeetingsPage() {
         const data = await fetchMeetingHousesFromSupabase(apiFetch);
         if (!active) return;
         setHouses(data);
-      } catch { if (active) setHouses([]); }
+        setHousesError('');
+      } catch {
+        if (active) {
+          setHouses([]);
+          setHousesError('טעינת בתי המפגש נכשלה. לא מוצגים נתוני דמו.');
+        }
+      }
     })();
     return () => { active = false; };
   }, [apiFetch]);
@@ -112,30 +102,15 @@ export default function BaseMeetingsPage() {
     existingReports: baseMeetings,
   }), [houses, baseMeetings]);
 
-  const visibleMeetings = expandedBaseMeetings.filter(meeting => {
-    if (currentUser?.role === 'activist') return Number(meeting.activist_id) === Number(currentUser?.id);
-    if (currentUser?.role === 'ceo') return true;
-    if (currentUser?.role === 'coord') {
-      const myProjects = (Array.isArray(currentUser.project_ids) && currentUser.project_ids.length > 0
-        ? currentUser.project_ids
-        : (currentUser.project_id ? [currentUser.project_id] : [])).map(Number);
-      if (meeting.project_id != null) return myProjects.includes(Number(meeting.project_id));
-      // fallback לשורות ישנות בלי project_id — חפיפת פרויקטים מול הפעיל
-      const act = activists.find(a => Number(a.id) === Number(meeting.activist_id));
-      const actProjects = Array.isArray(act?.project_ids) && act.project_ids.length > 0
-        ? act.project_ids
-        : (act?.project_id ? [act.project_id] : []);
-      return actProjects.some(pid => myProjects.includes(Number(pid)));
-    }
-    if (['head', 'finance'].includes(currentUser?.role) && Number(currentUser?.project_id) === 1) return true;
-    return Number(meeting.activist_id) === Number(currentUser?.id);
-  });
+  // בתי המפגש והדיווחים כבר מצומצמים בשרת וב-RLS. הדפדפן אינו שכבת authorization.
+  const visibleMeetings = expandedBaseMeetings;
 
   const [selected,       setSelected]       = useState(null);
   const [form,           setForm]           = useState(EMPTY_FORM);
   const [saved,          setSaved]          = useState(false);
+  const [saveError,      setSaveError]      = useState('');
   const [aiSummary,      setAiSummary]      = useState(null);
-  const [voiceAiSummary, setVoiceAiSummary] = useState(null);
+  const [aiSummaryError, setAiSummaryError] = useState('');
   const [fullReport,     setFullReport]     = useState(null); // מודאל צפייה בדיווח המובנה המלא
 
   // ניווט עמוק מ"הפעילויות שלי" (?open=<reportId>) — פותח את מודל "דיווח מלא" לדיווח הספציפי.
@@ -180,8 +155,9 @@ export default function BaseMeetingsPage() {
     setSelected(meeting);
     setForm(EMPTY_FORM);
     setSaved(false);
+    setSaveError('');
     setAiSummary(null);
-    setVoiceAiSummary(null);
+    setAiSummaryError('');
   }
 
   // עריכת דיווח שכבר נשלח וננעל — טוען את התשובות הקיימות חזרה לטופס. selected.submitted===true
@@ -191,67 +167,71 @@ export default function BaseMeetingsPage() {
     setForm(meeting.structured_answers || EMPTY_FORM);
     setFullReport(null);
     setSaved(false);
+    setSaveError('');
   }
 
   function handleVoiceTranscript(text) {
     setField('general_notes', (form.general_notes ? form.general_notes + '\n' : '') + text);
-    // סיכומים מיועדים לרכז בלבד — פעיל לא רואה סיכום גם בהקלטה
-    if (currentUser?.role !== 'activist') setVoiceAiSummary(summarizeBaseMeetingDemo(text, selected || {}));
   }
 
   function openAiSummary(meeting) {
-    // מעדיפים את הסיכום החכם שנשמר בשליחה; סיכום-דמו רק כ-fallback לדוחות ישנים
-    if (meeting.ai_summary) { setAiSummary({ meeting, text: meeting.ai_summary }); return; }
-    const text = meeting.structured_answers
-      ? structuredToText(meeting.structured_answers)
-      : meeting.answers;
-    if (!text) return;
-    setAiSummary({ meeting, text: summarizeBaseMeetingDemo(text, meeting) });
+    if (meeting.ai_summary) {
+      setAiSummary({ meeting, text: meeting.ai_summary });
+      setAiSummaryError('');
+      return;
+    }
+    setAiSummary(null);
+    setAiSummaryError('הסיכום החכם אינו זמין לדיווח זה. לא הוצג סיכום דמו.');
   }
 
   // אחרי שליחת דיווח: סיכום AI + התראה לרכזים/מנהלים — fire-and-forget, לא מעכב את הפעיל.
   // כישלון AI ⇒ ההתראה יוצאת בלי סיכום; הדיווח עצמו כבר נשמר.
   async function finalizeSubmission(meeting) {
-    let summary = null;
     try {
-      summary = await summarizeReportText(apiFetch, meeting.id);
-    } catch (e) { /* כשל AI — ממשיכים בלי סיכום */ }
+      await summarizeReportText(apiFetch, meeting.id);
+      setAiSummaryError('');
+    } catch {
+      setAiSummaryError('הדיווח נשמר, אך שירות הסיכום החכם אינו זמין כרגע.');
+    }
 
-    // התראה + Push אמיתי לטלפון/מחשב — צד-שרת (admin key). הגרסה הקודמת כתבה מהדפדפן
-    // שורת פעמון בלבד ולא הפעילה Push בפועל לרכז.
-    notifyBaseMeetingReportApi(meeting.id);
+    // התראה + Push עוברים בגבול צד-שרת שגוזר את הנמענים מה-resource המורשה.
+    notifyBaseMeetingReportApi(apiFetch, meeting.id).catch(() => {});
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (!isFormValid(form)) return;
+    setSaveError('');
     const sa = { ...form, participant_count: Number(form.participant_count) };
     const textForAi = structuredToText(sa);
 
     if (selected.submitted) {
       // עריכת דיווח קיים — רק מעדכן את התשובות; לא יוצר התראת "דיווח התקבל" ולא מסכם מחדש
-      updateBaseMeetingReport(selected.id, {
+      const { error } = await updateBaseMeetingReport(selected.id, {
         structured_answers: sa,
         answers: textForAi,
         participant_count: Number(form.participant_count),
       });
+      if (error) {
+        setSaveError('עדכון הדיווח נכשל. הנתונים לא הוחלפו.');
+        return;
+      }
+      setSaved(true);
       setSelected(null);
       return;
     }
 
-    // חייבים להמתין לכתיבה לפני finalizeSubmission: הוא שומר ai_summary ושולח את ההתראה
-    // לפי id הדוח, ושניהם נכשלים **בשקט** אם השורה עוד לא ב-DB (update no-op / 404).
-    // ה-UI עצמו לא ממתין — רק ההמשך. selected נשמר מקומית כי setSelected(null) רץ מיד.
+    // ממתינים לכתיבה לפני סיכום, התראה וביטול תזכורות. כשל נשאר גלוי בטופס.
     const meeting = selected;
-    submitBaseMeeting(meeting.id, textForAi, {
+    const { error } = await submitBaseMeeting(meeting.id, textForAi, {
       ...meeting,
       participant_count: Number(form.participant_count),
       structured_answers: sa,
-    })
-      .then(({ error }) => {
-        if (error) { console.error('הדיווח לא נשמר — מדלג על סיכום AI והתראה', error); return; }
-        finalizeSubmission(meeting); // סיכום AI + התראה לרכזים
-      })
-      .catch(err => console.error('שמירת הדיווח נכשלה', err));
+    });
+    if (error) {
+      setSaveError('שמירת הדיווח נכשלה. לא נשלחו סיכום או התראה.');
+      return;
+    }
+    finalizeSubmission(meeting); // סיכום AI + התראה לרכזים
     // Cancel pending reminders — report was submitted
     apiFetch('/api/reminders/cancel', { method: 'POST', body: { meetingId: selected.id } }).catch(() => {});
     setSaved(true);
@@ -264,6 +244,16 @@ export default function BaseMeetingsPage() {
 
   return (
     <DesktopLayout title="דיווח מפגשי בסיס" subtitle="אחדות יהודית · דיווחים לפי בתי מפגש ושיבוצים">
+      {housesError && (
+        <div role="alert" style={{ marginBottom:14, background:'#fff1f1', color:'#a63230', borderRadius:12, padding:'10px 14px', fontSize:13, fontWeight:700 }}>
+          {housesError}
+        </div>
+      )}
+      {(saveError || aiSummaryError) && (
+        <div role="alert" style={{ marginBottom:14, background:'#fff1f1', color:'#a63230', borderRadius:12, padding:'10px 14px', fontSize:13, fontWeight:700 }}>
+          {saveError || aiSummaryError}
+        </div>
+      )}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))', gap:12, marginBottom:18 }}>
         <SummaryCard title="סה״כ מפגשים"   value={visibleMeetings.length} />
         <SummaryCard title="ממתינים לדיווח" value={waitingCount} />
@@ -499,12 +489,6 @@ export default function BaseMeetingsPage() {
                   rows={3} placeholder="הערות נוספות, תצפיות, בקשות מיוחדות..."
                   style={{ ...inputStyle(false), resize:'vertical', minHeight:72, fontFamily:'Rubik,sans-serif' }} />
                 <VoiceInput onTranscript={handleVoiceTranscript} />
-                {voiceAiSummary && currentUser?.role !== 'activist' && (
-                  <div style={{ marginTop:10, background:'#f8f7ff', border:'0.5px solid rgba(108,92,231,0.2)', borderRadius:12, padding:'12px 14px' }}>
-                    <div style={{ fontSize:11, fontWeight:700, color:'#6c5ce7', marginBottom:6, textTransform:'uppercase', letterSpacing:'0.05em' }}>סיכום — מהקלטה</div>
-                    <pre style={{ whiteSpace:'pre-wrap', fontFamily:'inherit', fontSize:12, color:'#333', lineHeight:1.75, margin:0 }}>{voiceAiSummary}</pre>
-                  </div>
-                )}
               </FLabel>
 
             </div>

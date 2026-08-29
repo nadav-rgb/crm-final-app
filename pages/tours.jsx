@@ -211,7 +211,7 @@ export default function ToursPage() {
     setBusy(false);
     if (!saved) { setErrors({ submit: 'שמירת הסיור נכשלה — נסה שוב' }); return; }
 
-    // התראות (פעמון + push) לכל הנמענים — בצד השרת (admin, עוקף RLS): משפחה מארחת, מדריך,
+    // התראות (פעמון + push) לכל הנמענים נגזרות בצד השרת מהסיור המורשה:
     // וניהול "נעים להכיר" (מנכ"ל + רכזים/ראשי-פרויקט — כולל הדס לוי ונדב). ראה pages/api/tours/notify.js.
     // (בעבר נוצרו בצד-לקוח ונכשלו לכל נמען שאינו יוצר הסיור, בגלל RLS על notifications.)
     const host = guideOptions.find(a => String(a.id) === String(form.hostActivistId));
@@ -282,7 +282,7 @@ export default function ToursPage() {
     if (!updated) return;
     setTours(prev => prev.map(t => t.id === updated.id ? updated : t));
     setReportingTour(null);
-    // התראת "דיווח סיור הוגש" לרכזים נכתבת בצד-שרת (api/tours/report.js, admin key).
+    // התראת "דיווח סיור הוגש" לרכזים נגזרת בצד-שרת מהסיור המורשה.
     // כאן לא ניתן: broadcast (user_id:null) לא נכתב ל-Supabase כלל, וכתיבה מהדפדפן לנמען אחר לא נשמרת.
   }
 

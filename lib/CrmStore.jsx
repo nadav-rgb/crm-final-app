@@ -1,80 +1,29 @@
 // lib/CrmStore.jsx
-import { createContext, useContext, useState, useEffect, useMemo } from 'react';
-import _messages     from '../data/messages';
+import { createContext, useCallback, useContext, useState, useEffect, useMemo } from 'react';
 import { deriveMitzvotBonuses } from './paymentCalc';
-import { BASE_MEETING_QUESTIONS } from '../data/base-meetings';
-import { advanceReminderStageForReports } from './reminderSchedulerDemo';
+import { BASE_MEETING_QUESTIONS } from '../data/base-meeting-questions';
 import { hydrateNotificationsFromSupabase } from './notificationDemo';
-import { DEFAULT_CONFIG } from './paymentConfig';
-import { getSupabaseClient } from './supabaseClient';
+import { fetchToursFromSupabase } from './toursSupabase';
 import { useAuth } from './AuthStore';
-
-// בידוד נתונים בין פעילים: פעיל רואה רק שורות ששייכות לו (activist_id), רכז/ראש-פרויקט/כספים
-// רק שורות בפרויקטים שהם חברים בהם (project_ids), מנכ"ל רואה הכל. הגנת-הגנה בצד לקוח בנוסף ל-RLS.
-function scopeQueryToUser(query, currentUser, { activistColumn = 'activist_id', projectColumn = 'project_id' } = {}) {
-  if (!currentUser) return query;
-  if (currentUser.role === 'ceo') return query;
-  if (currentUser.role === 'activist') return query.eq(activistColumn, currentUser.id);
-  const ids = Array.isArray(currentUser.project_ids) && currentUser.project_ids.length > 0
-    ? currentUser.project_ids
-    : (currentUser.project_id ? [currentUser.project_id] : []);
-  return query.in(projectColumn, ids.length > 0 ? ids : [-1]);
-}
 
 const CrmContext = createContext(null);
 
-const BASE_REPORTS_STORAGE_KEY = 'crm_base_meeting_reports_demo_v1';
-
-// העמודות הקיימות בטבלת base_meeting_reports ב-Supabase — סינון לפני כתיבה
-const REPORT_COLUMNS = [
-  'id', 'activist_id', 'project_id', 'house_id', 'meeting_number',
-  'meeting_place_number', 'meeting_place_city', 'host_name', 'facilitator_name',
-  'activist_name', 'date', 'start_time', 'structured_answers', 'answers',
-  'participant_count', 'ai_summary', 'submitted', 'submitted_at',
-];
-
-function toReportRow(report) {
-  const row = {};
-  REPORT_COLUMNS.forEach(key => {
-    if (report[key] !== undefined) row[key] = report[key];
-  });
-  return row;
-}
-
-async function upsertReportsToSupabase(reports) {
-  const rows = reports.map(toReportRow).filter(r => r.id !== undefined && r.id !== null);
-  if (rows.length === 0) return { error: null };
-  const supabase = getSupabaseClient();
-  const { error } = await supabase
-    .from('base_meeting_reports')
-    .upsert(rows, { onConflict: 'id' });
-  if (error) console.error('Failed to upsert base meeting reports', error);
-  return { error: error || null };
-}
-
-function persistBaseMeetings(nextReports) {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(BASE_REPORTS_STORAGE_KEY, JSON.stringify(nextReports));
-  } catch (err) {
-    console.warn('Could not save base meeting reports to localStorage', err);
-  }
-}
-
-
 // העמודות הקיימות בטבלת interactions ב-Supabase — סינון לפני כתיבה (משמיט mitzvot_level וכו')
 const INTERACTION_COLUMNS = [
-  'id', 'contact_id', 'activist_id', 'project_id', 'contact_name', 'type', 'quality',
-  'duration_minutes', 'outcome', 'date', 'time', 'notes', 'description', 'ai_summary',
-  'next_action', 'next_action_date', 'participants',
+  'type', 'quality', 'notes',
 ];
 
-function toInteractionRow(interaction) {
-  const row = {};
-  INTERACTION_COLUMNS.forEach(key => {
-    if (interaction[key] !== undefined) row[key] = interaction[key];
-  });
-  return row;
+function mapBaseReport(report) {
+  return {
+    id: report.id, project_id: report.projectId, house_id: report.houseId,
+    activist_id: report.activistCode, meeting_number: report.meetingNumber,
+    meeting_place_number: report.meetingPlaceNumber, meeting_place_city: report.meetingPlaceCity,
+    host_name: report.hostName, facilitator_name: report.facilitatorName,
+    activist_name: report.activistName, date: report.date, start_time: report.startTime,
+    structured_answers: report.structuredAnswers, answers: report.answers,
+    participant_count: report.participantCount, ai_summary: report.aiSummary,
+    submitted: report.submitted, submitted_at: report.submittedAt,
+  };
 }
 
 async function insertInteractionViaApi(apiFetch, interaction) {
@@ -179,11 +128,25 @@ export function CrmProvider({ children }) {
   const [contacts,     setContacts]     = useState([]); // מקור האמת: Supabase (קריאה בלבד)
   const [interactions, setInteractions] = useState([]); // מקור האמת: Supabase
   const [activists,    setActivists]    = useState([]); // מקור האמת: Supabase view activist_directory (קריאה בלבד)
-  const [messages,     setMessages]     = useState(_messages);
+  const messages = [];
   const [baseMeetings, setBaseMeetings] = useState([]); // דיווחי מפגשי בסיס — מקור האמת: Supabase
   const [expenses,     setExpenses]     = useState([]); // דיווחי הוצאות — מקור האמת: Supabase (זורם לדשבורד+תשלומים)
   const [tours,        setTours]        = useState([]); // סיורים (נעים להכיר) — לשכר מדריך בדשבורד+תשלומים
-  const [paymentConfig, setPaymentConfig] = useState(DEFAULT_CONFIG); // תעריפים/יעדים/בונוסים מ-payment_config (DB)
+  const [paymentConfig, setPaymentConfig] = useState(null);
+  const [paymentConfigError, setPaymentConfigError] = useState('');
+  const [dataLoadErrors, setDataLoadErrors] = useState({});
+
+  const markDataLoaded = useCallback((resource) => {
+    setDataLoadErrors((previous) => {
+      if (!previous[resource]) return previous;
+      const next = { ...previous };
+      delete next[resource];
+      return next;
+    });
+  }, []);
+  const markDataUnavailable = useCallback((resource) => {
+    setDataLoadErrors((previous) => ({ ...previous, [resource]: true }));
+  }, []);
 
   // בונוס "הבאת משתתף חדש" — נגזר מנתוני הלקוחות ולא מ-state (state התאפס בכל רענון
   // והבונוס מעולם לא שרד עד עמוד התשלומים). זכאות: לקוח שהגיע מחוץ לבתי המפגש
@@ -212,11 +175,14 @@ export function CrmProvider({ children }) {
 
   // טעינת קונפיג השכר דרך ה-BFF; אין קריאת business data ישירה מהדפדפן.
   useEffect(() => {
-    if (authLoading || !currentUser) return;
+    if (authLoading) return;
+    if (!currentUser) { setPaymentConfig(null); setPaymentConfigError(''); return; }
     let active = true;
+    setPaymentConfig(null);
+    setPaymentConfigError('');
     apiFetch('/api/payments/config', { method: 'GET' })
       .then(result => { if (active) setPaymentConfig(result.config); })
-      .catch(error => { if (active) console.error('Failed to load payment configuration', error); });
+      .catch(() => { if (active) setPaymentConfigError('תצורת התשלום אינה זמינה כרגע.'); });
     return () => { active = false; };
   }, [currentUser, authLoading, apiFetch]);
 
@@ -225,16 +191,17 @@ export function CrmProvider({ children }) {
   // מסונן לפי בעלות (activist_id) / חברות-פרויקט — בידוד נתונים בין פעילים (הגנה בצד לקוח, בנוסף ל-RLS).
   useEffect(() => {
     if (authLoading) return;
-    if (!currentUser) { setContacts([]); return; }
+    if (!currentUser) { setContacts([]); markDataLoaded('contacts'); return; }
     let active = true;
     (async () => {
       const { data, error } = await loadContactsFromApi(apiFetch, currentUser);
       if (!active) return;
-      if (error) return;
+      if (error) { setContacts([]); markDataUnavailable('contacts'); return; }
       setContacts(data);
+      markDataLoaded('contacts');
     })();
     return () => { active = false; };
-  }, [currentUser, authLoading, apiFetch]);
+  }, [currentUser, authLoading, apiFetch, markDataLoaded, markDataUnavailable]);
 
   // טעינת התראות דרך ה-BFF בלבד; אין PII ב-localStorage ואין CRUD ישיר מהדפדפן.
   useEffect(() => {
@@ -245,16 +212,20 @@ export function CrmProvider({ children }) {
   // directory מוקרן דרך ה-BFF בלבד; השרת קובע project scope ושדות מותרים לפי role.
   useEffect(() => {
     if (authLoading) return;
-    if (!currentUser) { setActivists([]); return; }
+    if (!currentUser) { setActivists([]); markDataLoaded('directory'); return; }
     let active = true;
     (async () => {
       const projectId = activeProject?.id ?? currentUser.project_id;
-      if (!projectId) { setActivists([]); return; }
+      if (!projectId) { setActivists([]); markDataLoaded('directory'); return; }
       let data;
       try {
         const result = await apiFetch(`/api/memberships?projectId=${encodeURIComponent(projectId)}`, { method: 'GET' });
         data = result.profiles;
       } catch {
+        if (active) {
+          setActivists([]);
+          markDataUnavailable('directory');
+        }
         return;
       }
       if (!active) return;
@@ -268,15 +239,16 @@ export function CrmProvider({ children }) {
           project_ids: [Number(projectId)],
           status:     'active',
         })));
+        markDataLoaded('directory');
       }
     })();
     return () => { active = false; };
-  }, [currentUser, authLoading, activeProject, apiFetch]);
+  }, [currentUser, authLoading, activeProject, apiFetch, markDataLoaded, markDataUnavailable]);
 
   // טעינת דיווחי הוצאות דרך ה-BFF; השרת ו-RLS קובעים owner/project scope.
   useEffect(() => {
     if (authLoading) return;
-    if (!currentUser) { setExpenses([]); return; }
+    if (!currentUser) { setExpenses([]); markDataLoaded('expenses'); return; }
     let active = true;
     (async () => {
       let data = [];
@@ -290,44 +262,44 @@ export function CrmProvider({ children }) {
         }));
       } catch (caught) { error = caught; }
       if (!active) return;
-      if (error) { console.error('Failed to load expenses', error); return; }
+      if (error) { setExpenses([]); markDataUnavailable('expenses'); return; }
       if (Array.isArray(data)) setExpenses(data);
+      markDataLoaded('expenses');
     })();
     return () => { active = false; };
-  }, [currentUser, authLoading, apiFetch]);
+  }, [currentUser, authLoading, apiFetch, markDataLoaded, markDataUnavailable]);
 
   // טעינת סיורים — לחישוב שכר מדריך (750₪ לסיור שהתקיים עם מדריך-פעיל). פעילות משותפת בפרויקט — מסונן לפי פרויקט בלבד.
   useEffect(() => {
     if (authLoading) return;
-    if (!currentUser) { setTours([]); return; }
+    if (!currentUser) { setTours([]); markDataLoaded('tours'); return; }
     let active = true;
     (async () => {
-      const supabase = getSupabaseClient();
-      let query = supabase.from('tours').select('*');
-      if (currentUser.role !== 'ceo') {
-        const ids = Array.isArray(currentUser.project_ids) && currentUser.project_ids.length > 0
-          ? currentUser.project_ids
-          : (currentUser.project_id ? [currentUser.project_id] : []);
-        query = query.in('project_id', ids.length > 0 ? ids : [-1]);
-      }
-      const { data, error } = await query;
+      let data;
+      let error = null;
+      try { data = await fetchToursFromSupabase(apiFetch); } catch (caught) { error = caught; }
       if (!active) return;
-      if (error) { console.error('Failed to load tours', error); return; }
+      if (error) { setTours([]); markDataUnavailable('tours'); return; }
       if (Array.isArray(data)) setTours(data);
+      markDataLoaded('tours');
     })();
     return () => { active = false; };
-  }, [currentUser, authLoading]);
+  }, [currentUser, authLoading, apiFetch, markDataLoaded, markDataUnavailable]);
 
   // טעינת דיווחי קשר מ-Supabase — אותה תבנית: רק אחרי auth מוכן ויש משתמש. מסונן לפי בעלות.
   useEffect(() => {
     if (authLoading) return;
-    if (!currentUser) { setInteractions([]); return; }
+    if (!currentUser) { setInteractions([]); markDataLoaded('interactions'); return; }
     let active = true;
     (async () => {
       const requests = contacts.map(contact => apiFetch(`/api/contacts/${encodeURIComponent(contact.id)}/interactions`, { method: 'GET' }));
       const settled = await Promise.allSettled(requests);
       if (!active) return;
-      if (settled.some(result => result.status === 'rejected')) return;
+      if (settled.some(result => result.status === 'rejected')) {
+        setInteractions([]);
+        markDataUnavailable('interactions');
+        return;
+      }
       const data = settled.flatMap(result => result.value.interactions || []).map(interaction => ({
         ...interaction,
         contact_id: interaction.contactId,
@@ -335,27 +307,31 @@ export function CrmProvider({ children }) {
         time: interaction.occurredAt?.slice(11, 16),
       }));
       setInteractions(data);
+      markDataLoaded('interactions');
     })();
     return () => { active = false; };
-  }, [currentUser, authLoading, contacts, apiFetch]);
+  }, [currentUser, authLoading, contacts, apiFetch, markDataLoaded, markDataUnavailable]);
 
   // טעינת דיווחי מפגשי בסיס מ-Supabase — רק אחרי שההתחברות מוכנה ויש משתמש,
   // כדי שה-select לא יצא כאנונימי (קריטי כשיופעל RLS). מסונן לפי בעלות.
   useEffect(() => {
     if (authLoading) return;                       // ממתינים לשחזור session
-    if (!currentUser) { setBaseMeetings([]); return; } // אין משתמש — מאפסים
+    if (!currentUser) { setBaseMeetings([]); markDataLoaded('baseMeetings'); return; } // אין משתמש — מאפסים
     let active = true;
     (async () => {
-      const supabase = getSupabaseClient();
-      let query = supabase.from('base_meeting_reports').select('*');
-      query = scopeQueryToUser(query, currentUser);
-      const { data, error } = await query;
+      let data;
+      let error = null;
+      try {
+        const result = await apiFetch('/api/base-meetings', { method: 'GET' });
+        data = (result.reports ?? []).map(mapBaseReport);
+      } catch (caught) { error = caught; }
       if (!active) return;
-      if (error) { console.error('Failed to load base meeting reports', error); return; }
+      if (error) { setBaseMeetings([]); markDataUnavailable('baseMeetings'); return; }
       if (Array.isArray(data)) setBaseMeetings(data);
+      markDataLoaded('baseMeetings');
     })();
     return () => { active = false; };
-  }, [currentUser, authLoading]);
+  }, [currentUser, authLoading, apiFetch, markDataLoaded, markDataUnavailable]);
 
   // async ומחזירה { error }: הקורא צריך לדעת מתי השורה באמת נחתה ב-Supabase לפני שהוא מפעיל
   // התראות צד-שרת (api/interactions/notify קורא את השורה מה-DB — לפני ה-insert הוא יחזיר 404).
@@ -568,75 +544,62 @@ export function CrmProvider({ children }) {
   // pages/api/base-meetings/notify מחפש את השורה לפי id ומחזיר 404 אם היא עוד לא שם,
   // ו-updateBaseMeetingReport (ai_summary) הוא update שקט — שניהם נכשלים בלי חיווי.
   async function submitBaseMeeting(meetingId, answers, meetingData = {}) {
-    const submittedReport = {
-      ...meetingData,
-      id: meetingId,
-      answers,
-      submitted: true,
-      submitted_at: new Date().toISOString().split('T')[0],
-    };
-
-    setBaseMeetings(prev => {
-      const exists = prev.some(m => String(m.id) === String(meetingId));
-      return exists
-        ? prev.map(m => String(m.id) === String(meetingId) ? { ...m, ...submittedReport } : m)
-        : [submittedReport, ...prev];
-    });
-
-    return upsertReportsToSupabase([submittedReport]);
+    try {
+      const result = await apiFetch('/api/base-meetings', {
+        method: 'POST',
+        body: {
+          id: String(meetingId), houseId: meetingData.house_id,
+          meetingNumber: Number(meetingData.meeting_number), date: meetingData.date,
+          startTime: meetingData.start_time || '', structuredAnswers: meetingData.structured_answers,
+          answers, participantCount: Number(meetingData.participant_count) || 0,
+        },
+      });
+      const saved = mapBaseReport(result.report);
+      setBaseMeetings(prev => {
+        const exists = prev.some(m => String(m.id) === String(meetingId));
+        return exists ? prev.map(m => String(m.id) === String(meetingId) ? saved : m) : [saved, ...prev];
+      });
+      return { error: null };
+    } catch (error) {
+      return { error };
+    }
   }
 
   // עדכון ממוקד של דוח קיים (למשל ai_summary אחרי שליחה). update ולא upsert בכוונה —
   // אם ה-insert המקורי נכשל, זה no-op שקט במקום ליצור שורה חלקית.
   async function updateBaseMeetingReport(reportId, fields) {
-    if (!fields || Object.keys(fields).length === 0) return { error: null };
-    const row = {};
-    REPORT_COLUMNS.forEach(key => { if (fields[key] !== undefined) row[key] = fields[key]; });
-    const supabase = getSupabaseClient();
-    const { error } = await supabase.from('base_meeting_reports').update(row).eq('id', reportId);
-    if (error) { console.error('Failed to update base meeting report', error); return { error }; }
-    setBaseMeetings(prev => prev.map(m => String(m.id) === String(reportId) ? { ...m, ...row } : m));
-    return { error: null };
-  }
-
-  function upsertBaseMeetingReports(reports = []) {
-    setBaseMeetings(prev => {
-      const byId = new Map(prev.map(report => [String(report.id), report]));
-      reports.forEach(report => {
-        if (report && report.id !== undefined && report.id !== null) byId.set(String(report.id), report);
+    const existing = baseMeetings.find(report => String(report.id) === String(reportId));
+    if (!existing) return { error: new Error('Report is unavailable') };
+    try {
+      const result = await apiFetch('/api/base-meetings', {
+        method: 'PATCH',
+        body: {
+          id: String(reportId),
+          structuredAnswers: fields.structured_answers ?? existing.structured_answers ?? {},
+          answers: fields.answers ?? existing.answers ?? '',
+          participantCount: Number(fields.participant_count ?? existing.participant_count) || 0,
+        },
       });
-      return Array.from(byId.values());
-    });
-
-    upsertReportsToSupabase(reports);
-  }
-
-  function advanceBaseMeetingReminders(predicate = () => true) {
-    let resultSummary = { changedCount: 0, notificationsCount: 0 };
-    setBaseMeetings(prev => {
-      const result = advanceReminderStageForReports(prev, predicate);
-      resultSummary = { changedCount: result.changedCount, notificationsCount: result.notificationsCount };
-      persistBaseMeetings(result.reports);
-      return result.reports;
-    });
-    return resultSummary;
-  }
-
-  function addMessage({ title, body, project_id, currentUser }) {
-    setMessages(prev => [{
-      id: Date.now(), from_role: currentUser.role, from_name: currentUser.name,
-      project_id: project_id ?? null, title, body,
-      date: new Date().toISOString().split('T')[0], pinned: false,
-    }, ...prev]);
+      const saved = mapBaseReport(result.report);
+      setBaseMeetings(prev => prev.map(report => String(report.id) === String(reportId) ? saved : report));
+      return { error: null };
+    } catch (error) {
+      return { error };
+    }
   }
 
   return (
     <CrmContext.Provider value={{
       contacts, interactions, activists, messages, baseMeetings, BASE_MEETING_QUESTIONS,
-      mitzvotBonuses, newParticipantBonuses, paymentConfig, expenses, tours,
-      addInteraction, addParticipantInteractions, updateInteraction, deleteInteraction, addContact, updateContact, deleteContact, updateMitzvot, addExpense, deleteExpense, addMessage, submitBaseMeeting, updateBaseMeetingReport, upsertBaseMeetingReports, advanceBaseMeetingReminders,
+      mitzvotBonuses, newParticipantBonuses, paymentConfig, paymentConfigError, expenses, tours,
+      addInteraction, addParticipantInteractions, updateInteraction, deleteInteraction, addContact, updateContact, deleteContact, updateMitzvot, addExpense, deleteExpense, submitBaseMeeting, updateBaseMeetingReport,
       PROJECT_NAMES,
     }}>
+      {Object.keys(dataLoadErrors).length > 0 && (
+        <div role="alert" style={{ position:'fixed', zIndex:10000, top:12, left:12, right:12, maxWidth:560, margin:'0 auto', padding:'10px 14px', borderRadius:10, background:'#fff1f1', color:'#a63230', boxShadow:'0 3px 14px rgba(0,0,0,0.16)', fontSize:13, fontWeight:700, textAlign:'center' }}>
+          חלק מהנתונים אינם זמינים כרגע. לא נטענו נתוני דמו במקום המידע המאומת.
+        </div>
+      )}
       {children}
     </CrmContext.Provider>
   );

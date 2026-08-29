@@ -10,7 +10,7 @@ import { isDerivedInteraction } from '../lib/paymentCalc';
 
 export default function Dashboard() {
   const router = useRouter();
-  const { contacts, interactions, paymentConfig } = useCrm();
+  const { contacts, interactions, paymentConfig, paymentConfigError } = useCrm();
   const { can, activeProject, currentUser, filterProject } = useAuth();
 
   let visibleContacts = contacts;
@@ -31,6 +31,10 @@ export default function Dashboard() {
   const myInteractionsCount = can.addContact
     ? interactionsThisMonth(currentUser.id, interactions)
     : interactions.filter(i => !isDerivedInteraction(i) && i.date?.slice(0, 7) === thisMonthKey).length;
+
+  if (can.addContact && !paymentConfig) return (
+    <DesktopLayout title="אזור אישי"><div role={paymentConfigError ? 'alert' : undefined} style={{ padding: 40, color: paymentConfigError ? '#a63230' : '#aaa' }}>{paymentConfigError || 'טוען תצורת תשלום…'}</div></DesktopLayout>
+  );
 
   const payableCount = can.addContact
     // paymentConfig חובה — בלעדיו המונה מתמחר לפי ברירות המחדל בקוד ולא לפי payment_config,

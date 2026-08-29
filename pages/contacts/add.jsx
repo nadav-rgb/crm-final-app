@@ -7,7 +7,6 @@ import { useCrm } from '../../lib/CrmStore';
 import { useAuth } from '../../lib/AuthStore';
 import DesktopLayout from '../../components/DesktopLayout';
 import { fetchToursFromSupabase } from '../../lib/toursSupabase';
-import { authHeader } from '../../lib/apiAuth';
 
 const TODAY = new Date().toISOString().split('T')[0];
 
@@ -67,10 +66,14 @@ export default function AddContactPage() {
   // נעים להכיר — רשימת הסיורים לקישור הלקוח (רק אם פרויקט 2 נבחר)
   const needsTours = selectedProjectIds.includes(2);
   const [tourOptions, setTourOptions] = useState([]);
+  const [toursError, setToursError] = useState('');
+  const [duplicateError, setDuplicateError] = useState('');
   useEffect(() => {
-    if (!needsTours) return;
+    if (!needsTours) { setTourOptions([]); setToursError(''); return; }
     let active = true;
-    fetchToursFromSupabase(apiFetch).then(ts => { if (active) setTourOptions(ts); }).catch(() => { if (active) setTourOptions([]); });
+    fetchToursFromSupabase(apiFetch)
+      .then(ts => { if (active) { setTourOptions(ts); setToursError(''); } })
+      .catch(() => { if (active) { setTourOptions([]); setToursError('רשימת הסיורים אינה זמינה כרגע.'); } });
     return () => { active = false; };
   }, [needsTours, apiFetch]);
 
@@ -123,16 +126,11 @@ export default function AddContactPage() {
   async function checkDuplicates() {
     const externalProjects = selectedProjectIds.filter(pid => (sourceByProject[pid] || EMPTY_SOURCE).source === 'external');
     if (externalProjects.length === 0) return [];
-    const headers = { 'Content-Type': 'application/json', ...(await authHeader()) };
     const results = await Promise.all(externalProjects.map(async pid => {
-      try {
-        const res = await fetch('/api/contacts/check-duplicate', {
-          method: 'POST', headers,
-          body: JSON.stringify({ phone: form.phone, projectId: pid }),
-        });
-        const data = await res.json();
-        return data?.duplicate ? pid : null;
-      } catch { return null; }
+      const data = await apiFetch('/api/contacts/check-duplicate', {
+        method: 'POST', body: { phone: form.phone, projectId: pid },
+      });
+      return data?.duplicate ? pid : null;
     }));
     return results.filter(Boolean);
   }
@@ -180,7 +178,15 @@ export default function AddContactPage() {
     const e = validate();
     if (Object.keys(e).length > 0) { setErrors(e); return; }
     setBusy(true);
-    const dupProjects = await checkDuplicates();
+    setDuplicateError('');
+    let dupProjects;
+    try {
+      dupProjects = await checkDuplicates();
+    } catch {
+      setBusy(false);
+      setDuplicateError('בדיקת הכפילויות נכשלה. הלקוח לא נשמר כדי למנוע רשומה כפולה.');
+      return;
+    }
     setBusy(false);
     if (dupProjects.length > 0) { setConfirmDuplicate(dupProjects); return; }
     await doSubmit();
@@ -190,6 +196,7 @@ export default function AddContactPage() {
 
   return (
     <DesktopLayout title="הוספת לקוח" backHref="/contacts" backLabel="← חזרה ללקוחות">
+      {(toursError || duplicateError) && <div role="alert" style={{ marginBottom:14, color:'#a63230', background:'#fff1f1', borderRadius:10, padding:'9px 12px', fontWeight:700 }}>{toursError || duplicateError}</div>}
       <div style={{ maxWidth: 580 }}>
 
         {/* בחירת פרויקט — רק לפעיל ששייך ליותר מפרויקט אחד */}

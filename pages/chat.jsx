@@ -1,28 +1,6 @@
-import { useState } from 'react';
 import DesktopLayout from '../components/DesktopLayout';
-import { useAuth } from '../lib/AuthStore';
-import { INITIAL_CHAT_MESSAGES } from '../lib/chatDemo';
 
-export default function ChatDemoPage() {
-  const { currentUser, activeProject } = useAuth();
-  const [messages, setMessages] = useState(INITIAL_CHAT_MESSAGES);
-  const [text, setText] = useState('');
-
-  function sendDemoMessage() {
-    const clean = text.trim();
-    if (!clean) return;
-    const now = new Date();
-    setMessages(prev => [...prev, {
-      id: Date.now(),
-      user: currentUser?.name || 'משתמש',
-      project: activeProject?.name || 'כללי',
-      text: clean,
-      time: now.toTimeString().slice(0, 5),
-      demo: true,
-    }]);
-    setText('');
-  }
-
+export default function ChatPage() {
   return (
     <DesktopLayout title="צ׳אט פעילים">
       <div style={{ textAlign:'center', padding:'80px 20px', color:'#aaa' }}>

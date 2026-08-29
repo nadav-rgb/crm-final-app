@@ -4,13 +4,12 @@ import { useRouter } from 'next/router';
 import DesktopLayout from '../../components/DesktopLayout';
 import { useAuth } from '../../lib/AuthStore';
 import { fetchMeetingHousesFromSupabase, updateAssignmentsApi, sendAssignmentPushApi, upsertMeetingHouseApi } from '../../lib/meetingHousesSupabase';
-import { createDemoNotification } from '../../lib/notificationDemo';
 import ActivistSearchSelect from '../../components/ActivistSearchSelect';
 import { useCrm } from '../../lib/CrmStore';
 import { inProject } from '../../lib/projectUtils';
 import { summarizeMeetingHouseSeriesDemo, generateMeetingNotesAiSummaryDemo } from '../../lib/aiDemo';
 import { buildBaseMeetingsFromHouses, getMeetingSeriesReports } from '../../lib/baseMeetingUtils';
-import { advanceReminderStageForReports, getReminderStatus } from '../../lib/reminderSchedulerDemo';
+import { getReminderStatus } from '../../lib/reminderSchedulerDemo';
 
 function formatDate(dateString) {
   if (!dateString) return '—';
@@ -21,10 +20,11 @@ export default function MeetingHouseDetailPage() {
   const router = useRouter();
   const { id } = router.query;
   const { can, currentUser, apiFetch } = useAuth();
-  const { baseMeetings, upsertBaseMeetingReports, activists } = useCrm();
+  const { baseMeetings, activists } = useCrm();
 
   const [house, setHouse] = useState(null);
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [assignedIds, setAssignedIds] = useState([]);
   const [selectedActivistId, setSelectedActivistId] = useState('');
   const [seriesSummary, setSeriesSummary] = useState('');
@@ -35,22 +35,30 @@ export default function MeetingHouseDetailPage() {
     if (!id) return;
     let active = true;
     (async () => {
-      // מקור אמת: Supabase. נפילה ל-localStorage רק עבור בתי מפגש דמו ישנים.
-      const houses = await fetchMeetingHousesFromSupabase(apiFetch);
-      const found = houses.find(h => String(h.id) === String(id)) || null;
-      if (!active) return;
-      setHouse(found);
-      setAssignedIds(found?.assignedActivists ?? []);
-      setLoaded(true);
+      try {
+        const houses = await fetchMeetingHousesFromSupabase(apiFetch);
+        const found = houses.find(h => String(h.id) === String(id)) || null;
+        if (!active) return;
+        setHouse(found);
+        setAssignedIds(found?.assignedActivists ?? []);
+        setLoadError('');
+      } catch {
+        if (!active) return;
+        setHouse(null);
+        setAssignedIds([]);
+        setLoadError('טעינת בית המפגש נכשלה. לא מוצגים נתוני דמו.');
+      } finally {
+        if (active) setLoaded(true);
+      }
     })();
     return () => { active = false; };
   }, [id, apiFetch]);
 
   // מקור הפעילים האמיתי — activist_directory (דרך useCrm). מסונן לפי חברות בפרויקט
   // של בית המפגש (בתי מפגש=אחדות/1) — כולל פעילים דו-פרויקטליים.
-  const activistOptions = activists.filter(a => a.role === 'activist' && inProject(a, house?.project_id ?? 1));
+  const activistOptions = activists.filter(a => a.role === 'activist' && inProject(a, house?.project_id));
   const activistPool = activistOptions.length ? activistOptions : activists.filter(a => a.role === 'activist');
-  const assignedActivists = assignedIds.map(aid => activists.find(a => Number(a.id) === Number(aid))).filter(Boolean);
+  const assignedActivists = assignedIds.map(aid => activists.find(a => String(a.userId ?? a.id) === String(aid))).filter(Boolean);
   const expandedReports = house ? buildBaseMeetingsFromHouses({
     houses: [{ ...house, assignedActivists: assignedIds }],
     activists,
@@ -73,7 +81,7 @@ export default function MeetingHouseDetailPage() {
   if (!house) {
     return (
       <DesktopLayout title="בית מפגש לא נמצא" backHref="/meeting-houses" backLabel="חזרה לבתי מפגש">
-        <div style={{ textAlign:'center', padding:60, color:'#aaa' }}>לא נמצא בית מפגש תואם.</div>
+        <div role={loadError ? 'alert' : undefined} style={{ textAlign:'center', padding:60, color:loadError ? '#a63230' : '#aaa' }}>{loadError || 'לא נמצא בית מפגש תואם.'}</div>
       </DesktopLayout>
     );
   }
@@ -101,10 +109,11 @@ export default function MeetingHouseDetailPage() {
   }
 
   async function persistAssignments(nextAssignedIds) {
-    setAssignedIds(nextAssignedIds);
-    // מקור אמת: Supabase (דרך API מאומת). נפילה ל-localStorage רק לבתי מפגש דמו ישנים.
     const updated = await updateAssignmentsApi(apiFetch, house.id, nextAssignedIds);
-    if (updated) setHouse(updated);
+    if (updated) {
+      setHouse(updated);
+      setAssignedIds(updated.assignedActivists ?? []);
+    }
   }
 
   async function assignActivist() {
@@ -114,31 +123,6 @@ export default function MeetingHouseDetailPage() {
     await persistAssignments([...assignedIds, selectedUserId]);
     // Push אמיתי לטלפון של הפעיל (no-op בטוח אם לא נרשם להתראות).
     sendAssignmentPushApi(apiFetch, { houseId: house.id }).catch(() => {});
-    // התראה בתוך-המערכת (קיימת — נשארת לתצוגה בתוך ה-CRM).
-    createDemoNotification({
-      id: `manual_assignment_${house.id}_${selectedUserId}_${Date.now()}`,
-      type: 'assignment',
-      title: 'שובצת לבית מפגש',
-      body: `שובצת לבית מפגש ${house.houseNumber} ב${house.settlement || house.city}.`,
-      user_id: selectedUserId,
-      project_id: 1,
-      priority: 'high',
-      created_at: new Date().toISOString(),
-      link: `/meeting-houses/${house.id}`,
-    });
-    if (currentUser) {
-      createDemoNotification({
-        id: `manager_assignment_${house.id}_${selectedUserId}_${currentUser.id}_${Date.now()}`,
-        type: 'assignment',
-        title: 'שיבוץ פעיל נשמר',
-        body: `שיבצת פעיל לבית מפגש ${house.houseNumber}. נשלחה אליו התראה על השיבוץ.`,
-        user_id: currentUser.id,
-        project_id: 1,
-        priority: 'normal',
-        created_at: new Date().toISOString(),
-        link: `/meeting-houses/${house.id}`,
-      });
-    }
     setSelectedActivistId('');
   }
 
@@ -163,25 +147,6 @@ export default function MeetingHouseDetailPage() {
     if (updated) setHouse(updated);
     setExpandedMeeting(null);
     setDraftNotes('');
-  }
-
-  function runReminderDemoForHouse() {
-    const result = advanceReminderStageForReports(
-      reportsForHouse,
-      report => !report.submitted && String(report.house_id) === String(house.id)
-    );
-    upsertBaseMeetingReports(result.reports);
-    createDemoNotification({
-      id: `manager_run_reminders_${house.id}_${Date.now()}`,
-      type: 'system',
-      title: 'שליחת התזכורות הסתיימה',
-      body: `עודכנו ${result.changedCount} משימות דיווח ונשלחו ${result.notificationsCount} התראות.`,
-      user_id: currentUser?.id,
-      project_id: 1,
-      priority: result.changedCount ? 'high' : 'normal',
-      created_at: new Date().toISOString(),
-      link: `/meeting-houses/${house.id}`,
-    });
   }
 
   const backHref  = house.status === 'completed' ? '/meeting-houses/completed' : '/meeting-houses';
@@ -217,13 +182,6 @@ export default function MeetingHouseDetailPage() {
             <MiniStat label="דווחו" value={submittedReports.length} />
             <MiniStat label="ממתינים" value={waitingReports.length} />
           </div>
-
-          {/* שליחת תזכורות — כלי ניהול לרכז ומעלה; פעיל משובץ לא רואה */}
-          {can.seeMeetingHouses && (
-            <button type="button" onClick={runReminderDemoForHouse} disabled={waitingReports.length === 0} style={{ marginBottom:14, border:'none', borderRadius:10, padding:'9px 12px', background:waitingReports.length ? '#ffe8c2' : '#eee', color:waitingReports.length ? '#8a5300' : '#999', fontWeight:900, cursor:waitingReports.length ? 'pointer' : 'not-allowed', fontFamily:'inherit' }}>
-              שלח תזכורות לדיווחים חסרים
-            </button>
-          )}
 
           {reportsForHouse.length > 0 && (
             <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:18 }}>
@@ -317,7 +275,7 @@ export default function MeetingHouseDetailPage() {
                 onSelect={(aid) => setSelectedActivistId(String(aid))}
                 onConfirm={assignActivist}
                 confirmLabel="שבץ פעיל אחראי"
-                disabledIds={assignedIds}
+                disabledIds={assignedActivists.map(a => a.id)}
               />
             </div>
 
@@ -331,7 +289,7 @@ export default function MeetingHouseDetailPage() {
                       <div style={{ fontSize:14, fontWeight:800, color:'#333' }}>{a.name}</div>
                       <div style={{ fontSize:12, color:'#999' }}>פעיל אחראי{a.city ? ` · ${a.city}` : ''}</div>
                     </div>
-                    <button onClick={() => removeActivist(a.id)} style={{ border:'none', background:'#f7e7e7', color:'#a32d2d', borderRadius:8, padding:'6px 10px', cursor:'pointer', fontFamily:'inherit', fontSize:12 }}>
+                    <button onClick={() => removeActivist(a.userId ?? a.id)} style={{ border:'none', background:'#f7e7e7', color:'#a32d2d', borderRadius:8, padding:'6px 10px', cursor:'pointer', fontFamily:'inherit', fontSize:12 }}>
                       הסר
                     </button>
                   </div>
