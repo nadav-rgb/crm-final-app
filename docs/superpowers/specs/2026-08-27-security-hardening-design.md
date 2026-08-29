@@ -315,7 +315,7 @@ headers יוגדרו ב־Next/Vercel וייבדקו הן unit/integration והן
 ## Dependencies ו־Supply Chain
 
 - `next` ישודרג בתוך 14.x לגרסה המתוקנת האחרונה התואמת, עם build וכל regression אחרי השדרוג; major אינו מתבצע אוטומטית.
-- `jspdf` ישודרג לפחות לגרסה המתוקנת ב־3.x וייבדקו PDF עברי, font embedding ו־RTL.
+- `jspdf` ישודרג בחריגת major מאושרת ל־`4.2.1`, משום שאין תיקון מלא ב־3.x ל־Critical/High העדכניים. `jspdf-autotable` נשאר pinned ל־`5.0.8`, שתומך ב־jsPDF 4. השדרוג מחייב בדיקות Node/browser, PDF עברי, Assistant font embedding, RTL, ספרות ופיסוק, A3 landscape, AutoTable רב־עמודים, repeated headers, `rowPageBreak: 'avoid'`, שלמות שורות ובדיקת render חזותית. שינוי runtime ב־PDF generator אינו מאושר אוטומטית ונדרש לעצור לפניו אם מתגלה incompatibility.
 - `exceljs`, `@capacitor/assets` והתלויות הטרנזיטיביות יטופלו לפי advisory ו־fix path. dependency ללא fix תקבל הסרה/החלפה, isolation או blocker מתועד.
 - lockfile הוא מקור מחייב; ההתקנה ב־CI משתמשת ב־`npm ci`.
 - install scripts ו־new transitive packages נבדקים; upgrades מחולקים לקבוצות קטנות כדי לייחס regression.

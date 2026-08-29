@@ -13,7 +13,7 @@ async function readJson(file) {
 test('direct web dependencies use the approved patched pins', async () => {
   const manifest = await readJson('package.json');
   assert.equal(manifest.dependencies.next, '14.2.35');
-  assert.equal(manifest.dependencies.jspdf, '3.0.4');
+  assert.equal(manifest.dependencies.jspdf, '4.2.1');
   assert.equal(manifest.dependencies['jspdf-autotable'], '5.0.8');
   assert.equal(manifest.devDependencies?.['@capacitor/assets'], undefined);
 });
@@ -26,7 +26,7 @@ test('lockfile direct versions agree with the manifest security pins', async () 
   assert.equal(lock.packages[''].dependencies.jspdf, manifest.dependencies.jspdf);
   assert.equal(lock.packages[''].devDependencies?.['@capacitor/assets'], undefined);
   assert.equal(lock.packages['node_modules/next'].version, '14.2.35');
-  assert.equal(lock.packages['node_modules/jspdf'].version, '3.0.4');
+  assert.equal(lock.packages['node_modules/jspdf'].version, '4.2.1');
   assert.equal(lock.packages['node_modules/jspdf-autotable'].version, '5.0.8');
   assert.equal(lock.packages['node_modules/@capacitor/assets'], undefined);
   assert.equal(lock.packages['node_modules/brace-expansion'].version, '5.0.9');

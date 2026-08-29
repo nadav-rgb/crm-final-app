@@ -1688,15 +1688,18 @@ git commit -m "chore: enforce secret and artifact hygiene"
 
 **Files:**
 - Create: `tests/security/dependency-policy.test.mjs`
+- Create: `tests/security/jspdf-compatibility.test.mjs`
 - Modify: `package.json`
 - Modify: `package-lock.json`
+- Modify: `docs/superpowers/specs/2026-08-27-security-hardening-design.md`
+- Modify: `docs/superpowers/plans/2026-08-27-security-hardening.md`
 
 **Interfaces:**
 - Produces: patched lockfile ו־policy test שאוסר known direct vulnerable versions.
 
 **Dependencies:** כל functional tests של G3 זמינים כדי לזהות regression.
 
-**External blockers:** advisory ללא fix מקבל residual-risk decision; אין major upgrade אוטומטי.
+**External blockers:** advisory ללא fix מקבל residual-risk decision. חריגת major ל־`jspdf@4.2.1` אושרה במפורש ב־2026-08-30; היא אינה מאשרת major אחר.
 
 **Rollback point:** commit נפרד לכל dependency group: Next, PDF, Capacitor assets. revert group אם regression, וה־verdict נשאר not ready עד fix חלופי.
 
@@ -1704,7 +1707,8 @@ git commit -m "chore: enforce secret and artifact hygiene"
 
 ```js
 assert.notEqual(pkg.dependencies.next, '14.2.3');
-assert.equal(pkg.dependencies.jspdf, '3.0.4');
+assert.equal(pkg.dependencies.jspdf, '4.2.1');
+assert.equal(pkg.dependencies['jspdf-autotable'], '5.0.8');
 assert.equal(pkg.devDependencies?.['@capacitor/assets'], undefined);
 ```
 
@@ -1714,11 +1718,11 @@ assert.equal(pkg.devDependencies?.['@capacitor/assets'], undefined);
 
 Run: `npm run test:security -- tests/security/dependency-policy.test.mjs`
 
-Expected: FAIL על Next 14.2.3, jsPDF 3.0.0 ו־`@capacitor/assets`.
+Expected ב־remediation המאושר ל־PDF: שתי בדיקות policy נכשלות על manifest/lockfile שמכילים `jspdf@3.0.4`; focused compatibility tests עוברים מול ההתנהגות הקיימת לפני השדרוג.
 
 Run: `npm audit --json`
 
-Expected baseline: 3 Critical, 10 High, 3 Moderate.
+Historical baseline בתחילת התוכנית: 3 Critical, 10 High, 3 Moderate. Baseline לפני follow-up של jsPDF ב־2026-08-30: 1 Critical, 2 High ו־2 Moderate.
 
 - [ ] **Step 3: שדרג קבוצות קטנות**
 
@@ -1726,9 +1730,15 @@ Run: `npm.cmd install --save-exact next@14.2.35`
 
 Run: `npm run build && npm run test:baseline && npm run test:security`
 
-Run: `npm.cmd install --save-exact jspdf@3.0.4`
+Run: `npm.cmd install --save-exact jspdf@4.2.1`
+
+אין לשנות את `jspdf-autotable@5.0.8`. יש לאמת `npm ls jspdf jspdf-autotable` מציג עותק יחיד compatible/deduped.
+
+Run: `node --test --test-concurrency=1 tests/security/dependency-policy.test.mjs tests/security/jspdf-compatibility.test.mjs`
 
 Run: `npm run verify:interaction-report && npm run build`
+
+ה־focused tests מכסים Node/browser generation, חתימת PDF, Assistant/Hebrew/RTL/מספרים ופיסוק, A3 landscape, AutoTable רב־עמודים, repeated headers, `rowPageBreak`, page bounds, שלמות rows והגבלת output/API surface. אם נדרש שינוי runtime ב־`lib/interactionReportPdf.js`, עוצרים לפני השינוי ומחזירים analysis לאישור.
 
 אם `@capacitor/assets` אינו מיובא ב־runtime או scripts פעילים, Run: `npm.cmd uninstall --save-dev @capacitor/assets`; assets שכבר tracked נשמרים. `exceljs@4.4.0` נשאר pinned אם ה־Moderate transitive advisory דורש downgrade לא בטוח; אין קריאת XLSX לא מהימן והסיכון מתועד.
 
@@ -1746,11 +1756,13 @@ Run: `npm audit --json`
 
 Expected: אפס Critical ואפס High. Moderate שנותר מפורט עם package/path/reachability; כשל ביעד עוצר G4.
 
+אחרי קבוצת jsPDF בלבד, Expected: ה־Critical של jsPDF נעלם; 2 High של Next/PostCSS ו־2 Moderate של ExcelJS/UUID יכולים להישאר. זהו מצב ביניים בלבד ו־G4 נשאר `BLOCKED` עד הקבוצות המאושרות הבאות.
+
 - [ ] **Step 5: Commit נפרד לכל קבוצה**
 
 ```powershell
-git add -- package.json package-lock.json tests/security/dependency-policy.test.mjs
-git commit -m "fix: remediate critical web dependencies"
+git add -- package.json package-lock.json tests/security/dependency-policy.test.mjs tests/security/jspdf-compatibility.test.mjs docs/superpowers/specs/2026-08-27-security-hardening-design.md docs/superpowers/plans/2026-08-27-security-hardening.md
+git commit -m "fix: upgrade jsPDF to patched major"
 ```
 
 ---
