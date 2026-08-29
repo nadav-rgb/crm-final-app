@@ -211,14 +211,10 @@ export default function BaseMeetingsPage() {
 
   // אחרי שליחת דיווח: סיכום AI + התראה לרכזים/מנהלים — fire-and-forget, לא מעכב את הפעיל.
   // כישלון AI ⇒ ההתראה יוצאת בלי סיכום; הדיווח עצמו כבר נשמר.
-  async function finalizeSubmission(meeting, textForAi) {
+  async function finalizeSubmission(meeting) {
     let summary = null;
     try {
-      summary = await summarizeReportText(textForAi, {
-        meeting_place_city: meeting.meeting_place_city,
-        activist_name: meeting.activist_name || currentUser?.name,
-      });
-      if (summary) await updateBaseMeetingReport(meeting.id, { ai_summary: summary });
+      summary = await summarizeReportText(apiFetch, meeting.id);
     } catch (e) { /* כשל AI — ממשיכים בלי סיכום */ }
 
     // התראה + Push אמיתי לטלפון/מחשב — צד-שרת (admin key). הגרסה הקודמת כתבה מהדפדפן
@@ -253,7 +249,7 @@ export default function BaseMeetingsPage() {
     })
       .then(({ error }) => {
         if (error) { console.error('הדיווח לא נשמר — מדלג על סיכום AI והתראה', error); return; }
-        finalizeSubmission(meeting, textForAi); // סיכום AI + התראה לרכזים
+        finalizeSubmission(meeting); // סיכום AI + התראה לרכזים
       })
       .catch(err => console.error('שמירת הדיווח נכשלה', err));
     // Cancel pending reminders — report was submitted

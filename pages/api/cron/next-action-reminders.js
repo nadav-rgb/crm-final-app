@@ -7,6 +7,7 @@
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { sendFcmToActivist } from '../../../lib/fcmAdmin';
 import { sendWebPushToActivist } from '../../../lib/webPushSend';
+import { requireCronAuth } from '../../../lib/security/external-data.mjs';
 
 // "היום" + השעה לפי שעון ישראל (UTC+3).
 function israelNow() {
@@ -15,8 +16,10 @@ function israelNow() {
 }
 
 export default async function handler(req, res) {
-  if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
-    return res.status(401).end();
+  try {
+    requireCronAuth(req);
+  } catch (error) {
+    return res.status(error?.status ?? 401).json({ error: { code: error?.code ?? 'CRON_AUTH_DENIED', message: error?.publicMessage ?? 'Machine authentication is invalid' } });
   }
 
   const { date: today, hour } = israelNow();

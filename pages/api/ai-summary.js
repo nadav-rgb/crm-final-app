@@ -1,63 +1,108 @@
-import { requireAuth } from './meeting-houses/_auth';
+import { secureHandler } from '../../lib/security/api-handler.mjs';
+import { appendServerAudit, consumeServerRateLimit } from '../../lib/security/auth-service.mjs';
+import { SecurityError } from '../../lib/security/errors.mjs';
+import {
+  assertAnthropicEnabled,
+  projectAiPayload,
+  redactExternalError,
+} from '../../lib/security/external-data.mjs';
+import { aiSummarySchema } from '../../lib/security/schemas.mjs';
 
-export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).end();
+const INTERACTION_COLUMNS = 'id,project_id,actor_user_id,type,quality,duration_minutes,outcome,description,notes';
+const BASE_MEETING_COLUMNS = 'id,project_id,actor_user_id,structured_answers,answers,participant_count';
 
-  // הגנה על קרדיט Anthropic — רק משתמש מחובר.
-  const auth = await requireAuth(req);
-  if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
+const SYSTEM_PROMPTS = Object.freeze({
+  interaction: 'סכם דיווח קשר בעברית בארבע נקודות קצרות: תוכן, תוכן תורני, איכות הקשר ומשתתפים נוספים. אל תמציא מידע.',
+  base_meeting: 'סכם דיווח מפגש בסיס בדיוק בשלושה משפטים קצרים בעברית: מהות המפגש, פרטים תפעוליים והערכת התקדמות הקשר. אל תמציא מידע.',
+});
 
-  const { text, type, meta = {} } = req.body;
-  if (!text) return res.status(400).json({ error: 'missing text' });
+function dbError(error) {
+  if (error) throw new SecurityError(503, 'DATA_UNAVAILABLE', 'Data service is unavailable', { cause: error });
+}
 
-  const systemPrompt = type === 'base_meeting'
-    ? `אתה עוזר CRM של ארגון יהודי המקרב יהודים לאורח חיים יהודי. תפקידך לסכם דיווח מפגש בסיס בדיוק שלושה משפטים בעברית — לא פחות ולא יותר. כל משפט מתייחס לנקודה אחת בלבד:
+function canReadAiResource(context, row) {
+  if (context.globalRole === 'ceo') return context.aal >= 2;
+  if (row.actor_user_id === context.userId) return true;
+  const membership = context.memberships?.find((entry) => (
+    entry.status === 'active' && Number(entry.projectId) === Number(row.project_id)
+  ));
+  if (membership?.role === 'coord') return true;
+  if (membership?.role === 'head') return context.aal >= 2;
+  return false;
+}
 
-משפט 1 — טיב המפגש: מה עשו? טיילו? אכלו? שתו? על מה דיברו? מה האווירה הייתה?
-משפט 2 — פרטי המפגש: כמה זמן נמשך? מי היה נוכח מעבר לפעיל והלקוח? אם היו נוכחים נוספים (אשה, ילדים, חברים) — ציין מי הם ומה המשמעות — האם ניתן להשפיע גם עליהם?
-משפט 3 — הערכת הקשר: האם המפגש מעיד על קשר קרוב וטוב? בהתחשב בתוכן הדיווח — האם אנחנו בהתקדמות, עמידה במקום, או נסיגה בקשר עם הלקוח?
+async function loadAuthorizedResource(context, input) {
+  const table = input.resourceType === 'interaction' ? 'interactions' : 'base_meeting_reports';
+  const columns = input.resourceType === 'interaction' ? INTERACTION_COLUMNS : BASE_MEETING_COLUMNS;
+  const { data, error } = await context.db.from(table).select(columns).eq('id', input.resourceId).maybeSingle();
+  dbError(error);
+  if (!data || !canReadAiResource(context, data)) {
+    throw new SecurityError(404, 'NOT_FOUND', 'AI summary resource was not found');
+  }
+  return { table, row: data };
+}
 
-כתוב רק את שלושת המשפטים, ללא כותרות, ללא מספור, ללא מקפים. אל תמציא מידע שאינו בדיווח.`
-    : `אתה עוזר CRM של ארגון יהודי שמקרב יהודים לתורה ומצוות. נתח את דיווח הקשר עם הלקוח והחזר סיכום ב**נקודות קצרות וחתוכות** בעברית תקינה — בלי משפטים ארוכים, בלי הקדמות, בלי פרטים טכניים (מיקום, אוכל וכו'). אל תמציא — מה שלא מופיע בדיווח כתוב "לא צוין".
-
-החזר בדיוק 4 נקודות, כל אחת בשורה שמתחילה ב"• ":
-• תוכן: תיאור קצר (עד 10 מילים) של מה עשו ועל מה דיברו בפגישה.
-• תורני: האם למדו יחד או נגעו בתוכן של תורה / מצוות / רוחניות? (להבדיל משיחה ידידותית גרידא או נושאים כלליים כמו חינוך ילדים). אם כן — בקצרה מה למדו. אם לא — "לא תורני".
-• ידידותי: המפגש היה חם וטוב, או פושר / בעייתי?
-• משתתפים: מנה רק נוכחים בפועל **מעבר לפעיל וללקוח** (אל תכלול את הפעיל והלקוח עצמם; לא מי שרק הוזכר בשיחה ולא מי שלא הגיע). כתוב כל נוכח בתבנית "תיאור (קשר ללקוח)", למשל: "אשתו, דוד (חבר)". הקפד על עברית תקינה — "אשתו" ולא "האשתו". אם לא נכח אף אחד נוסף — "הפעיל והלקוח בלבד".
-
-החזר רק את 4 הנקודות, בלי כותרת ובלי טקסט נוסף.`;
-
-  const userPrompt = type === 'base_meeting'
-    ? `סכם את הדיווח הבא על מפגש בסיס${meta.meeting_place_city ? ` ב${meta.meeting_place_city}` : ''}${meta.activist_name ? ` של ${meta.activist_name}` : ''}:\n\n${text}`
-    : `לקוח: ${meta.contactName ?? 'לקוח'}. סוג שנבחר בטופס: ${[meta.type, meta.quality].filter(Boolean).join(' ') || 'לא צוין'}.\n\nדיווח המפגש הנוכחי:\n${text}`;
-
+async function callAnthropic(apiKey, payload) {
+  let response;
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'x-api-key': apiKey,
         'anthropic-version': '2023-06-01',
         'content-type': 'application/json',
       },
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 450,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }],
+        system: SYSTEM_PROMPTS[payload.resourceType],
+        messages: [{ role: 'user', content: payload.content }],
       }),
+      signal: AbortSignal.timeout(8_000),
     });
-
+    if (!response.ok) throw new Error('provider response rejected');
     const data = await response.json();
-    if (!response.ok) {
-      console.error('Anthropic error:', data);
-      return res.status(500).json({ error: data.error?.message ?? 'Anthropic error' });
+    const summary = data?.content?.[0]?.text;
+    if (typeof summary !== 'string' || summary.trim().length < 1 || summary.length > 4_000) {
+      throw new Error('provider response invalid');
     }
-
-    const summary = data.content?.[0]?.text ?? '';
-    return res.status(200).json({ summary });
-  } catch (e) {
-    console.error('AI summary error:', e);
-    return res.status(500).json({ error: e.message });
+    return summary.trim();
+  } catch {
+    throw redactExternalError();
   }
 }
+
+export default secureHandler({
+  method: 'POST',
+  schema: aiSummarySchema,
+  maxBytes: 1_024,
+  resourceType: 'ai_summary',
+  consumeRate: (context) => consumeServerRateLimit({
+    kind: 'ai-summary', key: context.userId, limit: 10, windowSeconds: 3_600,
+  }),
+}, async (context, input) => {
+  const { apiKey } = assertAnthropicEnabled(process.env);
+  const resource = await loadAuthorizedResource(context, input);
+  const payload = projectAiPayload(input.resourceType, resource.row);
+
+  await appendServerAudit({
+    actorUserId: context.userId,
+    effectiveRole: context.globalRole ?? context.memberships?.[0]?.role ?? null,
+    projectId: resource.row.project_id,
+    action: 'external.ai_summary.authorized',
+    resourceType: input.resourceType,
+    resourceId: String(resource.row.id),
+    result: 'success',
+    reasonCode: 'CONSENT_AND_DPA_APPROVED',
+    correlationId: context.requestId,
+    sessionRef: context.session?.idHash?.slice(0, 16),
+    metadata: { source: 'anthropic-consent' },
+  });
+
+  const summary = await callAnthropic(apiKey, payload);
+  const { data, error } = await context.db.from(resource.table).update({ ai_summary: summary })
+    .eq('id', resource.row.id).select('id').maybeSingle();
+  dbError(error);
+  if (!data) throw new SecurityError(404, 'NOT_FOUND', 'AI summary resource was not found');
+  return { summary };
+});

@@ -39,7 +39,7 @@ export default function AddInteractionPage() {
   const { id }    = router.query;
   const contactId = Number(id);
   const { contacts, interactions, addInteraction, addParticipantInteractions, updateInteraction, paymentConfig } = useCrm();
-  const { currentUser, activeProject } = useAuth();
+  const { currentUser, activeProject, apiFetch } = useAuth();
   const contact = contacts.find(c => c.id === contactId);
 
   const [form,      setForm]      = useState(EMPTY);
@@ -343,14 +343,8 @@ export default function AddInteractionPage() {
 
       // סיכום AI אוטומטי — מיועד לרכז בלבד (הפעיל לא רואה אותו). fire-and-forget:
       // לא חוסם את השמירה, וכשל AI מאבד רק את הסיכום — הקשר כבר נשמר.
-      summarizeInteractionText(interactionPayload.description, {
-        contactName: contact.name, type: form.type, quality: form.quality,
-      }).then(async summary => {
+      summarizeInteractionText(apiFetch, interactionPayload.id).then(async summary => {
         if (!summary) return;
-        // await + בדיקת שגיאה לפני ההתראה: השרת קורא את ai_summary מה-DB, אז אם השמירה
-        // לא נחתה (או שה-insert של הקשר עוד באוויר) ההתראה תצא ריקה או תיכשל ב-404.
-        const { error } = await updateInteraction(interactionPayload.id, { ai_summary: summary });
-        if (error) return;
         notifyInteractionApi({ interactionId: interactionPayload.id, kind: 'summary' });
       }).catch(() => {});
 

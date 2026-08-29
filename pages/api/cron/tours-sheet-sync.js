@@ -11,13 +11,13 @@
 //   2. תקרה של MAX_CREATES יצירות בריצה — גיליון שנשבר לא יפתח מאות סיורים
 //      ולא יפוצץ אנשים אמיתיים ב-Push.
 //
-// קריאה מהגיליון עובדת בלי הרשאות. כתיבה אליו דורשת service account עם הרשאת
-// עריכה; בלעדיו הכיוון הזה מדולג והדוח היומי אומר בדיוק מה חסר.
+// שני הכיוונים דורשים service account ייעודי וגיליון/טווח allowlisted.
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { getProjectManagers, notifyRecipients } from '../../../lib/notifyRecipients';
 import { formatDateHe } from '../../../lib/formatDate';
+import { getPrivateSheetsConfig, redactExternalError, requireCronAuth } from '../../../lib/security/external-data.mjs';
 import {
-  fetchSheetTours, getSheetsToken, getSheetTitle, appendSheetRow, updateSheetRow,
+  fetchSheetTours, getSheetsToken, appendSheetRow, updateSheetRow,
   sheetDateToIso, isoToSheetDate, normalizeName,
   STATUS_TO_SHEET, STATUS_FROM_SHEET,
 } from '../../../lib/toursSheet';
@@ -45,29 +45,34 @@ function crmToSheetValues(tour, codeName) {
 }
 
 export default async function handler(req, res) {
-  if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
-    return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    requireCronAuth(req);
+  } catch (error) {
+    return res.status(error?.status ?? 401).json({ error: { code: error?.code ?? 'CRON_AUTH_DENIED', message: error?.publicMessage ?? 'Machine authentication is invalid' } });
   }
 
-  const sheetId = process.env.TOURS_SHEET_ID;
-  const gid = process.env.TOURS_SHEET_GID || '0';
-  if (!sheetId) {
-    return res.status(500).json({ error: 'חסר TOURS_SHEET_ID ב-env' });
+  let config;
+  let auth;
+  let sheet;
+  try {
+    config = getPrivateSheetsConfig(process.env);
+    auth = await getSheetsToken(config);
+    sheet = await fetchSheetTours({
+      sheetId: config.sheetId, range: config.range, token: auth.token,
+    });
+  } catch (caught) {
+    const error = caught?.code === 'INTEGRATION_DISABLED' ? caught : redactExternalError(caught);
+    return res.status(error.status).json({ error: { code: error.code, message: error.publicMessage } });
   }
 
   const admin = getSupabaseAdmin();
   const created = [], pushedToSheet = [], corrected = [], skipped = [];
 
-  let sheet;
-  try {
-    sheet = await fetchSheetTours({ sheetId, gid });
-  } catch (e) {
-    return res.status(502).json({ error: e.message });
-  }
-
   const { data: tours, error: toursErr } = await admin
-    .from('tours').select('*').eq('project_id', PROJECT_ID);
-  if (toursErr) return res.status(500).json({ error: toursErr.message });
+    .from('tours')
+    .select('id,tour_number,settlement,date,start_time,guide_name,guide_activist_id,host_activist_id,assigned_activists,status,notes,project_id')
+    .eq('project_id', PROJECT_ID);
+  if (toursErr) return res.status(503).json({ error: { code: 'DATA_UNAVAILABLE', message: 'Data service is unavailable' } });
 
   const { data: profiles } = await admin
     .from('profiles').select('activist_code, name').not('activist_code', 'is', null);
@@ -134,7 +139,7 @@ export default async function handler(req, res) {
     };
 
     const { error: insErr } = await admin.from('tours').upsert(newTour, { onConflict: 'id' });
-    if (insErr) { skipped.push(`סיור ${row.tourNumber}: יצירה נכשלה — ${insErr.message}`); continue; }
+    if (insErr) { skipped.push(`סיור ${row.tourNumber}: יצירה נכשלה`); continue; }
 
     created.push({ tourNumber: row.tourNumber, settlement: row.settlement, date: iso, tour: newTour });
     crmByNumber.set(row.tourNumber, newTour);
@@ -157,16 +162,8 @@ export default async function handler(req, res) {
   }
 
   // --- כיוון 2: CRM → גיליון (הוספה ותיקון) -------------------------------
-  const auth = await getSheetsToken();
-  let writeDisabledReason = auth.ok ? null : auth.reason;
-  // הכתובת שאיתה צריך לשתף את הגיליון. נחשפת כאן בכוונה — היא לא סוד, בניגוד למפתח
-  // שלצידה ב-service account, ובלעדיה אין דרך לדעת את מי להוסיף כעורך.
-  const serviceAccountEmail = auth.email || null;
-
-  if (auth.ok) {
-    try {
-      const title = await getSheetTitle({ sheetId, gid, token: auth.token });
-
+  let writeFailed = false;
+  try {
       for (const tour of crmByNumber.values()) {
         const values = crmToSheetValues(tour, codeName);
         const row = sheetByNumber.get(values.tourNumber);
@@ -174,7 +171,7 @@ export default async function handler(req, res) {
         if (!row) {
           // סיור שנוצר ב-CRM ואינו בגיליון. (סיור שזה עתה נוצר *מ*הגיליון כבר שם.)
           if (created.some(c => c.tourNumber === values.tourNumber)) continue;
-          await appendSheetRow({ sheetId, title, token: auth.token, headerRow: sheet.headerRow, columns: sheet.columns, values });
+          await appendSheetRow({ sheetId: config.sheetId, range: config.range, token: auth.token, headerRow: sheet.headerRow, columns: sheet.columns, values });
           pushedToSheet.push(values.tourNumber);
           continue;
         }
@@ -183,14 +180,13 @@ export default async function handler(req, res) {
         if (diffs.length === 0) continue;
 
         await updateSheetRow({
-          sheetId, title, token: auth.token,
+          sheetId: config.sheetId, range: config.range, token: auth.token,
           headerRow: sheet.headerRow, columns: sheet.columns, values, rowNumber: row.rowNumber,
         });
         corrected.push(`סיור ${values.tourNumber}: ${diffs.map(d => FIELD_LABELS[d]).join(', ')}`);
       }
-    } catch (e) {
-      writeDisabledReason = e.message;
-    }
+  } catch {
+    writeFailed = true;
   }
 
   // --- דוח יומי לרכזים ----------------------------------------------------
@@ -199,18 +195,14 @@ export default async function handler(req, res) {
   if (pushedToSheet.length) lines.push(`נוספו לגיליון: ${pushedToSheet.join(', ')}`);
   if (corrected.length)     lines.push(`תוקנו בגיליון לפי ה-CRM — ${corrected.join(' · ')}`);
   if (skipped.length)       lines.push(`דורש טיפול ידני: ${skipped.join(' · ')}`);
-  if (writeDisabledReason) {
-    lines.push(`כתיבה לגיליון מושבתת: ${writeDisabledReason}`
-      + (serviceAccountEmail ? ` (שתף את הגיליון כעורך עם ${serviceAccountEmail})` : ''));
-  }
+  if (writeFailed) lines.push('כתיבה לגיליון נכשלה; נדרש טיפול בתצורת האינטגרציה');
 
   const summary = {
     created: created.length,
     pushedToSheet: pushedToSheet.length,
     corrected: corrected.length,
     skipped: skipped.length,
-    writeDisabledReason,
-    serviceAccountEmail,
+    writeFailed,
   };
 
   // שקט כשהכל מסונכרן — התראה יומית שאומרת "אין שינוי" מאמנת אנשים להתעלם ממנה
@@ -226,7 +218,7 @@ export default async function handler(req, res) {
       body: lines.join('. '),
       url: '/tours',
       type: 'system',
-      priority: skipped.length || writeDisabledReason ? 'high' : 'normal',
+      priority: skipped.length || writeFailed ? 'high' : 'normal',
       clientId: c => `tours_sheet_sync_${today}_${c}`,
     },
   );
