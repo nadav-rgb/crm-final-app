@@ -120,7 +120,7 @@ export function AuthProvider({ children }) {
     addContact: role === 'activist',
     callContact: role === 'activist',
     seeActivists: role !== 'activist' && role !== 'finance',
-    seePayments: ['finance', 'head', 'ceo', 'coord'].includes(role),
+    seePayments: ['finance', 'head', 'ceo'].includes(role),
     seeMeetingHouses: ['ceo', 'head', 'coord', 'finance'].includes(role),
     seeMeetingHouseResults: ['ceo', 'head', 'coord'].includes(role),
     ownProjectId: currentUser?.project_id ?? null,

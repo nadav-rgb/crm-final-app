@@ -4,7 +4,6 @@ import DesktopLayout from '../components/DesktopLayout';
 import { useCrm } from '../lib/CrmStore';
 import { useAuth } from '../lib/AuthStore';
 import { calcConsultantDashboard, resolvePeriod } from '../lib/paymentCalc';
-import { getSupabaseClient } from '../lib/supabaseClient';
 
 const MONTH_NAMES = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
 
@@ -63,8 +62,9 @@ function CounterCard({ counter, monthLabel }) {
 
 export default function MyDashboardPage() {
   const { interactions, contacts, mitzvotBonuses, newParticipantBonuses, paymentConfig, expenses, tours } = useCrm();
-  const { currentUser } = useAuth();
-  const [cancelledBonuses, setCancelledBonuses] = useState([]); // בונוסים שרכז ביטל — ראה pages/payments.jsx
+  const { currentUser, apiFetch } = useAuth();
+  const [cancelledBonusKeys, setCancelledBonusKeys] = useState(null);
+  const [cancellationError, setCancellationError] = useState('');
 
   const monthOptions = useMemo(() => buildMonthOptions(), []);
   // חודש הדיווח הנבחר. ברירת מחדל: החודש הנוכחי; ניתן לבחור חודש קודם (ראה buildMonthOptions).
@@ -74,34 +74,44 @@ export default function MyDashboardPage() {
   });
 
   const { year, month, monthKey, startIso, endIso } = resolvePeriod(period);
+  const periodKey = `${year}-${String(month + 1).padStart(2, '0')}`;
   const monthName = MONTH_NAMES[month];
   const isCurrentMonth = year === new Date().getFullYear() && month === new Date().getMonth();
 
-  // בונוסים שבוטלו — נטען לפי הפעיל המחובר בלבד (RLS מגביל ממילא ל-activist_id של עצמו)
+  // בונוסים שבוטלו נטענים דרך BFF שמפיק את ה-owner מה-session ומחזיר מפתחות בלבד.
   useEffect(() => {
-    if (!currentUser) { setCancelledBonuses([]); return; }
+    if (!currentUser) { setCancelledBonusKeys(null); return; }
     let active = true;
-    (async () => {
-      const supabase = getSupabaseClient();
-      const { data, error } = await supabase.from('bonus_cancellations').select('*').eq('activist_id', currentUser.id);
-      if (!active) return;
-      if (error) { console.error('Failed to load bonus cancellations', error); return; }
-      setCancelledBonuses(Array.isArray(data) ? data : []);
-    })();
+    setCancelledBonusKeys(null);
+    apiFetch(`/api/payments/cancellations?period=${encodeURIComponent(periodKey)}`, { method: 'GET' })
+      .then(result => {
+        if (!active) return;
+        setCancelledBonusKeys(new Set(result.keys || []));
+        setCancellationError('');
+      })
+      .catch(() => {
+        if (!active) return;
+        setCancelledBonusKeys(null);
+        setCancellationError('נתוני הביטולים אינם זמינים כרגע, ולכן חישוב התשלום נעצר.');
+      });
     return () => { active = false; };
-  }, [currentUser?.id]);
-
-  const cancelledBonusKeys = useMemo(() => new Set(cancelledBonuses.map(b => b.bonus_key)), [cancelledBonuses]);
+  }, [currentUser, apiFetch, periodKey]);
 
   const data = useMemo(() => {
-    if (!currentUser) return null;
+    if (!currentUser || !cancelledBonusKeys) return null;
     // סינון בונוסים ליועץ הנוכחי ולחודש הנבחר — זהה לעמוד התשלומים של הרכז (כדי שהמספרים יתאימו).
     const myMitzvot = mitzvotBonuses.filter(b => b.activist_id === currentUser.id && b.month === monthKey);
     const myNew     = newParticipantBonuses.filter(b => b.activist_id === currentUser.id && b.month === monthKey);
     return calcConsultantDashboard(currentUser.id, interactions, contacts, myMitzvot, myNew, paymentConfig, cancelledBonusKeys, { year, month });
   }, [currentUser, interactions, contacts, mitzvotBonuses, newParticipantBonuses, paymentConfig, cancelledBonusKeys, monthKey, year, month]);
 
-  if (!data) return <DesktopLayout title="הדשבורד שלי"><div style={{ padding: 40, color: '#aaa' }}>טוען…</div></DesktopLayout>;
+  if (!data) return (
+    <DesktopLayout title="הדשבורד שלי">
+      <div role={cancellationError ? 'alert' : undefined} style={{ padding: 40, color: cancellationError ? '#a63230' : '#aaa' }}>
+        {cancellationError || 'טוען…'}
+      </div>
+    </DesktopLayout>
+  );
 
   const { counters, total, salaryByType, bonuses, unpaid } = data;
 

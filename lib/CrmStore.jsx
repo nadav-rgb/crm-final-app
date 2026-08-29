@@ -5,7 +5,7 @@ import { deriveMitzvotBonuses } from './paymentCalc';
 import { BASE_MEETING_QUESTIONS } from '../data/base-meetings';
 import { advanceReminderStageForReports } from './reminderSchedulerDemo';
 import { hydrateNotificationsFromSupabase } from './notificationDemo';
-import { loadPaymentConfig, DEFAULT_CONFIG } from './paymentConfig';
+import { DEFAULT_CONFIG } from './paymentConfig';
 import { getSupabaseClient } from './supabaseClient';
 import { useAuth } from './AuthStore';
 
@@ -210,13 +210,15 @@ export function CrmProvider({ children }) {
 
   const { currentUser, authLoading, apiFetch, activeProject } = useAuth();
 
-  // טעינת קונפיג השכר מ-Supabase (No-Hard-Coding). fallback ל-DEFAULT_CONFIG בכשל.
+  // טעינת קונפיג השכר דרך ה-BFF; אין קריאת business data ישירה מהדפדפן.
   useEffect(() => {
     if (authLoading || !currentUser) return;
     let active = true;
-    loadPaymentConfig().then(cfg => { if (active) setPaymentConfig(cfg); });
+    apiFetch('/api/payments/config', { method: 'GET' })
+      .then(result => { if (active) setPaymentConfig(result.config); })
+      .catch(error => { if (active) console.error('Failed to load payment configuration', error); });
     return () => { active = false; };
-  }, [currentUser, authLoading]);
+  }, [currentUser, authLoading, apiFetch]);
 
   // טעינת לקוחות מ-Supabase — רק אחרי שההתחברות מוכנה ויש משתמש,
   // כדי שה-select לא יצא כאנונימי (קריטי כשיופעל RLS). אותה תבנית כמו base_meeting_reports.
@@ -271,22 +273,28 @@ export function CrmProvider({ children }) {
     return () => { active = false; };
   }, [currentUser, authLoading, activeProject, apiFetch]);
 
-  // טעינת דיווחי הוצאות — אותה תבנית auth-gated. זורמים ל"דשבורד שלי" ולעמוד התשלומים. מסונן לפי בעלות.
+  // טעינת דיווחי הוצאות דרך ה-BFF; השרת ו-RLS קובעים owner/project scope.
   useEffect(() => {
     if (authLoading) return;
     if (!currentUser) { setExpenses([]); return; }
     let active = true;
     (async () => {
-      const supabase = getSupabaseClient();
-      let query = supabase.from('expenses').select('*');
-      query = scopeQueryToUser(query, currentUser);
-      const { data, error } = await query;
+      let data = [];
+      let error = null;
+      try {
+        const result = await apiFetch('/api/expenses', { method: 'GET' });
+        data = (result.expenses || []).map((item) => ({
+          id: item.id, activist_id: item.activistCode ?? item.userId, actor_user_id: item.userId,
+          project_id: item.projectId, date: item.occurredOn, amount: item.amount,
+          description: item.description,
+        }));
+      } catch (caught) { error = caught; }
       if (!active) return;
       if (error) { console.error('Failed to load expenses', error); return; }
       if (Array.isArray(data)) setExpenses(data);
     })();
     return () => { active = false; };
-  }, [currentUser, authLoading]);
+  }, [currentUser, authLoading, apiFetch]);
 
   // טעינת סיורים — לחישוב שכר מדריך (750₪ לסיור שהתקיים עם מדריך-פעיל). פעילות משותפת בפרויקט — מסונן לפי פרויקט בלבד.
   useEffect(() => {
@@ -492,24 +500,29 @@ export function CrmProvider({ children }) {
   // לא הגיעה לחישוב עד רענון מלא של הדף (דיווח שירה שם טוב, 2026-07-30:
   // "כשמוחקים בדיווח הוצאות... הסכום לתשלום לא משתנה").
   async function addExpense({ date, amount, description }) {
-    const supabase = getSupabaseClient();
-    const { data, error } = await supabase.from('expenses').insert({
-      activist_id: currentUser?.id,
-      project_id:  currentUser?.project_id ?? null,
-      date, amount, description,
-    }).select().single();
+    let data;
+    let error = null;
+    try {
+      const result = await apiFetch('/api/expenses', {
+        method: 'POST', body: { occurredOn: date, amount, description },
+      });
+      const item = result.expense;
+      data = {
+        id: item.id, activist_id: item.activistCode ?? item.userId, actor_user_id: item.userId,
+        project_id: item.projectId, date: item.occurredOn, amount: item.amount,
+        description: item.description,
+      };
+    } catch (caught) { error = caught; }
     if (error) { console.error('Failed to insert expense', error); return { error }; }
     setExpenses(prev => [data, ...prev]);
     return { error: null };
   }
 
   async function deleteExpense(expenseId) {
-    const supabase = getSupabaseClient();
-    // select() אחרי delete — RLS שחוסמת מחזירה 0 שורות **בלי** error, ואז המחיקה
-    // נראית מוצלחת ולא קרה כלום. בלי הבדיקה הזו הכישלון שקט לגמרי.
-    const { data, error } = await supabase.from('expenses').delete().eq('id', expenseId).select('id');
+    let error = null;
+    try { await apiFetch(`/api/expenses/${encodeURIComponent(expenseId)}`, { method: 'DELETE', body: {} }); }
+    catch (caught) { error = caught; }
     if (error) { console.error('Failed to delete expense', error); return { error }; }
-    if (!data || data.length === 0) return { error: new Error('ההוצאה לא נמחקה — אין הרשאה, או שכבר נמחקה') };
     setExpenses(prev => prev.filter(x => Number(x.id) !== Number(expenseId)));
     return { error: null };
   }

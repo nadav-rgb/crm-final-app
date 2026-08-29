@@ -1,5 +1,5 @@
 // pages/expenses.jsx — דיווחי הוצאות. פעיל מדווח (בלי קבלות) ורואה את שלו;
-// רכז/מנכ"ל/כספים (can.seePayments) רואים את כולם לחודש הנוכחי.
+// רכז/ראש פרויקט/מנכ"ל/כספים רואים רק את השורות שה-BFF ו-RLS מקרינים להם.
 import { useMemo, useState } from 'react';
 import DesktopLayout from '../components/DesktopLayout';
 import { useAuth } from '../lib/AuthStore';
@@ -13,7 +13,7 @@ const MONTH_NAMES = ['ינואר','פברואר','מרץ','אפריל','מאי',
 const EMPTY = { date: TODAY, amount: '', description: '' };
 
 export default function ExpensesPage() {
-  const { currentUser, can } = useAuth();
+  const { currentUser } = useAuth();
   // ההוצאות מגיעות מה-store ולא מ-state מקומי — כך מחיקה/הוספה כאן מתעדכנות מיד
   // גם ב"סה"כ לתשלום" ב-/my-dashboard וב-/payments (דיווח שירה שם טוב, 2026-07-30).
   const { activists, expenses: allExpenses, addExpense, deleteExpense } = useCrm();
@@ -23,7 +23,7 @@ export default function ExpensesPage() {
   const [loadErr,  setLoadErr]  = useState('');
 
   const isActivist = currentUser?.role === 'activist';
-  const seesAll    = can.seePayments;
+  const seesAll    = ['coord', 'head', 'finance', 'ceo'].includes(currentUser?.role);
 
   // רשימת התצוגה — החודש הנוכחי בלבד. ה-store כבר מסונן ב-RLS ובצד-לקוח לפי בעלות;
   // הסינון כאן הוא הגנת-הגנה נוספת, באותו דפוס כמו שאר הדפים.

@@ -2,7 +2,6 @@
 import { useEffect, useState } from 'react';
 import DesktopLayout from '../components/DesktopLayout';
 import { useAuth } from '../lib/AuthStore';
-import { getSupabaseClient } from '../lib/supabaseClient';
 
 const CATEGORY_OPTIONS = [
   { value: 'bug',        label: '🐞 באג / תקלה' },
@@ -12,7 +11,7 @@ const CATEGORY_OPTIONS = [
 const CATEGORY_LABEL = Object.fromEntries(CATEGORY_OPTIONS.map(o => [o.value, o.label]));
 
 export default function FeedbackPage() {
-  const { currentUser } = useAuth();
+  const { currentUser, apiFetch } = useAuth();
   const canReview = ['coord', 'head', 'ceo'].includes(currentUser?.role);
 
   const [category, setCategory] = useState('bug');
@@ -24,104 +23,61 @@ export default function FeedbackPage() {
   const [review, setReview] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState(null);   // הודעת שגיאה גלויה למשתמש
-  const [needsSetup, setNeedsSetup] = useState(false); // הטבלה עדיין לא קיימת ב-Supabase
 
-  // PGRST205 = הטבלה לא קיימת ב-schema cache. מבדילים אותה משגיאה רגילה כדי להציג
-  // הנחיה תפעולית ברורה במקום "משהו נכשל" — זו טעות התקנה, לא תקלת משתמש.
   function classify(err) {
     if (!err) return false;
-    if (err.code === 'PGRST205' || /feedback_reports/.test(err.message || '')) {
-      setNeedsSetup(true);
-      setError(null);
-    } else {
-      setError(err.message || 'שגיאה לא ידועה');
-    }
+    setError('לא הצלחנו להשלים את הפעולה. אפשר לנסות שוב בעוד רגע.');
     return true;
   }
 
-  async function loadMine() {
-    if (!currentUser?.id) return;
-    const supabase = getSupabaseClient();
-    const { data, error: err } = await supabase
-      .from('feedback_reports')
-      .select('*')
-      .eq('reporter_id', currentUser.id)
-      .order('created_at', { ascending: false });
-    if (classify(err)) return;
-    setMine(data || []);
-  }
-
-  async function loadReview() {
-    if (!canReview) return;
-    const supabase = getSupabaseClient();
-    const { data, error: err } = await supabase
-      .from('feedback_reports')
-      .select('*')
-      .order('status', { ascending: true }) // open קודם
-      .order('created_at', { ascending: false });
-    if (classify(err)) return;
-    setReview(data || []);
+  async function loadFeedback() {
+    if (!currentUser?.userId) return;
+    try {
+      const result = await apiFetch('/api/feedback', { method: 'GET' });
+      const rows = result.feedback || [];
+      setMine(rows.filter((item) => item.reporterUserId === currentUser.userId));
+      setReview(canReview ? rows : []);
+      setError(null);
+    } catch (err) {
+      classify(err);
+    }
   }
 
   useEffect(() => {
     (async () => {
       setLoading(true);
-      await Promise.all([loadMine(), loadReview()]);
+      await loadFeedback();
       setLoading(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser?.id]);
+  }, [currentUser?.userId, canReview, apiFetch]);
 
   async function handleSubmit() {
-    if (!message.trim() || !currentUser?.id) return;
+    if (!message.trim() || !currentUser?.userId) return;
     setSending(true);
     setError(null);
-    const supabase = getSupabaseClient();
-    const { error: err } = await supabase.from('feedback_reports').insert({
-      reporter_id: currentUser.id,
-      reporter_name: currentUser.name,
-      // project_id חייב ערך: מדיניות ה-SELECT של רכז היא project_id = any(הפרויקטים שלו),
-      // ו-null לעולם לא מתאים — דיווח כזה היה נעלם משקט מתור הסקירה. המנכ"ל הוא הפרופיל
-      // היחיד בלי project_id (וגם בלי project_ids), ולכן נופל לפרויקט הראשי.
-      project_id: currentUser.project_id ?? currentUser.project_ids?.[0] ?? 1,
-      category,
-      message: message.trim(),
-    });
+    let err = null;
+    try { await apiFetch('/api/feedback', { method: 'POST', body: { category, message: message.trim() } }); }
+    catch (caught) { err = caught; }
     setSending(false);
     if (err) { classify(err); return; }   // הטקסט נשאר בתיבה — שלא יאבד למשתמש
     setMessage('');
     setSent(true);
     setTimeout(() => setSent(false), 3000);
-    await Promise.all([loadMine(), loadReview()]);
+    await loadFeedback();
   }
 
   async function toggleStatus(item) {
-    const supabase = getSupabaseClient();
     const nextStatus = item.status === 'open' ? 'reviewed' : 'open';
-    const { error: err } = await supabase
-      .from('feedback_reports')
-      .update({ status: nextStatus, reviewed_at: nextStatus === 'reviewed' ? new Date().toISOString() : null })
-      .eq('id', item.id);
+    let err = null;
+    try { await apiFetch('/api/feedback', { method: 'PATCH', body: { id: item.id, status: nextStatus } }); }
+    catch (caught) { err = caught; }
     if (err) { classify(err); return; }
     setReview(prev => prev.map(r => r.id === item.id ? { ...r, status: nextStatus } : r));
   }
 
   return (
     <DesktopLayout title="תקלות והצעות" subtitle="דווחו על באגים, תקיעות או רעיונות לשיפור — נעבור על זה יחד כל כמה ימים">
-      {/* הטבלה טרם נוצרה ב-Supabase — הנחיה תפעולית למנהל, לא שגיאה סתומה לפעיל */}
-      {needsSetup && (
-        <div style={{ background:'#fff8ec', border:'0.5px solid rgba(243,156,18,0.35)', borderRight:'3px solid #f39c12', borderRadius:12, padding:'14px 16px', marginBottom:18, maxWidth:640 }}>
-          <div style={{ fontSize:13.5, fontWeight:800, color:'#b06b00', marginBottom:6 }}>העמוד עדיין לא מחובר לבסיס הנתונים</div>
-          <div style={{ fontSize:12.5, color:'#7a5200', lineHeight:1.7 }}>
-            {canReview ? (
-              <>נדרשת הרצה חד-פעמית של <code style={{ background:'#fff', padding:'1px 5px', borderRadius:4 }}>migrations/0016_feedback_reports.sql</code> ב-SQL Editor של Supabase. עד אז לא ניתן לשמור דיווחים.</>
-            ) : (
-              <>יש תקלה זמנית בהגדרות המערכת. אנא עדכנו את הרכז — הדיווחים לא נשמרים כרגע.</>
-            )}
-          </div>
-        </div>
-      )}
-
       {error && (
         <div style={{ background:'#fdecea', border:'0.5px solid rgba(226,75,74,0.3)', borderRight:'3px solid #e24b4a', borderRadius:12, padding:'12px 16px', marginBottom:18, maxWidth:640, fontSize:12.5, color:'#a63230', lineHeight:1.6 }}>
           <strong>הפעולה נכשלה.</strong> {error}
@@ -237,7 +193,7 @@ function FeedbackCard({ item, showReporter, onToggle }) {
       )}
       <div style={{ fontSize:13, color:'#333', whiteSpace:'pre-wrap', lineHeight:1.6 }}>{item.message}</div>
       <div style={{ fontSize:11, color:'#bbb', marginTop:6 }}>
-        {new Date(item.created_at).toLocaleDateString('he-IL')}
+        {new Date(item.createdAt).toLocaleDateString('he-IL')}
       </div>
       {onToggle && (
         <button type="button" onClick={onToggle}

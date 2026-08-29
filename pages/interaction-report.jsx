@@ -63,7 +63,7 @@ function LoadingState() {
 }
 
 export default function InteractionReportPage() {
-  const { currentUser, authLoading } = useAuth();
+  const { currentUser, authLoading, apiFetch } = useAuth();
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [report, setReport] = useState(null);
@@ -81,7 +81,7 @@ export default function InteractionReportPage() {
     let active = true;
     setLoading(true);
     setError('');
-    fetchInteractionReport({ startDate, endDate, signal: controller.signal })
+    fetchInteractionReport(apiFetch, { startDate, endDate, signal: controller.signal })
       .then(nextReport => { if (active) setReport(nextReport); })
       .catch(fetchError => {
         if (active && fetchError?.name !== 'AbortError') {
@@ -94,7 +94,7 @@ export default function InteractionReportPage() {
       active = false;
       controller.abort();
     };
-  }, [authLoading, isCeo, startDate, endDate, dateValidation.ok, retryKey]);
+  }, [authLoading, isCeo, startDate, endDate, dateValidation.ok, retryKey, apiFetch]);
 
   async function handleExport(kind) {
     if (!report || exporting) return;
