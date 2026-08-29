@@ -28,8 +28,10 @@ async function verifyResponse(baseUrl, definition) {
     headers: definition.headers,
     body: definition.body,
   });
-  if (definition.reject && response.status < 400) {
-    throw new Error(`${definition.method} ${definition.path} was not rejected`);
+  if (response.status !== definition.expectedStatus) {
+    throw new Error(
+      `${definition.method} ${definition.path} expected ${definition.expectedStatus}, received ${response.status}`,
+    );
   }
   const observed = {};
   for (const [name, predicate] of Object.entries(REQUIRED)) {
@@ -58,13 +60,14 @@ export async function verifyHttp(baseUrl = process.env.SECURITY_HTTP_BASE_URL) {
   if (!baseUrl) throw new Error('SECURITY_HTTP_BASE_URL is required');
   const origin = exactBaseUrl(baseUrl);
   const checks = [
-    { method: 'GET', path: '/', checkBodyNonce: true },
-    { method: 'GET', path: '/api/auth/session' },
-    { method: 'GET', path: '/__security_missing__', checkBodyNonce: true },
+    { method: 'GET', path: '/', expectedStatus: 200, checkBodyNonce: true },
+    { method: 'GET', path: '/api/auth/session', expectedStatus: 401 },
     {
-      method: 'POST', path: '/api/auth/logout', reject: true,
+      method: 'POST', path: '/api/auth/logout', expectedStatus: 403,
       headers: { 'content-type': 'application/json', origin: 'https://invalid.example' }, body: '{}',
     },
+    { method: 'GET', path: '/__security_missing__', expectedStatus: 404, checkBodyNonce: true },
+    { method: 'GET', path: '/500', expectedStatus: 500, checkBodyNonce: true },
   ];
   const nonces = [];
   for (const check of checks) nonces.push(await verifyResponse(origin, check));
