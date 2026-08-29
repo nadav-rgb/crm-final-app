@@ -3,8 +3,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const CLIENT_FORBIDDEN = Object.freeze([
-  ['service-key-name', /SUPABASE_(?:SECRET_KEY|SERVICE_ROLE_KEY)/g],
-  ['server-secret-name', /SESSION_TOKEN_ENCRYPTION_KEY|SESSION_ID_PEPPER|CRON_SECRET|VAPID_PRIVATE_KEY|ANTHROPIC_API_KEY/g],
+  ['service-key-name', /SUPABASE_SECRET_KEY|SUPABASE_SERVICE_ROLE_KEY/g],
+  ['server-secret-name', /SESSION_TOKEN_ENCRYPTION_KEY|SESSION_ID_PEPPER|CRON_SECRET|VAPID_PRIVATE_KEY|ANTHROPIC_API_KEY|FCM_SERVICE_ACCOUNT|SHEETS_SERVICE_ACCOUNT|GITHUB_TOKEN/g],
+  ['github-token', /(?:ghp_|github_pat_)[A-Za-z0-9_]{20,}/g],
+  ['anthropic-key', /sk-ant-(?:api\d{2}-)?[A-Za-z0-9_-]{20,}/g],
+  ['private-key', /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/g],
   ['legacy-user-directory', /USERNAME_TO_EMAIL|achdut-crm\.test/g],
   ['demo-password', /ceo123|coord123|activist123/g],
   ['bearer-token', /Bearer\s+eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g],

@@ -59,7 +59,7 @@ base_meeting_reports/activist_directory) מסוננת בשרת לפי activist_i
 - `AuthStore.jsx` — משתמש נוכחי, הרשאות (can.*)
 - `meetingHousesStorage.js` — CRUD בתי מפגש, deriveHouseStatus()
 - `baseMeetingUtils.js` — buildBaseMeetingsFromHouses()
-- `notificationDemo.js` — פעמון in-app בלבד (localStorage + Supabase). **לא שולח Push**
+- `notificationDemo.js` — facade תאימות בזיכרון/דרך BFF לפעמון in-app. **לא שולח Push**
 - `notifyRecipients.js` — ⚠️ שרת בלבד: נמענים + פעמון + Push. ראה "התראות" למטה
 - `notifyApi.js` — עטיפות לקוח לקריאת endpoints ההתראות
 - `aiDemo.js` — סיכומי AI דמו (משותף לדוחות ובתי מפגש שהסתיימו)
@@ -221,7 +221,21 @@ base_meeting_reports/activist_directory) מסוננת בשרת לפי activist_i
 - הגדרות ב-`data/config.js` (CONFIG.mitzvotMale / CONFIG.mitzvotFemale)
 - כל שדות המצוות חובה בהוספת לקוח
 
-## משתמשי דמו
-- מנכ"ל: `ceo / ceo123`
-- רכז: `coord1 / coord123`
-- פעיל: `activist1 / activist123`
+## חוזה Security Hardening — סביבת ריצה וסודות
+- הדפדפן ניגש לנתונים רק דרך BFF באותו origin ומשתמש ב-session cookies אטומים. אין גישת
+  Supabase ישירה מה-client, אין service-role בדפדפן ואין שמירת PII ב-`localStorage`.
+- רק שמות שמתחילים ב-`NEXT_PUBLIC_` מותרים ב-client bundle. כל השאר, ובפרט
+  `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_SECRET_KEY`, מפתחות session, cron, GitHub,
+  Anthropic, VAPID, FCM ו-Sheets, הם server-only. `SUPABASE_SECRET_KEY` נשאר שם-תאימות
+  ל-cron ישן בלבד ואסור לחשוף אותו לציבור.
+- `.env.example` מגדיר שמות משתנים בלבד. לעולם אין להכניס ערכים אמיתיים, קבצי `.env`,
+  מפתחות חתימה, service-account, דוחות שנוצרו, coverage או logs ל-Git.
+- לפני commit מריצים `node scripts/security/scan-secrets.mjs --current --tracked` ואחרי
+  build גם `node scripts/security/scan-client-bundle.mjs`. סקירת היסטוריה מתבצעת עם
+  `node scripts/security/scan-secrets.mjs --history`; ממצא היסטורי מחייב בדיקה וסבב
+  החלפה/ביטול אצל הספק. אין לבצע history rewrite בלי אישור מפורש.
+- `android/app/google-services.json` הוא Firebase client config ציבורי, לא service account.
+  יש להגביל את היישום לפי package name, חתימות SHA וה-API הרלוונטי במסוף Google/Firebase;
+  אימות ההגבלות הוא gate חיצוני ואינו נפתר בהסתרת הקובץ.
+- migrations `0018`–`0024` הן רצף Security Hardening ממתין. אין להריץ אותן אלא במסגרת G5
+  מבוקרת, לפי הסדר וה-rollbacks המתועדים ב-`migrations/README.md`.
