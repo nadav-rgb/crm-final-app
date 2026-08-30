@@ -58,6 +58,9 @@ do $$ begin
 end $$;
 revoke all on function public.app_submit_tour_report(text,jsonb) from public, anon, authenticated;
 drop function if exists public.app_submit_tour_report(text,jsonb);
+drop function if exists public.app_delete_tour(text);
+drop function if exists public.app_cancel_tour(text,text);
+drop function if exists public.app_assign_tour(text,uuid,uuid,uuid[]);
 drop index if exists public.tours_reported_by_user_idx;
 alter table public.tours
   drop constraint if exists tours_cancellation_reason_len_chk,
@@ -76,6 +79,7 @@ do $$ begin
 end $$;
 revoke all on function public.app_cancel_meeting_reminders(text) from public, anon, authenticated;
 drop function if exists public.app_cancel_meeting_reminders(text);
+drop function if exists public.app_assign_meeting_house(text,uuid[]);
 alter table public.meeting_reminders
   drop constraint if exists meeting_reminders_idempotency_format_chk;
 drop index if exists public.meeting_reminders_idempotency_uq;
@@ -85,6 +89,11 @@ alter table public.meeting_reminders
 
 -- 0020 service and authenticated RPCs.
 drop function if exists public.check_contact_duplicate(integer,text);
+drop function if exists public.app_review_feedback(uuid,text);
+drop function if exists public.app_delete_expense(uuid);
+drop function if exists public.app_delete_interaction(uuid);
+drop function if exists public.app_soft_delete_contact(uuid);
+drop function if exists public.app_reassign_contact(uuid,uuid);
 drop function if exists public.app_user_security_invalidate(uuid,text);
 drop function if exists public.app_identity_resolve(text);
 drop function if exists public.app_membership_change(text,uuid,uuid,integer,text,text);
@@ -136,6 +145,24 @@ drop trigger if exists audit_push_subscriptions_changes on public.push_subscript
 drop trigger if exists audit_fcm_tokens_changes on public.fcm_tokens;
 drop trigger if exists audit_feedback_reports_changes on public.feedback_reports;
 
+drop trigger if exists enforce_projects_immutable_authority on public.projects;
+drop trigger if exists enforce_project_memberships_immutable_authority on public.project_memberships;
+drop trigger if exists enforce_profiles_immutable_authority on public.profiles;
+drop trigger if exists enforce_contacts_immutable_authority on public.contacts;
+drop trigger if exists enforce_interactions_immutable_authority on public.interactions;
+drop trigger if exists enforce_base_meeting_reports_immutable_authority on public.base_meeting_reports;
+drop trigger if exists enforce_meeting_houses_immutable_authority on public.meeting_houses;
+drop trigger if exists enforce_meeting_reminders_immutable_authority on public.meeting_reminders;
+drop trigger if exists enforce_tours_immutable_authority on public.tours;
+drop trigger if exists enforce_expenses_immutable_authority on public.expenses;
+drop trigger if exists enforce_bonus_cancellations_immutable_authority on public.bonus_cancellations;
+drop trigger if exists enforce_payment_config_immutable_authority on public.payment_config;
+drop trigger if exists enforce_notifications_immutable_authority on public.notifications;
+drop trigger if exists enforce_notification_reads_immutable_authority on public.notification_reads;
+drop trigger if exists enforce_push_subscriptions_immutable_authority on public.push_subscriptions;
+drop trigger if exists enforce_fcm_tokens_immutable_authority on public.fcm_tokens;
+drop trigger if exists enforce_feedback_reports_immutable_authority on public.feedback_reports;
+
 drop function if exists public.app_security_posture();
 drop function if exists public.app_notification_recipients(integer);
 drop function if exists public.app_current_role();
@@ -146,6 +173,7 @@ drop function if exists public.app_has_active_membership(integer);
 drop function if exists public.app_is_ceo();
 drop function if exists public.app_user_active();
 drop function if exists app_private.audit_row_change();
+drop function if exists app_private.enforce_immutable_columns();
 
 alter table public.meeting_houses drop column if exists assigned_user_ids;
 alter table public.meeting_reminders drop column if exists project_id;

@@ -80,7 +80,7 @@ test('self-service policies require active authorization and limit mutable colum
     const definition = policyDefinition(sql, policyName);
     assert.match(
       definition,
-      /app_user_active\(\)|app_has_project_role\(/i,
+      /app_user_active\(\)|app_has_project_role\(|app_is_ceo\(\)/i,
       `${policyName} must not authorize a stale or disabled identity`,
     );
   }
@@ -95,6 +95,102 @@ test('self-service policies require active authorization and limit mutable colum
       definition,
       /assigned_user_ids|guide_user_id|host_user_id/i,
       `${policyName} must not expose broad direct-row updates to assigned users`,
+    );
+  }
+});
+
+test('C1 direct grants cannot transfer authority or bypass protected workflows', async () => {
+  const sql = await readFile(migrationPath, 'utf8');
+  const rpcSql = await readFile('migrations/0020_security_rpcs.sql', 'utf8');
+  const meetingSql = await readFile('migrations/0021_meetings_security.sql', 'utf8');
+  const tourSql = await readFile('migrations/0022_tours_security.sql', 'utf8');
+  const rollbackSql = await readFile('migrations/rollback/0018-0024-pre-cutover.sql', 'utf8');
+
+  for (const table of [
+    'contacts', 'interactions', 'base_meeting_reports', 'meeting_houses',
+    'tours', 'expenses', 'feedback_reports',
+  ]) {
+    assert.doesNotMatch(
+      sql,
+      new RegExp(`grant\\s+(?:select\\s*,\\s*)?(?:insert\\s*,\\s*)?update(?:\\s*,\\s*delete)?\\s+on\\s+public\\.${table}\\s+to\\s+authenticated`, 'i'),
+      `${table} must not retain table-wide authenticated UPDATE`,
+    );
+  }
+
+  assert.match(sql, /create or replace function app_private\.enforce_immutable_columns\(\)/i);
+  const immutableFunction = sql.match(
+    /create or replace function app_private\.enforce_immutable_columns\(\)[\s\S]*?\$\$;/i,
+  )?.[0] ?? '';
+  assert.match(immutableFunction, /current_user\s+not\s+in\s*\(\s*'authenticated'\s*,\s*'anon'\s*\)/i);
+  assert.doesNotMatch(immutableFunction, /current_setting|set_config/i, 'caller-settable GUC must not bypass immutability');
+  const immutableAuthority = new Map([
+    ['contacts', ['project_id', 'assigned_user_id', 'activist_id']],
+    ['interactions', ['project_id', 'contact_id', 'actor_user_id', 'activist_id']],
+    ['base_meeting_reports', ['project_id', 'actor_user_id', 'activist_id']],
+    ['meeting_houses', ['project_id', 'assigned_user_ids', 'assigned_activists', 'status']],
+    ['meeting_reminders', ['project_id', 'recipient_user_id', 'coordinator_id', 'activist_id', 'cancelled_at']],
+    ['tours', [
+      'project_id', 'guide_user_id', 'host_user_id', 'assigned_user_ids',
+      'guide_activist_id', 'host_activist_id', 'assigned_activists', 'status',
+      'report', 'reported_by_user_id', 'reported_at', 'cancellation_reason',
+    ]],
+    ['expenses', ['project_id', 'actor_user_id', 'activist_id']],
+    ['bonus_cancellations', [
+      'project_id', 'beneficiary_user_id', 'cancelled_by_user_id',
+      'activist_id', 'cancelled_by', 'bonus_key',
+    ]],
+    ['notifications', ['recipient_user_id', 'recipient_id']],
+    ['notification_reads', ['recipient_user_id', 'recipient_id', 'notification_id']],
+    ['push_subscriptions', ['user_id', 'activist_id']],
+    ['fcm_tokens', ['user_id', 'activist_id']],
+    ['feedback_reports', ['project_id', 'reporter_user_id', 'reporter_id', 'status', 'reviewed_at']],
+  ]);
+  for (const [table, fields] of immutableAuthority) {
+    const trigger = sql.match(new RegExp(
+      `create trigger enforce_${table}_immutable_authority[\\s\\S]*?;`, 'i',
+    ))?.[0];
+    assert.ok(trigger, `missing immutable-authority trigger for ${table}`);
+    for (const field of fields) assert.match(trigger, new RegExp(`'${field}'`, 'i'));
+  }
+
+  for (const [policyName, forbiddenRoles] of [
+    ['interactions_delete', ['activist']],
+    ['expenses_delete', ['activist']],
+    ['bonus_cancellations_delete', ['head', 'coord']],
+  ]) {
+    const definition = policyDefinition(sql, policyName);
+    for (const role of forbiddenRoles) {
+      assert.doesNotMatch(definition, new RegExp(`'${role}'`, 'i'), `${policyName} exposes unsafe ${role} delete`);
+    }
+  }
+
+  for (const functionName of [
+    'app_reassign_contact', 'app_soft_delete_contact', 'app_delete_interaction',
+    'app_delete_expense', 'app_review_feedback',
+  ]) {
+    assert.match(rpcSql, new RegExp(`create or replace function public\\.${functionName}\\b`, 'i'));
+  }
+  assert.match(meetingSql, /create or replace function public\.app_assign_meeting_house\b/i);
+  for (const functionName of ['app_assign_tour', 'app_cancel_tour', 'app_delete_tour']) {
+    assert.match(tourSql, new RegExp(`create or replace function public\\.${functionName}\\b`, 'i'));
+  }
+  for (const functionName of [
+    'app_reassign_contact', 'app_soft_delete_contact', 'app_delete_interaction',
+    'app_delete_expense', 'app_review_feedback', 'app_assign_meeting_house',
+    'app_assign_tour', 'app_cancel_tour', 'app_delete_tour',
+  ]) {
+    assert.match(
+      rollbackSql,
+      new RegExp(`drop function if exists public\\.${functionName}\\b`, 'i'),
+      `rollback must remove ${functionName}`,
+    );
+  }
+  assert.match(rollbackSql, /drop function if exists app_private\.enforce_immutable_columns\(\)/i);
+  for (const table of immutableAuthority.keys()) {
+    assert.match(
+      rollbackSql,
+      new RegExp(`drop trigger if exists enforce_${table}_immutable_authority on public\\.${table}`, 'i'),
+      `rollback must remove ${table} immutable-authority trigger`,
     );
   }
 });

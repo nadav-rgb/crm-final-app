@@ -188,30 +188,153 @@ end $$;
 
 revoke all on all tables in schema public from anon;
 revoke all on all tables in schema public from authenticated;
-grant select, insert, update, delete on public.projects to authenticated;
+grant select, insert, delete on public.projects to authenticated;
 grant select on public.project_memberships to authenticated;
 grant select on public.profiles to authenticated;
-grant select, insert, update, delete on public.contacts to authenticated;
-grant select, insert, update, delete on public.interactions to authenticated;
-grant select, insert, update, delete on public.base_meeting_reports to authenticated;
-grant select, insert, update, delete on public.meeting_houses to authenticated;
+grant select, insert, delete on public.contacts to authenticated;
+grant select, insert on public.interactions to authenticated;
+grant select, insert, delete on public.base_meeting_reports to authenticated;
+grant select, insert, delete on public.meeting_houses to authenticated;
 grant select, insert on public.meeting_reminders to authenticated;
-grant select, insert, delete on public.tours to authenticated;
-grant update (
-  tour_number, settlement, date, start_time, guide_name,
-  guide_activist_id, host_activist_id, assigned_activists,
-  guide_user_id, host_user_id, assigned_user_ids,
-  status, notes
-) on public.tours to authenticated;
-grant select, insert, update, delete on public.expenses to authenticated;
+grant select, insert on public.tours to authenticated;
+grant select, insert on public.expenses to authenticated;
 grant select, insert, delete on public.bonus_cancellations to authenticated;
-grant select, insert, update on public.payment_config to authenticated;
+grant select, insert on public.payment_config to authenticated;
 grant select, delete on public.notifications to authenticated;
 grant update (read) on public.notifications to authenticated;
-grant select, insert, update, delete on public.notification_reads to authenticated;
-grant select, insert, update, delete on public.push_subscriptions to authenticated;
-grant select, insert, update, delete on public.fcm_tokens to authenticated;
-grant select, insert, update, delete on public.feedback_reports to authenticated;
+grant select, insert, delete on public.notification_reads to authenticated;
+grant select, insert, delete on public.push_subscriptions to authenticated;
+grant select, insert, delete on public.fcm_tokens to authenticated;
+grant select, insert, delete on public.feedback_reports to authenticated;
+
+-- UPDATE is granted only on an explicit business-field allowlist. The migration
+-- filters the allowlist through the actual legacy schema so an absent optional
+-- compatibility column cannot make the migration fail, while a future/unknown
+-- column remains denied by default.
+do $$
+declare
+  v_table text;
+  v_allowed text[];
+  v_columns text;
+begin
+  for v_table, v_allowed in
+    select * from (values
+      ('projects', array['name']::text[]),
+      ('contacts', array[
+        'name','phone','city','notes','mitzvot','mitzvot_history','high_potential',
+        'joined_at','source','referred_by','next_action','next_action_date',
+        'last_contact_at','last_interaction_at'
+      ]::text[]),
+      ('interactions', array[
+        'type','quality','notes','participants','date','time','duration_minutes',
+        'outcome','description','ai_summary','next_action','next_action_date'
+      ]::text[]),
+      ('base_meeting_reports', array['report','notes','summary','results']::text[]),
+      ('meeting_houses', array[
+        'house_number','settlement','city','host_name','facilitator_name','meetings','notes'
+      ]::text[]),
+      ('tours', array['tour_number','settlement','date','start_time','notes']::text[]),
+      ('payment_config', array[
+        'rate_phone_friendly','rate_phone_torani','rate_video_friendly','rate_video_torani',
+        'rate_frontal_friendly','rate_frontal_torani','rate_multi','rate_shabbat_hosting',
+        'rate_tour_guide','min_duration_minutes','cap_phone','cap_frontal','cap_multi',
+        'cap_contact_phone_high','cap_contact_phone_regular','cap_contact_frontal_high',
+        'cap_contact_frontal_regular','bonus_loyalty_6','bonus_loyalty_4',
+        'bonus_mitzvot_level','bonus_new_participant'
+      ]::text[]),
+      ('push_subscriptions', array['subscription']::text[]),
+      ('fcm_tokens', array['token','platform','updated_at']::text[])
+    ) as allowlist(table_name, column_names)
+  loop
+    select string_agg(format('%I', c.column_name), ', ' order by array_position(v_allowed, c.column_name))
+      into v_columns
+    from information_schema.columns c
+    where c.table_schema = 'public'
+      and c.table_name = v_table
+      and c.column_name = any(v_allowed);
+
+    if v_columns is not null then
+      execute format('grant update (%s) on public.%I to authenticated', v_columns, v_table);
+    end if;
+  end loop;
+end $$;
+
+-- RLS cannot compare OLD with NEW. This trigger is the independent database
+-- invariant for direct anon/authenticated statements. Narrow SECURITY DEFINER
+-- workflow RPCs execute as their audited owner and therefore may perform the
+-- validated transition without a caller-settable bypass flag.
+create or replace function app_private.enforce_immutable_columns()
+returns trigger
+language plpgsql
+set search_path = pg_catalog, public, app_private
+as $$
+declare
+  v_column text;
+begin
+  if current_user not in ('authenticated', 'anon') then
+    return new;
+  end if;
+  foreach v_column in array tg_argv loop
+    if (to_jsonb(new) -> v_column) is distinct from (to_jsonb(old) -> v_column) then
+      raise exception 'immutable authority or workflow field: %.%', tg_table_name, v_column
+        using errcode = '42501';
+    end if;
+  end loop;
+  return new;
+end $$;
+revoke all on function app_private.enforce_immutable_columns() from public, anon, authenticated;
+
+drop trigger if exists enforce_projects_immutable_authority on public.projects;
+create trigger enforce_projects_immutable_authority before update on public.projects for each row
+  execute function app_private.enforce_immutable_columns('id','security_run_id');
+drop trigger if exists enforce_project_memberships_immutable_authority on public.project_memberships;
+create trigger enforce_project_memberships_immutable_authority before update on public.project_memberships for each row
+  execute function app_private.enforce_immutable_columns('project_id','user_id','role','status','created_by','created_at','updated_at');
+drop trigger if exists enforce_profiles_immutable_authority on public.profiles;
+create trigger enforce_profiles_immutable_authority before update on public.profiles for each row
+  execute function app_private.enforce_immutable_columns('id','global_role','role','security_version','disabled_at','project_id','project_ids','activist_code','security_run_id');
+drop trigger if exists enforce_contacts_immutable_authority on public.contacts;
+create trigger enforce_contacts_immutable_authority before update on public.contacts for each row
+  execute function app_private.enforce_immutable_columns('id','project_id','assigned_user_id','activist_id','tour_id','status','is_active','security_run_id','created_at','created_by','updated_by');
+drop trigger if exists enforce_interactions_immutable_authority on public.interactions;
+create trigger enforce_interactions_immutable_authority before update on public.interactions for each row
+  execute function app_private.enforce_immutable_columns('id','project_id','contact_id','actor_user_id','activist_id','security_run_id','created_at','created_by','updated_by');
+drop trigger if exists enforce_base_meeting_reports_immutable_authority on public.base_meeting_reports;
+create trigger enforce_base_meeting_reports_immutable_authority before update on public.base_meeting_reports for each row
+  execute function app_private.enforce_immutable_columns('id','project_id','house_id','meeting_house_id','actor_user_id','activist_id','status','security_run_id','created_at','created_by','updated_by');
+drop trigger if exists enforce_meeting_houses_immutable_authority on public.meeting_houses;
+create trigger enforce_meeting_houses_immutable_authority before update on public.meeting_houses for each row
+  execute function app_private.enforce_immutable_columns('id','project_id','assigned_user_ids','assigned_activists','status','security_run_id','created_at','created_by','updated_by');
+drop trigger if exists enforce_meeting_reminders_immutable_authority on public.meeting_reminders;
+create trigger enforce_meeting_reminders_immutable_authority before update on public.meeting_reminders for each row
+  execute function app_private.enforce_immutable_columns('id','meeting_id','project_id','recipient_user_id','coordinator_id','activist_id','type','idempotency_key','cancelled_at','security_run_id','created_at','created_by','updated_by');
+drop trigger if exists enforce_tours_immutable_authority on public.tours;
+create trigger enforce_tours_immutable_authority before update on public.tours for each row
+  execute function app_private.enforce_immutable_columns('id','project_id','guide_user_id','host_user_id','assigned_user_ids','guide_activist_id','host_activist_id','assigned_activists','guide_name','status','report','reported_by_user_id','reported_at','cancellation_reason','cancelled_at','security_run_id','created_at','created_by','updated_by');
+drop trigger if exists enforce_expenses_immutable_authority on public.expenses;
+create trigger enforce_expenses_immutable_authority before update on public.expenses for each row
+  execute function app_private.enforce_immutable_columns('id','project_id','actor_user_id','activist_id','status','approved_by_user_id','security_run_id','created_at','created_by','updated_by');
+drop trigger if exists enforce_bonus_cancellations_immutable_authority on public.bonus_cancellations;
+create trigger enforce_bonus_cancellations_immutable_authority before update on public.bonus_cancellations for each row
+  execute function app_private.enforce_immutable_columns('id','project_id','beneficiary_user_id','cancelled_by_user_id','activist_id','cancelled_by','bonus_key','security_run_id','created_at','created_by','updated_by');
+drop trigger if exists enforce_payment_config_immutable_authority on public.payment_config;
+create trigger enforce_payment_config_immutable_authority before update on public.payment_config for each row
+  execute function app_private.enforce_immutable_columns('id','security_run_id','created_at','created_by','updated_by');
+drop trigger if exists enforce_notifications_immutable_authority on public.notifications;
+create trigger enforce_notifications_immutable_authority before update on public.notifications for each row
+  execute function app_private.enforce_immutable_columns('id','project_id','recipient_user_id','recipient_id','type','title','body','url','priority','client_id','resource_type','resource_id','security_run_id','created_at','created_by','updated_by');
+drop trigger if exists enforce_notification_reads_immutable_authority on public.notification_reads;
+create trigger enforce_notification_reads_immutable_authority before update on public.notification_reads for each row
+  execute function app_private.enforce_immutable_columns('id','recipient_user_id','recipient_id','notification_id','security_run_id','created_at','created_by','updated_by');
+drop trigger if exists enforce_push_subscriptions_immutable_authority on public.push_subscriptions;
+create trigger enforce_push_subscriptions_immutable_authority before update on public.push_subscriptions for each row
+  execute function app_private.enforce_immutable_columns('id','user_id','activist_id','security_run_id','created_at','created_by','updated_by');
+drop trigger if exists enforce_fcm_tokens_immutable_authority on public.fcm_tokens;
+create trigger enforce_fcm_tokens_immutable_authority before update on public.fcm_tokens for each row
+  execute function app_private.enforce_immutable_columns('id','user_id','activist_id','security_run_id','created_at','created_by','updated_by');
+drop trigger if exists enforce_feedback_reports_immutable_authority on public.feedback_reports;
+create trigger enforce_feedback_reports_immutable_authority before update on public.feedback_reports for each row
+  execute function app_private.enforce_immutable_columns('id','project_id','reporter_user_id','reporter_id','status','reviewed_at','reviewed_by_user_id','reviewer_note','issue_url','security_run_id','created_at','created_by','updated_by');
 
 create policy projects_select on public.projects for select to authenticated using (
   public.app_is_ceo() or (public.app_user_active() and exists (
@@ -285,10 +408,7 @@ with check (
     select 1 from public.contacts c where c.id = interactions.contact_id and c.assigned_user_id = auth.uid()
   ))
 );
-create policy interactions_delete on public.interactions for delete to authenticated using (
-  public.app_is_ceo() or public.app_has_project_role(project_id, array['head'])
-  or (actor_user_id = auth.uid() and public.app_has_project_role(project_id, array['activist']))
-);
+create policy interactions_delete on public.interactions for delete to authenticated using (public.app_is_ceo());
 
 create policy base_meeting_reports_select on public.base_meeting_reports for select to authenticated using (
   public.app_is_ceo() or public.app_has_project_role(project_id, array['head','coord'])
@@ -368,8 +488,7 @@ with check (
   or public.app_is_ceo() or public.app_has_project_role(project_id, array['head'])
 );
 create policy expenses_delete on public.expenses for delete to authenticated using (
-  (actor_user_id = auth.uid() and public.app_has_project_role(project_id, array['activist']))
-  or public.app_is_ceo() or public.app_has_project_role(project_id, array['head'])
+  public.app_is_ceo() or public.app_has_project_role(project_id, array['head'])
 );
 
 create policy bonus_cancellations_select on public.bonus_cancellations for select to authenticated using (
@@ -380,9 +499,7 @@ create policy bonus_cancellations_insert on public.bonus_cancellations for inser
   cancelled_by_user_id = auth.uid() and public.app_has_project_role(project_id, array['head','coord'])
   or public.app_is_ceo()
 );
-create policy bonus_cancellations_delete on public.bonus_cancellations for delete to authenticated using (
-  public.app_is_ceo() or public.app_has_project_role(project_id, array['head','coord'])
-);
+create policy bonus_cancellations_delete on public.bonus_cancellations for delete to authenticated using (public.app_is_ceo());
 
 create policy payment_config_select on public.payment_config for select to authenticated using (public.app_user_active());
 create policy payment_config_insert on public.payment_config for insert to authenticated with check (public.app_is_ceo());

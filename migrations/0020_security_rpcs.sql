@@ -396,6 +396,122 @@ end $$;
 revoke all on function public.app_membership_change(text,uuid,uuid,integer,text,text) from public, anon, authenticated;
 grant execute on function public.app_membership_change(text,uuid,uuid,integer,text,text) to service_role;
 
+-- Authority/workflow transitions use narrow user-JWT RPCs. Every row is locked,
+-- authorization and target membership are derived in the transaction, and the
+-- 0019 row trigger appends the actor-correct audit event atomically.
+create or replace function public.app_reassign_contact(
+  p_contact_id uuid, p_assigned_user_id uuid
+) returns boolean
+language plpgsql security definer
+set search_path = pg_catalog, public, app_private
+as $$
+declare
+  v_project_id integer;
+  v_legacy_code integer;
+begin
+  if auth.uid() is null or p_contact_id is null or p_assigned_user_id is null then return false; end if;
+  select c.project_id into v_project_id
+  from public.contacts c where c.id = p_contact_id for update;
+  if not found or not (
+    public.app_is_ceo() or public.app_has_project_role(v_project_id, array['head','coord'])
+  ) then return false; end if;
+  select p.activist_code into v_legacy_code
+  from public.profiles p
+  join public.project_memberships pm on pm.user_id = p.id
+  where p.id = p_assigned_user_id and p.disabled_at is null
+    and pm.project_id = v_project_id and pm.status = 'active';
+  if not found or v_legacy_code is null then return false; end if;
+  update public.contacts
+  set assigned_user_id = p_assigned_user_id, activist_id = v_legacy_code
+  where id = p_contact_id;
+  return found;
+end $$;
+revoke all on function public.app_reassign_contact(uuid,uuid) from public, anon;
+grant execute on function public.app_reassign_contact(uuid,uuid) to authenticated;
+
+create or replace function public.app_soft_delete_contact(p_contact_id uuid)
+returns boolean
+language plpgsql security definer
+set search_path = pg_catalog, public, app_private
+as $$
+declare
+  v_project_id integer;
+  v_assigned_user_id uuid;
+begin
+  if auth.uid() is null or p_contact_id is null then return false; end if;
+  select c.project_id, c.assigned_user_id into v_project_id, v_assigned_user_id
+  from public.contacts c where c.id = p_contact_id and c.is_active = true for update;
+  if not found or not (
+    public.app_is_ceo()
+    or public.app_has_project_role(v_project_id, array['head','coord'])
+    or (v_assigned_user_id = auth.uid() and public.app_has_project_role(v_project_id, array['activist']))
+  ) then return false; end if;
+  update public.contacts set is_active = false where id = p_contact_id and is_active = true;
+  return found;
+end $$;
+revoke all on function public.app_soft_delete_contact(uuid) from public, anon;
+grant execute on function public.app_soft_delete_contact(uuid) to authenticated;
+
+create or replace function public.app_delete_interaction(p_interaction_id uuid)
+returns boolean
+language plpgsql security definer
+set search_path = pg_catalog, public, app_private
+as $$
+declare v_project_id integer;
+begin
+  if auth.uid() is null or p_interaction_id is null then return false; end if;
+  select i.project_id into v_project_id
+  from public.interactions i where i.id = p_interaction_id for update;
+  if not found or not (
+    public.app_is_ceo() or public.app_has_project_role(v_project_id, array['head'])
+  ) then return false; end if;
+  delete from public.interactions where id = p_interaction_id;
+  return found;
+end $$;
+revoke all on function public.app_delete_interaction(uuid) from public, anon;
+grant execute on function public.app_delete_interaction(uuid) to authenticated;
+
+create or replace function public.app_delete_expense(p_expense_id uuid)
+returns boolean
+language plpgsql security definer
+set search_path = pg_catalog, public, app_private
+as $$
+declare v_project_id integer;
+begin
+  if auth.uid() is null or p_expense_id is null then return false; end if;
+  select e.project_id into v_project_id
+  from public.expenses e where e.id = p_expense_id for update;
+  if not found or not (
+    public.app_is_ceo() or public.app_has_project_role(v_project_id, array['head'])
+  ) then return false; end if;
+  delete from public.expenses where id = p_expense_id;
+  return found;
+end $$;
+revoke all on function public.app_delete_expense(uuid) from public, anon;
+grant execute on function public.app_delete_expense(uuid) to authenticated;
+
+create or replace function public.app_review_feedback(p_feedback_id uuid, p_status text)
+returns boolean
+language plpgsql security definer
+set search_path = pg_catalog, public, app_private
+as $$
+declare v_project_id integer;
+begin
+  if auth.uid() is null or p_feedback_id is null or p_status not in ('open','reviewed') then return false; end if;
+  select f.project_id into v_project_id
+  from public.feedback_reports f where f.id = p_feedback_id for update;
+  if not found or not (
+    public.app_is_ceo() or public.app_has_project_role(v_project_id, array['head','coord'])
+  ) then return false; end if;
+  update public.feedback_reports
+  set status = p_status,
+      reviewed_at = case when p_status = 'reviewed' then now() else null end
+  where id = p_feedback_id;
+  return found;
+end $$;
+revoke all on function public.app_review_feedback(uuid,text) from public, anon;
+grant execute on function public.app_review_feedback(uuid,text) to authenticated;
+
 -- Boolean-only duplicate check. It deliberately exposes no row identifier or PII and
 -- accepts calls only from an active member of the requested project (or an AAL2 CEO).
 create or replace function public.check_contact_duplicate(

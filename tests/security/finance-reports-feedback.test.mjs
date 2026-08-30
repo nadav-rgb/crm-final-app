@@ -86,7 +86,7 @@ test('expense create derives actor and project and rejects authority fields', as
 
 test('expense owner access is concealed from another activist and another project', () => {
   const row = { id: 1, actor_user_id: activistA.userId, project_id: PROJECT_A, amount: 10 };
-  assert.doesNotThrow(() => assertExpenseAccess(makeContext(activistA), row, 'delete'));
+  assert.throws(() => assertExpenseAccess(makeContext(activistA), row, 'delete'), hasCode('CAPABILITY_DENIED'));
   assert.doesNotThrow(() => assertExpenseAccess(makeContext(coordA), row, 'read'));
   assert.throws(() => assertExpenseAccess(makeContext(activistB), row, 'delete'), hasCode('NOT_FOUND'));
   assert.throws(() => assertExpenseAccess(makeContext(financeA), { ...row, project_id: PROJECT_B }, 'read'), hasCode('NOT_FOUND'));
