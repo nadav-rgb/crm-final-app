@@ -270,14 +270,17 @@ export function preparePinnedLocalStackConfig({ config, projectId, apiPort }) {
   const parse = (contentLines) => {
     const sections = new Map([['', 1]]);
     const entries = new Map();
+    const lineSections = [];
     let section = '';
     for (let index = 0; index < contentLines.length; index += 1) {
       const header = /^\s*\[([^\]]+)\]\s*(?:#.*)?$/.exec(contentLines[index]);
       if (header) {
         section = header[1];
         sections.set(section, (sections.get(section) ?? 0) + 1);
+        lineSections[index] = section;
         continue;
       }
+      lineSections[index] = section;
       const entry = /^\s*([a-zA-Z0-9_]+)\s*=\s*([^#]*?)(?:\s+#.*)?$/.exec(contentLines[index]);
       if (!entry) continue;
       const name = `${section}.${entry[1]}`;
@@ -285,14 +288,46 @@ export function preparePinnedLocalStackConfig({ config, projectId, apiPort }) {
       values.push({ index, value: entry[2].trim() });
       entries.set(name, values);
     }
-    return { sections, entries };
+    return { sections, entries, lineSections };
   };
-  const { sections, entries } = parse(lines);
+  const initialInventory = parse(lines);
+  const { sections } = initialInventory;
 
   const requiredSections = ['api', 'db', 'db.pooler', 'studio', 'local_smtp', 'analytics', 'edge_runtime'];
   if (requiredSections.some((name) => sections.get(name) !== 1) || sections.has('inbucket')) {
     configContractError();
   }
+
+  const smtpTemplateBlock = [
+    '# Uncomment to expose additional ports for testing user applications that send emails.',
+    '# smtp_port = 54325',
+    '# pop3_port = 54326',
+  ];
+  const blockStarts = lines.flatMap((line, index) => (
+    smtpTemplateBlock.every((expected, offset) => lines[index + offset] === expected) ? [index] : []
+  ));
+  const activeOptionalPorts = [...initialInventory.entries.keys()]
+    .filter((name) => name.endsWith('.smtp_port') || name.endsWith('.pop3_port'));
+  const optionalCommentIndexes = lines.flatMap((line, index) => (
+    /^\s*#\s*(?:smtp|pop3)_ports?\s*=/.test(line) ? [index] : []
+  ));
+  const explanationIndexes = lines.flatMap((line, index) => (
+    line === smtpTemplateBlock[0] ? [index] : []
+  ));
+  const blockStart = blockStarts[0];
+  if (blockStarts.length !== 1
+    || activeOptionalPorts.length
+    || explanationIndexes.length !== 1
+    || explanationIndexes[0] !== blockStart
+    || smtpTemplateBlock.some((_line, offset) => initialInventory.lineSections[blockStart + offset] !== 'local_smtp')
+    || optionalCommentIndexes.length !== 2
+    || optionalCommentIndexes[0] !== blockStart + 1
+    || optionalCommentIndexes[1] !== blockStart + 2) {
+    configContractError();
+  }
+  lines[blockStart + 1] = `smtp_port = ${contract.stackPorts.smtp}`;
+  lines[blockStart + 2] = `pop3_port = ${contract.stackPorts.pop3}`;
+  const { entries } = parse(lines);
 
   const replacements = new Map([
     ['.project_id', `"${projectId}"`],

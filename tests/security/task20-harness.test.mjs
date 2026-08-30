@@ -22,6 +22,9 @@ import {
 const schemaPath = new URL('./fixtures/legacy-security-schema.sql', import.meta.url);
 const localProjectId = 'mekarvim-security-g5-harness';
 const localApiPort = 54321;
+const pinnedSmtpTemplateBlock = `# Uncomment to expose additional ports for testing user applications that send emails.
+# smtp_port = 54325
+# pop3_port = 54326`;
 
 function pinnedSupabaseConfig() {
   return `project_id = "legacy-project"
@@ -45,8 +48,7 @@ port = 54323
 [local_smtp]
 enabled = true
 port = 54324
-smtp_port = 54325
-pop3_port = 54326
+${pinnedSmtpTemplateBlock}
 
 [analytics]
 enabled = true
@@ -901,11 +903,36 @@ test('local stack preparation pins CLI 2.115.0 and validates every enabled and d
   assert.match(prepared.config, /project_id = "mekarvim-security-g5-harness"/);
   assert.match(prepared.config, /\[edge_runtime\][\s\S]*inspector_port = 54342/);
   assert.match(prepared.config, /\[db\.pooler\][\s\S]*enabled = false[\s\S]*port = 54329/);
+  assert.match(prepared.config, /\[local_smtp\][\s\S]*\nsmtp_port = 54325\npop3_port = 54326/);
+  assert.doesNotMatch(prepared.config, /^# (?:smtp|pop3)_port\s*=/m);
 
+  const customBase = module.preparePinnedLocalStackConfig({
+    config: pinnedSupabaseConfig(),
+    projectId: localProjectId,
+    apiPort: 55000,
+  });
+  assert.match(customBase.config, /\[local_smtp\][\s\S]*\nsmtp_port = 55004\npop3_port = 55005/);
+
+  const movedBlock = pinnedSupabaseConfig()
+    .replace(`${pinnedSmtpTemplateBlock}\n`, '')
+    .replace('[analytics]', `[analytics]\n${pinnedSmtpTemplateBlock}`);
   for (const invalid of [
     pinnedSupabaseConfig().replace('[local_smtp]', '[inbucket]'),
     `${pinnedSupabaseConfig()}\n[inbucket]\nenabled = true\nport = 54324\n`,
-    pinnedSupabaseConfig().replace('smtp_port = 54325\n', ''),
+    pinnedSupabaseConfig().replace(`${pinnedSmtpTemplateBlock}\n`, ''),
+    pinnedSupabaseConfig().replace('# smtp_port = 54325\n', ''),
+    pinnedSupabaseConfig().replace('# pop3_port = 54326\n', ''),
+    pinnedSupabaseConfig().replace('# smtp_port = 54325', '# smtp_ports = 54325'),
+    pinnedSupabaseConfig().replace('# smtp_port = 54325', '# smtp_port = 54399'),
+    pinnedSupabaseConfig().replace('# smtp_port = 54325', 'smtp_port = 54325'),
+    pinnedSupabaseConfig()
+      .replace('# smtp_port = 54325', 'smtp_port = 54325')
+      .replace('# pop3_port = 54326', 'pop3_port = 54326'),
+    pinnedSupabaseConfig().replace('# smtp_port = 54325', 'smtp_port = 54325\n# smtp_port = 54325'),
+    pinnedSupabaseConfig().replace(pinnedSmtpTemplateBlock, `${pinnedSmtpTemplateBlock}\n${pinnedSmtpTemplateBlock}`),
+    `${pinnedSupabaseConfig()}\n# Uncomment to expose additional ports for testing user applications that send emails.\n`,
+    pinnedSupabaseConfig().replace('# Uncomment to expose additional ports for testing user applications that send emails.\n', ''),
+    movedBlock,
     pinnedSupabaseConfig().replace('[analytics]\nenabled = true', '[analytics]\nenabled = true\nenabled = true'),
     pinnedSupabaseConfig().replace('[db.pooler]\nenabled = false', '[db.pooler]\nenabled = true'),
   ]) {
