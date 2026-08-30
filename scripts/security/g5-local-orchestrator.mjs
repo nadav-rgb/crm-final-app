@@ -18,12 +18,16 @@ import {
 } from './provision-test-fixtures.mjs';
 import {
   assertSafeTestTarget,
+  derivePinnedLocalStackContract,
   inspectLocalContainerCandidates,
   inspectLocalStackIdentity,
+  PINNED_SUPABASE_CLI_VERSION,
   RLS_PROTECTED_TABLES,
   SENSITIVE_TABLES,
   verifyAnonymousIsolation,
 } from './verify-rls-live.mjs';
+
+export { PINNED_SUPABASE_CLI_VERSION };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CLEANUP_ORDER = Object.freeze({
@@ -248,11 +252,82 @@ async function probeTcpPort(host, port) {
 }
 
 export function deriveLocalStackPorts(apiPort) {
-  const api = Number(apiPort);
-  if (!Number.isSafeInteger(api) || api < 1024 || api > 65532) {
-    throw new Error('local stack ports refused invalid API base port');
+  return derivePinnedLocalStackContract(apiPort).stackPorts;
+}
+
+function configContractError() {
+  throw new Error('local Supabase config contract is unsupported');
+}
+
+export function preparePinnedLocalStackConfig({ config, projectId, apiPort }) {
+  if (typeof config !== 'string'
+    || !/^mekarvim-security-g5-[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/.test(projectId ?? '')) {
+    configContractError();
   }
-  return Object.freeze({ api, db: api + 1, studio: api + 2, inbucket: api + 3 });
+  let contract;
+  try { contract = derivePinnedLocalStackContract(apiPort); } catch { configContractError(); }
+  const lines = config.split(/\r?\n/);
+  const parse = (contentLines) => {
+    const sections = new Map([['', 1]]);
+    const entries = new Map();
+    let section = '';
+    for (let index = 0; index < contentLines.length; index += 1) {
+      const header = /^\s*\[([^\]]+)\]\s*(?:#.*)?$/.exec(contentLines[index]);
+      if (header) {
+        section = header[1];
+        sections.set(section, (sections.get(section) ?? 0) + 1);
+        continue;
+      }
+      const entry = /^\s*([a-zA-Z0-9_]+)\s*=\s*([^#]*?)(?:\s+#.*)?$/.exec(contentLines[index]);
+      if (!entry) continue;
+      const name = `${section}.${entry[1]}`;
+      const values = entries.get(name) ?? [];
+      values.push({ index, value: entry[2].trim() });
+      entries.set(name, values);
+    }
+    return { sections, entries };
+  };
+  const { sections, entries } = parse(lines);
+
+  const requiredSections = ['api', 'db', 'db.pooler', 'studio', 'local_smtp', 'analytics', 'edge_runtime'];
+  if (requiredSections.some((name) => sections.get(name) !== 1) || sections.has('inbucket')) {
+    configContractError();
+  }
+
+  const replacements = new Map([
+    ['.project_id', `"${projectId}"`],
+    ['api.enabled', 'true'],
+    ['api.port', String(contract.stackPorts.api)],
+    ['db.port', String(contract.stackPorts.db)],
+    ['db.shadow_port', String(contract.stackPorts.shadowDb)],
+    ['db.pooler.enabled', 'false'],
+    ['db.pooler.port', String(contract.stackPorts.pooler)],
+    ['studio.enabled', 'true'],
+    ['studio.port', String(contract.stackPorts.studio)],
+    ['local_smtp.enabled', 'true'],
+    ['local_smtp.port', String(contract.stackPorts.mailpit)],
+    ['local_smtp.smtp_port', String(contract.stackPorts.smtp)],
+    ['local_smtp.pop3_port', String(contract.stackPorts.pop3)],
+    ['analytics.enabled', 'true'],
+    ['analytics.port', String(contract.stackPorts.analytics)],
+    ['edge_runtime.enabled', 'true'],
+    ['edge_runtime.inspector_port', String(contract.stackPorts.edgeInspector)],
+  ]);
+  for (const [name, nextValue] of replacements) {
+    const matches = entries.get(name);
+    if (!Array.isArray(matches) || matches.length !== 1) configContractError();
+    if (name.endsWith('.enabled') && matches[0].value !== nextValue) configContractError();
+    const key = name.slice(name.lastIndexOf('.') + 1);
+    lines[matches[0].index] = `${key} = ${nextValue}`;
+  }
+  const preparedConfig = lines.join('\n');
+  const finalInventory = parse(lines);
+  for (const [name, expectedValue] of replacements) {
+    const finalEntries = finalInventory.entries.get(name);
+    if (!Array.isArray(finalEntries) || finalEntries.length !== 1
+      || finalEntries[0].value !== expectedValue) configContractError();
+  }
+  return Object.freeze({ config: preparedConfig, contract });
 }
 
 function shutdownDockerLines(result, boundary) {
@@ -265,12 +340,22 @@ function shutdownDockerLines(result, boundary) {
 export async function verifyLocalStackStopped({
   projectId,
   apiPort,
+  listenerPorts,
   runDocker,
   probePort = probeTcpPort,
 }) {
-  let stackPorts;
-  try { stackPorts = deriveLocalStackPorts(apiPort); } catch {
+  let contract;
+  try { contract = derivePinnedLocalStackContract(apiPort); } catch {
     throw new Error('local stack shutdown verification refused invalid port boundary');
+  }
+  const requestedListeners = listenerPorts ?? contract.listenerPorts;
+  const expectedListeners = Array.isArray(requestedListeners)
+    ? [...new Set(requestedListeners.map(Number))].sort((left, right) => left - right)
+    : [];
+  if (!expectedListeners.length
+    || expectedListeners.some((port) => !Number.isSafeInteger(port) || port < 1 || port > 65535)
+    || contract.listenerPorts.some((port) => !expectedListeners.includes(port))) {
+    throw new Error('local stack shutdown verification refused incomplete listener contract');
   }
   if (!/^mekarvim-security-g5-[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/.test(projectId ?? '')
     || typeof runDocker !== 'function'
@@ -294,8 +379,7 @@ export async function verifyLocalStackStopped({
     throw new Error('local stack shutdown verification found exact-project volume');
   }
 
-  const ports = Object.values(stackPorts);
-  const listeners = (await Promise.all(ports.flatMap((port) => [
+  const listeners = (await Promise.all(expectedListeners.flatMap((port) => [
     probePort('127.0.0.1', port),
     probePort('::1', port),
   ]))).filter(Boolean).length;
@@ -366,15 +450,20 @@ export function createLocalStackController({
     || !path.isAbsolute(supabaseExecutable ?? '')) {
     throw new Error('local stack controller refused unexpected project boundary');
   }
-  let stackPorts;
-  try { stackPorts = deriveLocalStackPorts(apiPort); } catch {
+  let stackContract;
+  try { stackContract = derivePinnedLocalStackContract(apiPort); } catch {
     throw new Error('local stack controller refused invalid API port');
   }
-  const expectedPort = stackPorts.api;
+  const expectedPort = stackContract.stackPorts.api;
 
   function command(args, action) {
     const result = runCommand(supabaseExecutable, args, {
       encoding: 'utf8', windowsHide: true, shell: false, maxBuffer: 16 * 1024 * 1024,
+      env: {
+        ...process.env,
+        SUPABASE_NO_UPDATE_NOTIFIER: '1',
+        SUPABASE_TELEMETRY_DISABLED: '1',
+      },
     });
     if (!result || result.status !== 0 || typeof result.stdout !== 'string') {
       throw new Error(`local Supabase ${action} failed`);
@@ -390,41 +479,72 @@ export function createLocalStackController({
     } catch {
       command(['init', '--workdir', resolvedProject], 'initialization');
     }
-    let config = await readFileFromDisk(configPath, 'utf8');
-    if (!/^project_id\s*=\s*"[^"]+"/m.test(config)
-      || !/\[api\][\s\S]*?\nport\s*=\s*\d+/m.test(config)) {
-      throw new Error('local Supabase config contract is unsupported');
-    }
-    config = config
-      .replace(/^project_id\s*=\s*"[^"]+"/m, `project_id = "${projectId}"`)
-      .replace(/(\[api\][\s\S]*?\nport\s*=\s*)\d+/m, `$1${stackPorts.api}`)
-      .replace(/(\[db\][\s\S]*?\nport\s*=\s*)\d+/m, `$1${stackPorts.db}`)
-      .replace(/(\[studio\][\s\S]*?\nport\s*=\s*)\d+/m, `$1${stackPorts.studio}`)
-      .replace(/(\[inbucket\][\s\S]*?\nport\s*=\s*)\d+/m, `$1${stackPorts.inbucket}`);
-    await writeFile(configPath, config, { encoding: 'utf8', flag: 'w' });
+    const prepared = preparePinnedLocalStackConfig({
+      config: await readFileFromDisk(configPath, 'utf8'), projectId, apiPort: expectedPort,
+    });
+    await writeFile(configPath, prepared.config, { encoding: 'utf8', flag: 'w' });
+    return prepared.contract;
   }
 
   let active = false;
   let verifiedTarget = null;
-  async function stopOwnedStack(action) {
-    command(['stop', '--workdir', resolvedProject, '--no-backup'], action);
-    const proof = await verifyLocalStackStopped({
-      projectId,
-      apiPort: expectedPort,
-      runDocker,
-      probePort,
-    });
-    active = false;
-    verifiedTarget = null;
+  async function stopOwnedStack(action, { measureListeners = false } = {}) {
+    const failures = [];
+    let measuredListeners = [];
+    if (measureListeners) {
+      try {
+        const partialCandidates = inspectLocalContainerCandidates({
+          projectId, runDocker, includeStopped: true,
+        });
+        measuredListeners = partialCandidates.flatMap((candidate) => candidate.hostBindings)
+          .map((binding) => Number(binding.hostPort))
+          .filter((port) => Number.isSafeInteger(port) && port >= 1 && port <= 65535);
+      } catch (cause) {
+        failures.push(cause);
+      }
+    }
+    try { command(['stop', '--workdir', resolvedProject, '--no-backup'], action); } catch (cause) {
+      failures.push(cause);
+    }
+    let proof;
+    try {
+      proof = await verifyLocalStackStopped({
+        projectId,
+        apiPort: expectedPort,
+        listenerPorts: [...stackContract.listenerPorts, ...measuredListeners],
+        runDocker,
+        probePort,
+      });
+      active = false;
+      verifiedTarget = null;
+    } catch (cause) {
+      failures.push(cause);
+    }
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1) {
+      throw new AggregateError(failures, 'local stack stop and final-state verification failed');
+    }
     return proof;
   }
   return Object.freeze({
     async start() {
       if (active) throw new Error('local stack controller refused duplicate start');
-      await (prepareProject ?? defaultPrepareProject)({ projectDir: resolvedProject, projectId, apiPort: expectedPort });
-      command(['start', '--workdir', resolvedProject], 'start');
+      const selectedVersion = command(['--version'], 'version');
+      if (selectedVersion !== PINNED_SUPABASE_CLI_VERSION) {
+        throw new Error('local Supabase CLI version is not the pinned contract');
+      }
+      const preparedContract = await (prepareProject ?? defaultPrepareProject)({
+        projectDir: resolvedProject, projectId, apiPort: expectedPort,
+      });
+      if (preparedContract?.cliVersion !== stackContract.cliVersion
+        || JSON.stringify(preparedContract?.stackPorts) !== JSON.stringify(stackContract.stackPorts)
+        || JSON.stringify(preparedContract?.services) !== JSON.stringify(stackContract.services)
+        || JSON.stringify(preparedContract?.listenerPorts) !== JSON.stringify(stackContract.listenerPorts)) {
+        throw new Error('local Supabase prepared config did not prove the pinned listener contract');
+      }
       active = true;
       try {
+        command(['start', '--workdir', resolvedProject], 'start');
         const status = JSON.parse(command([
           'status', '--workdir', resolvedProject, '--output', 'json',
         ], 'status'));
@@ -461,7 +581,14 @@ export function createLocalStackController({
           credentials: Object.freeze({ publishableKey, serviceRoleKey, dbUrl }),
         });
       } catch (cause) {
-        await stopOwnedStack('failed-start cleanup');
+        try {
+          await stopOwnedStack('failed-start cleanup', { measureListeners: true });
+        } catch (cleanupCause) {
+          throw new AggregateError(
+            [cause, cleanupCause],
+            'local Supabase start failed and exact cleanup verification also failed',
+          );
+        }
         throw cause;
       }
     },
@@ -681,7 +808,11 @@ export function loadLocalG5Configuration({
   const apiPort = Number(env.SECURITY_TEST_SUPABASE_API_PORT ?? 54321);
   const bffPort = Number(env.SECURITY_TEST_BFF_PORT ?? 43877);
   let stackPorts;
-  try { stackPorts = deriveLocalStackPorts(apiPort); } catch {
+  let stackContract;
+  try {
+    stackContract = derivePinnedLocalStackContract(apiPort);
+    stackPorts = stackContract.stackPorts;
+  } catch {
     throw new Error('G5 local entry refused invalid stack port configuration');
   }
   if (env.SECURITY_TEST_EXECUTE_LOCAL_G5 !== 'true'
@@ -690,7 +821,7 @@ export function loadLocalG5Configuration({
     || !path.isAbsolute(supabaseExecutable ?? '')
     || !path.isAbsolute(dockerExecutable ?? '')
     || !Number.isSafeInteger(bffPort) || bffPort < 1024 || bffPort > 65535
-    || Object.values(stackPorts).includes(bffPort)) {
+    || stackContract.listenerPorts.includes(bffPort)) {
     throw new Error('G5 local entry refused incomplete executable configuration');
   }
   const suffix = runId.replaceAll('-', '').slice(0, 12);
@@ -704,6 +835,7 @@ export function loadLocalG5Configuration({
     projectId,
     apiPort,
     stackPorts,
+    listenerPorts: stackContract.listenerPorts,
     bffPort,
     allowedRoot,
     projectDir: path.join(allowedRoot, projectId),

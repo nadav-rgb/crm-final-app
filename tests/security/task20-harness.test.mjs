@@ -14,6 +14,7 @@ import {
   sanitizeEvidenceRows,
 } from '../../scripts/security/provision-test-fixtures.mjs';
 import {
+  derivePinnedLocalStackContract,
   RLS_PROTECTED_TABLES,
   SENSITIVE_TABLES,
 } from '../../scripts/security/verify-rls-live.mjs';
@@ -22,7 +23,67 @@ const schemaPath = new URL('./fixtures/legacy-security-schema.sql', import.meta.
 const localProjectId = 'mekarvim-security-g5-harness';
 const localApiPort = 54321;
 
+function pinnedSupabaseConfig() {
+  return `project_id = "legacy-project"
+
+[api]
+enabled = true
+port = 54321
+
+[db]
+port = 54322
+shadow_port = 54320
+
+[db.pooler]
+enabled = false
+port = 54329
+
+[studio]
+enabled = true
+port = 54323
+
+[local_smtp]
+enabled = true
+port = 54324
+smtp_port = 54325
+pop3_port = 54326
+
+[analytics]
+enabled = true
+port = 54327
+
+[edge_runtime]
+enabled = true
+inspector_port = 8083
+`;
+}
+
+function pinnedDockerContainers({ projectId = localProjectId, apiPort = localApiPort } = {}) {
+  const ports = derivePinnedLocalStackContract(apiPort).stackPorts;
+  const specs = [
+    ['db', { '5432/tcp': [{ HostIp: '127.0.0.1', HostPort: String(ports.db) }] }],
+    ['kong', { '8000/tcp': [{ HostIp: '127.0.0.1', HostPort: String(ports.api) }] }],
+    ['auth', {}],
+    ['rest', {}],
+    ['studio', { '3000/tcp': [{ HostIp: '127.0.0.1', HostPort: String(ports.studio) }] }],
+    ['analytics', { '4000/tcp': [{ HostIp: '127.0.0.1', HostPort: String(ports.analytics) }] }],
+    ['edge_runtime', { '8083/tcp': [{ HostIp: '127.0.0.1', HostPort: String(ports.edgeInspector) }] }],
+    ['mailpit', {
+      '8025/tcp': [{ HostIp: '127.0.0.1', HostPort: String(ports.mailpit) }],
+      '1025/tcp': [{ HostIp: '127.0.0.1', HostPort: String(ports.smtp) }],
+      '1110/tcp': [{ HostIp: '127.0.0.1', HostPort: String(ports.pop3) }],
+    }],
+  ];
+  return specs.map(([component, portBindings], index) => ({
+    Id: String(index + 1).repeat(12),
+    Name: `/supabase_${component}_${projectId}`,
+    Config: { Labels: { 'com.supabase.cli.project': projectId } },
+    NetworkSettings: { Ports: portBindings },
+  }));
+}
+
 function localSafety(targetUrl = `http://127.0.0.1:${localApiPort}`) {
+  const contract = derivePinnedLocalStackContract(localApiPort);
   return {
     targetUrl,
     productionUrl: 'https://production-project.invalid',
@@ -33,11 +94,35 @@ function localSafety(targetUrl = `http://127.0.0.1:${localApiPort}`) {
       verified: true,
       projectId: localProjectId,
       apiPort: localApiPort,
+      listenerPorts: contract.listenerPorts,
       containers: [
-        { name: `supabase_db_${localProjectId}`, projectId: localProjectId, role: 'database' },
-        { name: `supabase_kong_${localProjectId}`, projectId: localProjectId, role: 'api', hostApiPort: localApiPort },
-        { name: `supabase_auth_${localProjectId}`, projectId: localProjectId, role: 'auth' },
-        { name: `supabase_rest_${localProjectId}`, projectId: localProjectId, role: 'rest' },
+        {
+          name: `supabase_db_${localProjectId}`, projectId: localProjectId,
+          role: 'database', hostPorts: [contract.stackPorts.db],
+        },
+        {
+          name: `supabase_kong_${localProjectId}`, projectId: localProjectId,
+          role: 'api', hostPorts: [localApiPort], hostApiPort: localApiPort,
+        },
+        { name: `supabase_auth_${localProjectId}`, projectId: localProjectId, role: 'auth', hostPorts: [] },
+        { name: `supabase_rest_${localProjectId}`, projectId: localProjectId, role: 'rest', hostPorts: [] },
+        {
+          name: `supabase_analytics_${localProjectId}`, projectId: localProjectId,
+          role: 'analytics', hostPorts: [contract.stackPorts.analytics],
+        },
+        {
+          name: `supabase_edge_runtime_${localProjectId}`, projectId: localProjectId,
+          role: 'edge-runtime', hostPorts: [contract.stackPorts.edgeInspector],
+        },
+        {
+          name: `supabase_mailpit_${localProjectId}`, projectId: localProjectId,
+          role: 'mailpit',
+          hostPorts: [contract.stackPorts.mailpit, contract.stackPorts.smtp, contract.stackPorts.pop3],
+        },
+        {
+          name: `supabase_studio_${localProjectId}`, projectId: localProjectId,
+          role: 'studio', hostPorts: [contract.stackPorts.studio],
+        },
       ],
     },
   };
@@ -726,16 +811,8 @@ test('local stack controller captures keys in memory and binds start/status/stop
   const dockerCalls = [];
   const shutdownProbes = [];
   let stackRunning = false;
-  const inspections = [
-    ['db', 'database'], ['kong', 'api'], ['auth', 'auth'], ['rest', 'rest'],
-  ].map(([component, role], index) => ({
-    Id: String(index + 6).repeat(12),
-    Name: `/supabase_${component}_${localProjectId}`,
-    Config: { Labels: { 'com.supabase.cli.project': localProjectId } },
-    NetworkSettings: role === 'api' ? {
-      Ports: { '8000/tcp': [{ HostIp: '127.0.0.1', HostPort: String(localApiPort) }] },
-    } : { Ports: {} },
-  }));
+  const inspections = pinnedDockerContainers();
+  const preparedContract = derivePinnedLocalStackContract(localApiPort);
   const controller = module.createLocalStackController({
     projectId: localProjectId,
     apiPort: localApiPort,
@@ -743,9 +820,10 @@ test('local stack controller captures keys in memory and binds start/status/stop
     allowedRoot: 'C:/synthetic/repository/.superpowers/sdd/2026-08-27-security-hardening/g5-local',
     supabaseExecutable: 'C:/synthetic/bin/supabase.exe',
     productionUrl: 'https://production-project.invalid',
-    async prepareProject() { calls.push('prepare'); },
+    async prepareProject() { calls.push('prepare'); return preparedContract; },
     runCommand(_executable, args) {
       calls.push(args.join(' '));
+      if (args[0] === '--version') return { status: 0, stdout: '2.115.0\n', stderr: '' };
       if (args[0] === 'start') stackRunning = true;
       if (args[0] === 'stop') stackRunning = false;
       if (args[0] === 'status') return {
@@ -783,6 +861,7 @@ test('local stack controller captures keys in memory and binds start/status/stop
   await controller.stop();
   const resolvedProjectDir = projectDir.replaceAll('/', '\\');
   assert.deepEqual(calls, [
+    '--version',
     'prepare',
     `start --workdir ${resolvedProjectDir}`,
     `status --workdir ${resolvedProjectDir} --output json`,
@@ -792,11 +871,180 @@ test('local stack controller captures keys in memory and binds start/status/stop
   assert.equal(dockerCalls.some((command) => command.startsWith('ps --all --filter name=')), true);
   assert.equal(dockerCalls.filter((command) => command.startsWith('volume ls')).length, 2);
   assert.deepEqual(new Set(shutdownProbes), new Set([
-    `127.0.0.1:${localApiPort}`, `::1:${localApiPort}`,
-    `127.0.0.1:${localApiPort + 1}`, `::1:${localApiPort + 1}`,
-    `127.0.0.1:${localApiPort + 2}`, `::1:${localApiPort + 2}`,
-    `127.0.0.1:${localApiPort + 3}`, `::1:${localApiPort + 3}`,
+    ...preparedContract.listenerPorts.flatMap((port) => [
+      `127.0.0.1:${port}`, `::1:${port}`,
+    ]),
   ]));
+});
+
+test('local stack preparation pins CLI 2.115.0 and validates every enabled and disabled listener section', async () => {
+  const module = await import('../../scripts/security/g5-local-orchestrator.mjs');
+  assert.equal(module.PINNED_SUPABASE_CLI_VERSION, '2.115.0');
+  assert.equal(typeof module.preparePinnedLocalStackConfig, 'function');
+
+  const prepared = module.preparePinnedLocalStackConfig({
+    config: pinnedSupabaseConfig(),
+    projectId: localProjectId,
+    apiPort: localApiPort,
+  });
+  assert.deepEqual(prepared.contract.listenerPorts, [
+    54320, 54321, 54322, 54323, 54324, 54325, 54326, 54327, 54342,
+  ]);
+  assert.deepEqual(prepared.contract.services, {
+    api: true,
+    studio: true,
+    localSmtp: true,
+    analytics: true,
+    pooler: false,
+    edgeRuntime: true,
+  });
+  assert.match(prepared.config, /project_id = "mekarvim-security-g5-harness"/);
+  assert.match(prepared.config, /\[edge_runtime\][\s\S]*inspector_port = 54342/);
+  assert.match(prepared.config, /\[db\.pooler\][\s\S]*enabled = false[\s\S]*port = 54329/);
+
+  for (const invalid of [
+    pinnedSupabaseConfig().replace('[local_smtp]', '[inbucket]'),
+    `${pinnedSupabaseConfig()}\n[inbucket]\nenabled = true\nport = 54324\n`,
+    pinnedSupabaseConfig().replace('smtp_port = 54325\n', ''),
+    pinnedSupabaseConfig().replace('[analytics]\nenabled = true', '[analytics]\nenabled = true\nenabled = true'),
+    pinnedSupabaseConfig().replace('[db.pooler]\nenabled = false', '[db.pooler]\nenabled = true'),
+  ]) {
+    assert.throws(() => module.preparePinnedLocalStackConfig({
+      config: invalid,
+      projectId: localProjectId,
+      apiPort: localApiPort,
+    }), /config|contract|section|listener|disabled/i);
+  }
+});
+
+test('partial non-zero stack start owns cleanup and independently proves exact final state', async () => {
+  const module = await import('../../scripts/security/g5-local-orchestrator.mjs');
+  const projectDir = `C:/synthetic/repository/.superpowers/sdd/2026-08-27-security-hardening/g5-local/${localProjectId}`;
+  const calls = [];
+  const dockerCalls = [];
+  const probes = [];
+  let partiallyRunning = false;
+  const partialContainer = {
+    Id: 'a'.repeat(12),
+    Name: `/supabase_kong_${localProjectId}`,
+    Config: { Labels: { 'com.supabase.cli.project': localProjectId } },
+    NetworkSettings: {
+      Ports: {
+        '8000/tcp': [
+          { HostIp: '127.0.0.1', HostPort: String(localApiPort) },
+          { HostIp: '::1', HostPort: '60000' },
+        ],
+      },
+    },
+  };
+  const contract = module.preparePinnedLocalStackConfig({
+    config: pinnedSupabaseConfig(), projectId: localProjectId, apiPort: localApiPort,
+  }).contract;
+  const controller = module.createLocalStackController({
+    projectId: localProjectId,
+    apiPort: localApiPort,
+    projectDir,
+    allowedRoot: 'C:/synthetic/repository/.superpowers/sdd/2026-08-27-security-hardening/g5-local',
+    supabaseExecutable: 'C:/synthetic/bin/supabase.exe',
+    productionUrl: 'https://production-project.invalid',
+    async prepareProject() { calls.push('prepare'); return contract; },
+    runCommand(_executable, args) {
+      calls.push(args.join(' '));
+      if (args[0] === '--version') return { status: 0, stdout: '2.115.0\n', stderr: '' };
+      if (args[0] === 'start') {
+        partiallyRunning = true;
+        return { status: 1, stdout: '', stderr: 'synthetic private failure' };
+      }
+      if (args[0] === 'stop') partiallyRunning = false;
+      return { status: 0, stdout: '', stderr: '' };
+    },
+    runDocker(args) {
+      dockerCalls.push(args.join(' '));
+      if (args[0] === 'ps') return { status: 0, stdout: partiallyRunning ? partialContainer.Id : '', stderr: '' };
+      if (args[0] === 'inspect') return { status: 0, stdout: JSON.stringify([partialContainer]), stderr: '' };
+      if (args[0] === 'volume') return { status: 0, stdout: '', stderr: '' };
+      return { status: 0, stdout: '[]', stderr: '' };
+    },
+    async probePort(host, port) { probes.push(`${host}:${port}`); return false; },
+  });
+
+  await assert.rejects(() => controller.start(), /start/i);
+  const resolvedProjectDir = projectDir.replaceAll('/', '\\');
+  assert.deepEqual(calls, [
+    '--version',
+    'prepare',
+    `start --workdir ${resolvedProjectDir}`,
+    `stop --workdir ${resolvedProjectDir} --no-backup`,
+  ]);
+  assert.equal(partiallyRunning, false);
+  assert.ok(dockerCalls.some((call) => call.startsWith('ps --all --filter label=')));
+  assert.ok(dockerCalls.some((call) => call.startsWith('ps --all --filter name=')));
+  assert.equal(dockerCalls.filter((call) => call.startsWith('volume ls')).length, 2);
+  assert.deepEqual(new Set(probes.map((entry) => Number(entry.split(':').at(-1)))),
+    new Set([...contract.listenerPorts, 60000]));
+});
+
+test('partial start preserves the start error and cleanup failure while still running final-state proof', async () => {
+  const module = await import('../../scripts/security/g5-local-orchestrator.mjs');
+  const projectDir = `C:/synthetic/repository/.superpowers/sdd/2026-08-27-security-hardening/g5-local/${localProjectId}`;
+  const contract = module.preparePinnedLocalStackConfig({
+    config: pinnedSupabaseConfig(), projectId: localProjectId, apiPort: localApiPort,
+  }).contract;
+  let probes = 0;
+  const controller = module.createLocalStackController({
+    projectId: localProjectId,
+    apiPort: localApiPort,
+    projectDir,
+    allowedRoot: 'C:/synthetic/repository/.superpowers/sdd/2026-08-27-security-hardening/g5-local',
+    supabaseExecutable: 'C:/synthetic/bin/supabase.exe',
+    productionUrl: 'https://production-project.invalid',
+    async prepareProject() { return contract; },
+    runCommand(_executable, args) {
+      if (args[0] === '--version') return { status: 0, stdout: '2.115.0\n', stderr: '' };
+      return { status: 1, stdout: 'private output', stderr: 'private error' };
+    },
+    runDocker(args) {
+      if (args[0] === 'ps' || args[0] === 'volume') return { status: 0, stdout: '', stderr: '' };
+      return { status: 0, stdout: '[]', stderr: '' };
+    },
+    async probePort() { probes += 1; return false; },
+  });
+  await assert.rejects(() => controller.start(), (error) => {
+    assert.equal(error instanceof AggregateError, true);
+    assert.equal(error.errors.length, 2);
+    assert.match(error.errors[0].message, /start/i);
+    assert.match(error.errors[1].message, /cleanup/i);
+    assert.doesNotMatch(error.message, /private output|private error/i);
+    return true;
+  });
+  assert.equal(probes, contract.listenerPorts.length * 2);
+});
+
+test('local stack controller rejects an unpinned CLI before project mutation or start', async () => {
+  const module = await import('../../scripts/security/g5-local-orchestrator.mjs');
+  let prepared = false;
+  const commands = [];
+  const commandEnvironments = [];
+  const controller = module.createLocalStackController({
+    projectId: localProjectId,
+    apiPort: localApiPort,
+    projectDir: `C:/synthetic/repository/.superpowers/sdd/2026-08-27-security-hardening/g5-local/${localProjectId}`,
+    allowedRoot: 'C:/synthetic/repository/.superpowers/sdd/2026-08-27-security-hardening/g5-local',
+    supabaseExecutable: 'C:/synthetic/bin/supabase.exe',
+    productionUrl: 'https://production-project.invalid',
+    async prepareProject() { prepared = true; },
+    runCommand(_executable, args, options) {
+      commands.push(args.join(' '));
+      commandEnvironments.push(options.env);
+      return { status: 0, stdout: '2.114.0\n', stderr: '' };
+    },
+    runDocker() { throw new Error('Docker must not be inspected before version validation'); },
+  });
+  await assert.rejects(() => controller.start(), /version|pinned/i);
+  assert.equal(prepared, false);
+  assert.deepEqual(commands, ['--version']);
+  assert.equal(commandEnvironments[0].SUPABASE_NO_UPDATE_NOTIFIER, '1');
+  assert.equal(commandEnvironments[0].SUPABASE_TELEMETRY_DISABLED, '1');
 });
 
 test('stack shutdown proof rejects exact-project containers, volumes and configured listeners', async () => {
@@ -1134,7 +1382,7 @@ test('configured G5 entry refuses caller verdicts before constructing local infr
   }), /caller verdict|self-attested/i);
 });
 
-test('configured G5 ports keep every derived listener valid and separate from the BFF', async () => {
+test('configured G5 ports keep the complete pinned listener contract separate from the BFF', async () => {
   const module = await import('../../scripts/security/g5-local-orchestrator.mjs');
   const baseEnv = {
     SECURITY_TEST_EXECUTE_LOCAL_G5: 'true',
@@ -1144,21 +1392,30 @@ test('configured G5 ports keep every derived listener valid and separate from th
   const config = module.loadLocalG5Configuration({
     repoRoot: 'C:/synthetic/repository',
     runId: createSecurityRunId(),
-    env: { ...baseEnv, SECURITY_TEST_SUPABASE_API_PORT: '65532', SECURITY_TEST_BFF_PORT: '43877' },
+    env: { ...baseEnv, SECURITY_TEST_SUPABASE_API_PORT: '65514', SECURITY_TEST_BFF_PORT: '43877' },
   });
   assert.deepEqual(config.stackPorts, {
-    api: 65532,
-    db: 65533,
-    studio: 65534,
-    inbucket: 65535,
+    shadowDb: 65513,
+    api: 65514,
+    db: 65515,
+    studio: 65516,
+    mailpit: 65517,
+    smtp: 65518,
+    pop3: 65519,
+    analytics: 65520,
+    pooler: 65522,
+    edgeInspector: 65535,
   });
+  assert.deepEqual(config.listenerPorts, [
+    65513, 65514, 65515, 65516, 65517, 65518, 65519, 65520, 65535,
+  ]);
 
   assert.throws(() => module.loadLocalG5Configuration({
     repoRoot: 'C:/synthetic/repository',
     runId: createSecurityRunId(),
-    env: { ...baseEnv, SECURITY_TEST_SUPABASE_API_PORT: '65533' },
+    env: { ...baseEnv, SECURITY_TEST_SUPABASE_API_PORT: '65515' },
   }), /port|configuration/i);
-  for (const bffPort of [54321, 54322, 54323, 54324]) {
+  for (const bffPort of [54320, 54321, 54322, 54323, 54324, 54325, 54326, 54327, 54342]) {
     assert.throws(() => module.loadLocalG5Configuration({
       repoRoot: 'C:/synthetic/repository',
       runId: createSecurityRunId(),

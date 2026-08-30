@@ -49,6 +49,72 @@ const OPTIONAL_CONTAINERS = Object.freeze({
   inbucket: 'supabase_inbucket_',
 });
 
+export const PINNED_SUPABASE_CLI_VERSION = '2.115.0';
+
+export function derivePinnedLocalStackContract(apiPort) {
+  const api = Number(apiPort);
+  if (!Number.isSafeInteger(api) || api < 1025 || api > 65514) {
+    throw new Error('refused invalid pinned local stack API port');
+  }
+  const stackPorts = Object.freeze({
+    shadowDb: api - 1,
+    api,
+    db: api + 1,
+    studio: api + 2,
+    mailpit: api + 3,
+    smtp: api + 4,
+    pop3: api + 5,
+    analytics: api + 6,
+    pooler: api + 8,
+    edgeInspector: api + 21,
+  });
+  const services = Object.freeze({
+    api: true,
+    studio: true,
+    localSmtp: true,
+    analytics: true,
+    pooler: false,
+    edgeRuntime: true,
+  });
+  const listenerPorts = Object.freeze([
+    stackPorts.shadowDb,
+    stackPorts.api,
+    stackPorts.db,
+    stackPorts.studio,
+    stackPorts.mailpit,
+    stackPorts.smtp,
+    stackPorts.pop3,
+    stackPorts.analytics,
+    stackPorts.edgeInspector,
+  ]);
+  const persistentHostPorts = Object.freeze(listenerPorts.filter((port) => port !== stackPorts.shadowDb));
+  const containerHostPorts = Object.freeze({
+    database: Object.freeze([stackPorts.db]),
+    api: Object.freeze([stackPorts.api]),
+    auth: Object.freeze([]),
+    rest: Object.freeze([]),
+    studio: Object.freeze([stackPorts.studio]),
+    meta: Object.freeze([]),
+    storage: Object.freeze([]),
+    imgproxy: Object.freeze([]),
+    realtime: Object.freeze([]),
+    analytics: Object.freeze([stackPorts.analytics]),
+    vector: Object.freeze([]),
+    pooler: Object.freeze([]),
+    'edge-runtime': Object.freeze([stackPorts.edgeInspector]),
+    mailpit: Object.freeze([stackPorts.mailpit, stackPorts.smtp, stackPorts.pop3]),
+    inbucket: Object.freeze([stackPorts.mailpit, stackPorts.smtp, stackPorts.pop3]),
+  });
+  return Object.freeze({
+    cliVersion: PINNED_SUPABASE_CLI_VERSION,
+    stackPorts,
+    services,
+    listenerPorts,
+    persistentHostPorts,
+    containerHostPorts,
+  });
+}
+
 function exactApiPort(value) {
   const port = Number(value);
   if (!Number.isSafeInteger(port) || port < 1024 || port > 65535) {
@@ -58,10 +124,14 @@ function exactApiPort(value) {
 }
 
 function assertExactStackIdentity(stackIdentity, projectId, apiPort) {
+  const contract = derivePinnedLocalStackContract(apiPort);
   if (!stackIdentity?.verified
     || stackIdentity.projectId !== projectId
     || Number(stackIdentity.apiPort) !== apiPort
-    || !Array.isArray(stackIdentity.containers)) {
+    || !Array.isArray(stackIdentity.containers)
+    || !Array.isArray(stackIdentity.listenerPorts)
+    || stackIdentity.listenerPorts.length !== contract.listenerPorts.length
+    || stackIdentity.listenerPorts.some((port, index) => port !== contract.listenerPorts[index])) {
     throw new Error('refused unverified local stack identity');
   }
 
@@ -71,13 +141,40 @@ function assertExactStackIdentity(stackIdentity, projectId, apiPort) {
     if (!container
       || container.name !== expectedName
       || container.projectId !== projectId
+      || !Array.isArray(container.hostPorts)
       || (role === 'api' && Number(container.hostApiPort) !== apiPort)) {
       throw new Error(`refused local stack container identity for ${role}`);
     }
   }
 
-  if (stackIdentity.containers.some((entry) => entry?.projectId !== projectId)) {
-    throw new Error('refused mixed local stack project labels');
+  for (const entry of stackIdentity.containers) {
+    const role = containerRole(entry?.name, projectId);
+    const allowedPorts = contract.containerHostPorts[role];
+    const measuredPorts = Array.isArray(entry?.hostPorts)
+      ? [...new Set(entry.hostPorts.map(Number))].sort((left, right) => left - right)
+      : null;
+    if (!role || role !== entry?.role || entry?.projectId !== projectId
+      || (role === 'pooler' && contract.services.pooler === false)
+      || !Array.isArray(allowedPorts) || !Array.isArray(measuredPorts)
+      || measuredPorts.some((port) => !Number.isSafeInteger(port))
+      || measuredPorts.length !== allowedPorts.length
+      || measuredPorts.some((port, index) => port !== allowedPorts[index])) {
+      throw new Error('refused mixed or inexact local stack container identity');
+    }
+  }
+  for (const role of [...Object.keys(REQUIRED_CONTAINERS), 'studio', 'analytics', 'edge-runtime']) {
+    if (stackIdentity.containers.filter((entry) => entry.role === role).length !== 1) {
+      throw new Error(`refused local stack container identity for ${role}`);
+    }
+  }
+  if (stackIdentity.containers.filter((entry) => ['mailpit', 'inbucket'].includes(entry.role)).length !== 1) {
+    throw new Error('refused local stack SMTP container identity');
+  }
+  const measuredHostPorts = [...new Set(stackIdentity.containers.flatMap((entry) => entry.hostPorts))]
+    .sort((left, right) => left - right);
+  if (measuredHostPorts.length !== contract.persistentHostPorts.length
+    || measuredHostPorts.some((port, index) => port !== contract.persistentHostPorts[index])) {
+    throw new Error('refused local stack host listener identity');
   }
 }
 
@@ -128,15 +225,22 @@ export function inspectLocalContainerCandidates({ projectId, runDocker, includeS
       throw new Error('local stack container inspection returned mismatched identity');
     }
     seen.add(matchingIds[0]);
-    const bindings = item?.NetworkSettings?.Ports?.['8000/tcp'];
+    const portInventory = item?.NetworkSettings?.Ports;
+    if (portInventory == null || typeof portInventory !== 'object' || Array.isArray(portInventory)) {
+      throw new Error('local stack container inspection returned invalid binding inventory');
+    }
+    const hostBindings = Object.entries(portInventory).flatMap(([containerPort, bindings]) => (
+      Array.isArray(bindings) ? bindings.map((binding) => Object.freeze({
+        containerPort,
+        hostIp: binding?.HostIp ?? null,
+        hostPort: binding?.HostPort ?? null,
+      })) : []
+    ));
     return Object.freeze({
       id: matchingIds[0],
       name: String(item?.Name ?? '').replace(/^\//, ''),
       projectId: item?.Config?.Labels?.['com.supabase.cli.project'] ?? null,
-      apiBindings: Object.freeze(Array.isArray(bindings) ? bindings.map((binding) => Object.freeze({
-        hostIp: binding?.HostIp ?? null,
-        hostPort: binding?.HostPort ?? null,
-      })) : []),
+      hostBindings: Object.freeze(hostBindings),
     });
   });
   return Object.freeze(candidates);
@@ -156,6 +260,7 @@ export function inspectLocalStackIdentity({
     throw new Error('local stack identity refused: unexpected project id');
   }
   const expectedPort = exactApiPort(apiPort);
+  const contract = derivePinnedLocalStackContract(expectedPort);
   const inspected = inspectLocalContainerCandidates({ projectId, runDocker });
   if (inspected.length < Object.keys(REQUIRED_CONTAINERS).length) {
     throw new Error('local stack identity refused: required containers are missing');
@@ -169,16 +274,26 @@ export function inspectLocalStackIdentity({
     if (!role || labelledProject !== projectId) {
       throw new Error('local stack identity refused: unexpected container label or name');
     }
-    const container = { name, projectId: labelledProject, role };
-    if (role === 'api') {
-      const bindings = item.apiBindings;
-      if (!Array.isArray(bindings) || bindings.length < 1
-        || bindings.some((binding) => !['127.0.0.1', '::1', '[::1]'].includes(binding?.hostIp))
-        || !bindings.some((binding) => Number(binding.hostPort) === expectedPort)) {
-        throw new Error('local stack identity refused: API port is not exact loopback');
-      }
-      container.hostApiPort = expectedPort;
+    if (role === 'pooler' && contract.services.pooler === false) {
+      throw new Error('local stack identity refused: disabled pooler container is present');
     }
+    const bindings = item.hostBindings;
+    if (!Array.isArray(bindings)
+      || bindings.some((binding) => !['127.0.0.1', '::1', '[::1]'].includes(binding?.hostIp)
+        || !Number.isSafeInteger(Number(binding?.hostPort)))) {
+      throw new Error('local stack identity refused: container binding is not exact loopback');
+    }
+    const measuredPorts = [...new Set(bindings.map((binding) => Number(binding.hostPort)))].sort((a, b) => a - b);
+    const allowedPorts = contract.containerHostPorts[role];
+    if (!Array.isArray(allowedPorts)
+      || measuredPorts.length !== allowedPorts.length
+      || measuredPorts.some((port, index) => port !== allowedPorts[index])) {
+      throw new Error('local stack identity refused: container binding listener set is not exact');
+    }
+    const container = {
+      name, projectId: labelledProject, role, hostPorts: Object.freeze(measuredPorts),
+    };
+    if (role === 'api') container.hostApiPort = expectedPort;
     containers.push(Object.freeze(container));
   }
 
@@ -187,10 +302,25 @@ export function inspectLocalStackIdentity({
       throw new Error(`local stack identity refused: exact ${role} container missing`);
     }
   }
+  for (const role of ['studio', 'analytics', 'edge-runtime']) {
+    if (containers.filter((container) => container.role === role).length !== 1) {
+      throw new Error(`local stack identity refused: enabled ${role} container missing`);
+    }
+  }
+  if (containers.filter((container) => ['mailpit', 'inbucket'].includes(container.role)).length !== 1) {
+    throw new Error('local stack identity refused: exact local SMTP container missing');
+  }
+  const measuredHostPorts = [...new Set(containers.flatMap((container) => container.hostPorts))]
+    .sort((a, b) => a - b);
+  if (measuredHostPorts.length !== contract.persistentHostPorts.length
+    || measuredHostPorts.some((port, index) => port !== contract.persistentHostPorts[index])) {
+    throw new Error('local stack identity refused: measured host listener union is not exact');
+  }
   const identity = Object.freeze({
     verified: true,
     projectId,
     apiPort: expectedPort,
+    listenerPorts: contract.listenerPorts,
     containers: Object.freeze([
       ...Object.keys(REQUIRED_CONTAINERS)
         .map((role) => containers.find((container) => container.role === role)),

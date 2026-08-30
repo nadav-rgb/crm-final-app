@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import { createClient } from '@supabase/supabase-js';
 import {
   assertSafeTestTarget,
+  derivePinnedLocalStackContract,
   loadVerifiedLocalTarget,
   RLS_PROTECTED_TABLES,
+  SENSITIVE_TABLES,
   verifyAnonymousIsolation,
 } from '../../scripts/security/verify-rls-live.mjs';
 
@@ -17,17 +19,53 @@ const testApiPort = 54321;
 function verifiedStackIdentity(overrides = {}) {
   const projectId = overrides.projectId ?? testProjectId;
   const apiPort = overrides.apiPort ?? testApiPort;
+  const contract = derivePinnedLocalStackContract(apiPort);
   return {
     verified: overrides.verified ?? true,
     projectId,
     apiPort,
+    listenerPorts: overrides.listenerPorts ?? contract.listenerPorts,
     containers: overrides.containers ?? [
-      { name: `supabase_db_${projectId}`, projectId, role: 'database' },
-      { name: `supabase_kong_${projectId}`, projectId, role: 'api', hostApiPort: apiPort },
-      { name: `supabase_auth_${projectId}`, projectId, role: 'auth' },
-      { name: `supabase_rest_${projectId}`, projectId, role: 'rest' },
+      { name: `supabase_db_${projectId}`, projectId, role: 'database', hostPorts: [contract.stackPorts.db] },
+      {
+        name: `supabase_kong_${projectId}`, projectId, role: 'api',
+        hostPorts: [apiPort], hostApiPort: apiPort,
+      },
+      { name: `supabase_auth_${projectId}`, projectId, role: 'auth', hostPorts: [] },
+      { name: `supabase_rest_${projectId}`, projectId, role: 'rest', hostPorts: [] },
+      { name: `supabase_analytics_${projectId}`, projectId, role: 'analytics', hostPorts: [contract.stackPorts.analytics] },
+      { name: `supabase_edge_runtime_${projectId}`, projectId, role: 'edge-runtime', hostPorts: [contract.stackPorts.edgeInspector] },
+      {
+        name: `supabase_mailpit_${projectId}`, projectId, role: 'mailpit',
+        hostPorts: [contract.stackPorts.mailpit, contract.stackPorts.smtp, contract.stackPorts.pop3],
+      },
+      { name: `supabase_studio_${projectId}`, projectId, role: 'studio', hostPorts: [contract.stackPorts.studio] },
     ],
   };
+}
+
+function pinnedDockerContainers({ projectId = testProjectId, apiPort = testApiPort, smtpRole = 'mailpit' } = {}) {
+  const ports = derivePinnedLocalStackContract(apiPort).stackPorts;
+  const specs = [
+    ['db', { '5432/tcp': [{ HostIp: '127.0.0.1', HostPort: String(ports.db) }] }],
+    ['kong', { '8000/tcp': [{ HostIp: '127.0.0.1', HostPort: String(ports.api) }] }],
+    ['auth', {}],
+    ['rest', {}],
+    ['studio', { '3000/tcp': [{ HostIp: '127.0.0.1', HostPort: String(ports.studio) }] }],
+    ['analytics', { '4000/tcp': [{ HostIp: '127.0.0.1', HostPort: String(ports.analytics) }] }],
+    ['edge_runtime', { '8083/tcp': [{ HostIp: '127.0.0.1', HostPort: String(ports.edgeInspector) }] }],
+    [smtpRole, {
+      '8025/tcp': [{ HostIp: '127.0.0.1', HostPort: String(ports.mailpit) }],
+      '1025/tcp': [{ HostIp: '127.0.0.1', HostPort: String(ports.smtp) }],
+      '1110/tcp': [{ HostIp: '127.0.0.1', HostPort: String(ports.pop3) }],
+    }],
+  ];
+  return specs.map(([component, portBindings], index) => ({
+    Id: String(index + 1).repeat(12),
+    Name: `/supabase_${component}_${projectId}`,
+    Config: { Labels: { 'com.supabase.cli.project': projectId } },
+    NetworkSettings: { Ports: portBindings },
+  }));
 }
 
 function dockerInventory(containers, calls = []) {
@@ -153,16 +191,7 @@ test('G5 target guard rejects wrong project, container label and unverified iden
 test('Docker inspection derives the exact project-labelled local stack identity', async () => {
   const module = await import('../../scripts/security/verify-rls-live.mjs');
   assert.equal(typeof module.inspectLocalStackIdentity, 'function');
-  const inspections = [
-    ['database', 'db'], ['api', 'kong'], ['auth', 'auth'], ['rest', 'rest'],
-  ].map(([role, component], index) => ({
-    Id: String(index + 1).repeat(12),
-    Name: `/supabase_${component}_${testProjectId}`,
-    Config: { Labels: { 'com.supabase.cli.project': testProjectId } },
-    NetworkSettings: role === 'api' ? {
-      Ports: { '8000/tcp': [{ HostIp: '127.0.0.1', HostPort: String(testApiPort) }] },
-    } : { Ports: {} },
-  }));
+  const inspections = pinnedDockerContainers();
   const runDocker = (args) => {
     if (args[0] === 'ps') {
       return { status: 0, stdout: inspections.map((item) => item.Id).join('\n'), stderr: '' };
@@ -183,16 +212,7 @@ test('Docker inspection derives the exact project-labelled local stack identity'
 test('Docker inspection fails closed on missing, mixed-label or non-loopback containers', async () => {
   const { inspectLocalStackIdentity } = await import('../../scripts/security/verify-rls-live.mjs');
   assert.equal(typeof inspectLocalStackIdentity, 'function');
-  const base = [
-    ['database', 'db'], ['api', 'kong'], ['auth', 'auth'], ['rest', 'rest'],
-  ].map(([role, component], index) => ({
-    Id: String(index + 1).repeat(12),
-    Name: `/supabase_${component}_${testProjectId}`,
-    Config: { Labels: { 'com.supabase.cli.project': testProjectId } },
-    NetworkSettings: role === 'api' ? {
-      Ports: { '8000/tcp': [{ HostIp: '127.0.0.1', HostPort: String(testApiPort) }] },
-    } : { Ports: {} },
-  }));
+  const base = pinnedDockerContainers();
   const attempt = (inspections) => inspectLocalStackIdentity({
     projectId: testProjectId,
     apiPort: testApiPort,
@@ -214,29 +234,32 @@ test('Docker inspection fails closed on missing, mixed-label or non-loopback con
   } : item)), /loopback|port|identity/i);
 });
 
+test('Docker inspection rejects an extra loopback Kong binding outside the pinned listener contract', async () => {
+  const { inspectLocalStackIdentity } = await import('../../scripts/security/verify-rls-live.mjs');
+  const inspections = pinnedDockerContainers();
+  inspections[1] = {
+    ...inspections[1],
+    NetworkSettings: {
+      Ports: {
+        '8000/tcp': [
+          { HostIp: '127.0.0.1', HostPort: String(testApiPort) },
+          { HostIp: '::1', HostPort: '60000' },
+        ],
+      },
+    },
+  };
+  assert.throws(() => inspectLocalStackIdentity({
+    projectId: testProjectId,
+    apiPort: testApiPort,
+    runDocker: dockerInventory(inspections),
+  }), /binding|listener|port|identity/i);
+});
+
 test('Docker inspection combines real label/name inventories and permits exact Studio/Inbucket only', async () => {
   const { inspectLocalStackIdentity } = await import('../../scripts/security/verify-rls-live.mjs');
-  const required = [
-    ['database', 'db'], ['api', 'kong'], ['auth', 'auth'], ['rest', 'rest'],
-  ].map(([role, component], index) => ({
-    Id: String(index + 1).repeat(12),
-    Name: `/supabase_${component}_${testProjectId}`,
-    Config: { Labels: { 'com.supabase.cli.project': testProjectId } },
-    NetworkSettings: role === 'api' ? {
-      Ports: { '8000/tcp': [{ HostIp: '127.0.0.1', HostPort: String(testApiPort) }] },
-    } : { Ports: {} },
-  }));
-  const studio = {
-    Id: '5'.repeat(12),
-    Name: `/supabase_studio_${testProjectId}`,
-    Config: { Labels: { 'com.supabase.cli.project': testProjectId } },
-    NetworkSettings: { Ports: {} },
-  };
-  const inbucket = {
-    ...studio,
-    Id: '6'.repeat(12),
-    Name: `/supabase_inbucket_${testProjectId}`,
-  };
+  const required = pinnedDockerContainers({ smtpRole: 'inbucket' });
+  const studio = required.find((item) => item.Name.includes('supabase_studio_'));
+  const inbucket = required.find((item) => item.Name.includes('supabase_inbucket_'));
   const inspect = (containers, calls = []) => inspectLocalStackIdentity({
     projectId: testProjectId,
     apiPort: testApiPort,
@@ -244,7 +267,7 @@ test('Docker inspection combines real label/name inventories and permits exact S
   });
 
   const calls = [];
-  const identity = inspect([...required, studio, inbucket], calls);
+  const identity = inspect(required, calls);
   assert.equal(identity.containers.find((entry) => entry.role === 'studio')?.name,
     `supabase_studio_${testProjectId}`);
   assert.equal(identity.containers.find((entry) => entry.role === 'inbucket')?.name,
@@ -264,23 +287,15 @@ test('Docker inspection combines real label/name inventories and permits exact S
       Config: { Labels: { 'com.supabase.cli.project': 'mekarvim-security-g5-wrong' } },
     },
   ]) {
-    assert.throws(() => inspect([...required, extra]), /identity|label|name|project/i);
+    assert.throws(() => inspect([...required.filter((item) => item.Id !== studio.Id), extra]),
+      /identity|label|name|project|binding/i);
   }
 });
 
 test('live target loader measures Docker identity instead of accepting a caller verdict', async () => {
   const { loadVerifiedLocalTarget } = await import('../../scripts/security/verify-rls-live.mjs');
   assert.equal(typeof loadVerifiedLocalTarget, 'function');
-  const inspections = [
-    ['db', 'database'], ['kong', 'api'], ['auth', 'auth'], ['rest', 'rest'],
-  ].map(([component, role], index) => ({
-    Id: String(index + 5).repeat(12),
-    Name: `/supabase_${component}_${testProjectId}`,
-    Config: { Labels: { 'com.supabase.cli.project': testProjectId } },
-    NetworkSettings: role === 'api' ? {
-      Ports: { '8000/tcp': [{ HostIp: '127.0.0.1', HostPort: String(testApiPort) }] },
-    } : { Ports: {} },
-  }));
+  const inspections = pinnedDockerContainers();
   const result = loadVerifiedLocalTarget({
     env: {
       SECURITY_TEST_CONFIRM_ISOLATED: 'true',
@@ -328,7 +343,8 @@ test('anonymous isolation denies every classified public surface', live, async (
   assert.ok(publishableKey, 'missing local publishable key');
 
   const results = await verifyAnonymousIsolation({ targetUrl, publishableKey });
-  assert.ok(results.length >= 18, 'classified security posture is incomplete');
+  assert.equal(results.length, SENSITIVE_TABLES.length, 'classified security posture count is not exact');
+  assert.deepEqual(new Set(results.map((result) => result.table)), new Set(SENSITIVE_TABLES));
   assert.equal(results.some((result) => result.leaked), false);
 });
 
