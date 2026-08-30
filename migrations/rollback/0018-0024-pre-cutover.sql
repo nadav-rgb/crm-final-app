@@ -103,12 +103,13 @@ drop function if exists public.app_identity_resolve(text);
 drop function if exists public.app_membership_change(text,uuid,uuid,integer,text,text);
 drop function if exists public.app_audit_append(uuid,text,integer,text,text,text,text,text,uuid,text,jsonb);
 drop function if exists public.app_rate_limit_consume(text,integer,integer);
-drop function if exists public.app_session_refresh_tokens(text,text,text,text,integer,timestamptz);
+drop function if exists public.app_session_refresh_tokens(text,text,text,text,text,integer,timestamptz,smallint,text,boolean,text);
+drop function if exists public.app_session_refresh_claim(text,text,text);
 drop function if exists public.app_session_revoke(text,text);
-drop function if exists public.app_session_rotate(text,text,text,text,integer,timestamptz,text,smallint,integer,text,timestamptz,integer,timestamptz,timestamptz,text);
+drop function if exists public.app_session_rotate(text,text,text,text,integer,timestamptz,text,smallint,integer,text,boolean,text,timestamptz,integer,timestamptz,timestamptz,text);
 drop function if exists public.app_session_touch(text,timestamptz,timestamptz);
 drop function if exists public.app_session_load(text);
-drop function if exists public.app_session_create(text,uuid,text,text,integer,timestamptz,text,smallint,integer,text,timestamptz,integer,timestamptz,timestamptz);
+drop function if exists public.app_session_create(text,uuid,text,text,integer,timestamptz,text,smallint,integer,text,boolean,text,timestamptz,integer,timestamptz,timestamptz);
 
 -- 0019 policies depend on authorization helpers. Remove the complete hardened
 -- policy/trigger set first, then revoke authenticated table authority so rollback

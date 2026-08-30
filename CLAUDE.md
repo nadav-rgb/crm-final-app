@@ -225,6 +225,9 @@ base_meeting_reports/activist_directory) מסוננת בשרת לפי activist_i
 ## חוזה Security Hardening — סביבת ריצה וסודות
 - הדפדפן ניגש לנתונים רק דרך BFF באותו origin ומשתמש ב-session cookies אטומים. אין גישת
   Supabase ישירה מה-client, אין service-role בדפדפן ואין שמירת PII ב-`localStorage`.
+- CEO או משתמש עם Head פעיל בפרויקט כלשהו מקבל ב-AAL1 תגובת MFA status-only ללא profile
+  או project projection. challenge/verify/refresh ו-duplicate lookup צורכים rate buckets משותפים;
+  refresh תובע lock/CAS במסד וקורא מחדש provider assurance ו-factor fingerprint לפני שימוש נוסף.
 - רק שמות שמתחילים ב-`NEXT_PUBLIC_` מותרים ב-client bundle. כל השאר, ובפרט
   `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_SECRET_KEY`, מפתחות session, cron, GitHub,
   Anthropic, VAPID, FCM ו-Sheets, הם server-only. `SUPABASE_SECRET_KEY` נשאר שם-תאימות

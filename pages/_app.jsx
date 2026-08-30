@@ -25,8 +25,8 @@ function AppShell({ Component, pageProps }) {
   const { currentUser, authLoading, requiresMfa, authState } = useAuth();
   if (authLoading) return <div aria-busy="true" aria-label="טוענים את החשבון" style={{ minHeight: '100vh', background: 'var(--color-bg)' }} />;
   if (authState === 'recovery') return <ResetPasswordPage />;
-  if (!currentUser) return <LoginPage />;
   if (requiresMfa) return <MfaEnrollment />;
+  if (!currentUser) return <LoginPage />;
   return <BusinessApp Component={Component} pageProps={pageProps} />;
 }
 

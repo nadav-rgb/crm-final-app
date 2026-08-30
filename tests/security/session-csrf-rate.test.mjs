@@ -17,6 +17,7 @@ const USER_ID = '00000000-0000-4000-8000-000000000001';
 const NOW = new Date('2026-08-27T10:00:00.000Z');
 const TOKEN_KEY = Buffer.alloc(32, 7);
 const OTHER_KEY = Buffer.alloc(32, 8);
+const FACTOR_FINGERPRINT = 'A'.repeat(43);
 const securityEnv = {
   sessionIdPepper: 'synthetic-session-pepper-with-at-least-32-bytes',
   tokenKeys: { 1: TOKEN_KEY },
@@ -35,8 +36,10 @@ function makeClock(start = NOW) {
 function makeStore(clock) {
   const sessions = new Map();
   const buckets = new Map();
+  const refreshClaims = [];
+  const rateCalls = [];
   return {
-    sessions,
+    sessions, refreshClaims, rateCalls,
     async create(record) {
       if (sessions.has(record.idHash)) throw new Error('duplicate session');
       sessions.set(record.idHash, structuredClone(record));
@@ -67,7 +70,23 @@ function makeStore(clock) {
       value.revokeReason = reason;
       return true;
     },
+    async claimRefresh(idHash, expectedEncryptedRefreshToken, refreshLockHash) {
+      refreshClaims.push({ idHash, expectedEncryptedRefreshToken, refreshLockHash });
+      const value = sessions.get(idHash);
+      if (!value || value.revokedAt || value.encryptedRefreshToken !== expectedEncryptedRefreshToken
+        || value.refreshLockHash) return false;
+      value.refreshLockHash = refreshLockHash;
+      return true;
+    },
+    async completeRefresh(idHash, expectedEncryptedRefreshToken, refreshLockHash, next) {
+      const value = sessions.get(idHash);
+      if (!value || value.revokedAt || value.encryptedRefreshToken !== expectedEncryptedRefreshToken
+        || value.refreshLockHash !== refreshLockHash) return false;
+      Object.assign(value, structuredClone(next), { refreshLockHash: null });
+      return true;
+    },
     async consumeRateLimit(bucketHash, limit, windowSeconds) {
+      rateCalls.push({ bucketHash, limit, windowSeconds });
       const now = clock.now().getTime();
       const duration = windowSeconds * 1_000;
       let bucket = buckets.get(bucketHash);
@@ -96,15 +115,22 @@ function sessionRequest(rawId, csrfToken) {
 
 const activeProfile = async () => ({ disabledAt: null, securityVersion: 3 });
 
-async function freshSession({ role = 'activist', clock = makeClock(), store = makeStore(clock) } = {}) {
+async function freshSession({
+  role = 'activist', aal = role === 'head' ? 2 : 1,
+  factorFingerprint = FACTOR_FINGERPRINT,
+  accessTokenExpiresAt = null,
+  clock = makeClock(), store = makeStore(clock),
+} = {}) {
   const session = await createSession({
     userId: USER_ID,
     accessToken: 'synthetic-access-token',
     refreshToken: 'synthetic-refresh-token',
-    aal: role === 'head' ? 2 : 1,
+    accessTokenExpiresAt,
+    aal,
     authState: 'active',
     securityVersion: 3,
     role,
+    factorFingerprint,
   }, { store, env: securityEnv, clock });
   return { session, store, clock };
 }
@@ -248,6 +274,91 @@ test('shared rate limit blocks the sixth login attempt in one window', async () 
   assert.doesNotMatch(JSON.stringify(attempts), /192\.0\.2\.10/);
 });
 
+test('refresh consumes a shared low-rate bucket, claims the datastore lock before provider IO and persists assurance', async () => {
+  const order = [];
+  const state = await freshSession({
+    aal: 2,
+    accessTokenExpiresAt: NOW.toISOString(),
+  });
+  const claim = state.store.claimRefresh.bind(state.store);
+  state.store.claimRefresh = async (...args) => { order.push('claim'); return claim(...args); };
+  const complete = state.store.completeRefresh.bind(state.store);
+  state.store.completeRefresh = async (...args) => { order.push('complete'); return complete(...args); };
+
+  const loaded = await loadSession(sessionRequest(state.session.id), {
+    store: state.store,
+    env: securityEnv,
+    clock: state.clock,
+    loadProfile: activeProfile,
+    provider: {
+      async refresh() {
+        order.push('provider');
+        return {
+          accessToken: 'refreshed-access-token',
+          refreshToken: 'refreshed-refresh-token',
+          accessTokenExpiresAt: '2026-08-27T11:00:00.000Z',
+          aal: 1,
+          nextAal: 1,
+          factorFingerprint: FACTOR_FINGERPRINT,
+        };
+      },
+    },
+  });
+
+  assert.deepEqual(order, ['claim', 'provider', 'complete']);
+  assert.equal(state.store.rateCalls.length, 1);
+  assert.equal(state.store.rateCalls[0].limit, 3);
+  assert.equal(state.store.rateCalls[0].windowSeconds, 5 * 60);
+  assert.equal(loaded.aal, 1);
+  assert.equal(loaded.authState, 'active');
+  const persisted = state.store.sessions.get(state.session.idHash);
+  assert.equal(persisted.aal, 1);
+  assert.equal(persisted.authState, 'active');
+});
+
+test('a datastore refresh loser never calls the provider', async () => {
+  const state = await freshSession({ accessTokenExpiresAt: NOW.toISOString() });
+  state.store.claimRefresh = async (...args) => {
+    state.store.refreshClaims.push(args);
+    return false;
+  };
+  let providerCalls = 0;
+  await assert.rejects(() => loadSession(sessionRequest(state.session.id), {
+    store: state.store,
+    env: securityEnv,
+    clock: state.clock,
+    loadProfile: activeProfile,
+    provider: { async refresh() { providerCalls += 1; throw new Error('must not run'); } },
+  }), hasCode('SESSION_INVALID'));
+  assert.equal(state.store.refreshClaims.length, 1);
+  assert.equal(providerCalls, 0);
+});
+
+test('protected refresh revokes on provider AAL downgrade or factor-state change', async () => {
+  const cases = [
+    { name: 'AAL downgrade', aal: 1, nextAal: 1, factorFingerprint: FACTOR_FINGERPRINT },
+    { name: 'factor change', aal: 2, nextAal: 2, factorFingerprint: 'B'.repeat(43) },
+  ];
+  for (const providerState of cases) {
+    const state = await freshSession({ role: 'head', accessTokenExpiresAt: NOW.toISOString() });
+    await assert.rejects(() => loadSession(sessionRequest(state.session.id), {
+      store: state.store,
+      env: securityEnv,
+      clock: state.clock,
+      loadProfile: activeProfile,
+      provider: {
+        async refresh() {
+          return {
+            accessToken: 'refreshed-access-token', refreshToken: 'refreshed-refresh-token',
+            accessTokenExpiresAt: '2026-08-27T11:00:00.000Z', ...providerState,
+          };
+        },
+      },
+    }), hasCode('SESSION_INVALID'), providerState.name);
+    assert.equal(state.store.sessions.get(state.session.idHash).revokeReason, 'provider_assurance_changed');
+  }
+});
+
 test('revocation is idempotent and never restores a session', async () => {
   const state = await freshSession();
   assert.equal(await revokeSession(state.session, 'logout', { store: state.store }), true);
@@ -262,6 +373,8 @@ test('session and rate RPC migration is service-only, atomic and rollback-safe',
     'app_session_touch',
     'app_session_rotate',
     'app_session_revoke',
+    'app_session_refresh_claim',
+    'app_session_refresh_tokens',
     'app_rate_limit_consume',
     'app_audit_append',
     'app_membership_change',
@@ -272,10 +385,25 @@ test('session and rate RPC migration is service-only, atomic and rollback-safe',
   }
   assert.match(sql, /set search_path = pg_catalog, public, app_private/i);
   assert.match(sql, /on conflict \(bucket_hash\) do update set/i);
+  assert.match(sql, /refresh_lock_hash text/i);
+  assert.match(sql, /refresh_lock_expires_at timestamptz/i);
+  const refreshClaim = sql.match(
+    /create or replace function public\.app_session_refresh_claim\b[\s\S]*?end \$\$;/i,
+  )?.[0];
+  assert.ok(refreshClaim);
+  assert.match(refreshClaim, /p_refresh_lock_hash is null\s+or/i);
+  const refreshCompletion = sql.match(
+    /create or replace function public\.app_session_refresh_tokens\b[\s\S]*?end \$\$;/i,
+  )?.[0];
+  assert.ok(refreshCompletion);
+  assert.match(refreshCompletion, /p_mfa_factor_fingerprint is null\s+or/i);
+  assert.match(refreshCompletion, /refresh_lock_hash\s*=\s*p_refresh_lock_hash/i);
+  assert.match(refreshCompletion, /refresh_lock_expires_at\s*>\s*now\(\)/i);
   assert.doesNotMatch(sql, /security definer[\s\S]{0,200}set search_path\s*=\s*(?:''|public\s*;)/i);
 
   const rollback = await readFile('migrations/rollback/0018-0024-pre-cutover.sql', 'utf8');
   assert.match(rollback, /drop function if exists public\.app_session_rotate/i);
+  assert.match(rollback, /drop function if exists public\.app_session_refresh_claim/i);
   assert.doesNotMatch(rollback, /\bcascade\b/i);
 });
 

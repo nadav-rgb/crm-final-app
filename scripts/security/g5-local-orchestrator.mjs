@@ -1156,6 +1156,12 @@ notify pgrst, 'reload schema';`);
             absolute_expires_at = now() - interval '1 second'
         where user_id = '${userId}' and revoked_at is null;`);
     },
+    async expireAccessTokensForUser(userId) {
+      if (!UUID.test(userId ?? '')) throw new Error('access-token expiry refused: exact actor UUID required');
+      await execute(`update app_private.auth_sessions
+        set access_token_expires_at = now() - interval '1 second'
+        where user_id = '${userId}' and revoked_at is null;`);
+    },
     async disableProfile(userId) {
       if (!UUID.test(userId ?? '')) throw new Error('profile disable refused: exact actor UUID required');
       await execute(`update public.profiles set disabled_at = now() where id = '${userId}';`);

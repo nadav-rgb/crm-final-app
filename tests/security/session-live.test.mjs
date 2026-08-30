@@ -152,7 +152,8 @@ test('RFC-compatible TOTP generation uses the expected 30-second SHA-1 counter',
 });
 
 test('local GoTrue performs real TOTP enrollment, AAL2 rotation and factor reset', live, async () => {
-  const { targetUrl, publishableKey, fixture, bffOrigin } = loadSessionFixture();
+  const { targetUrl, publishableKey, fixture, bffOrigin, target } = loadSessionFixture();
+  const database = localDatabase(target);
   const credential = fixture.credentials?.headA;
   assert.ok(credential?.email && credential?.password, 'process-local TOTP actor credentials missing');
   const client = createClient(targetUrl, publishableKey, {
@@ -168,6 +169,7 @@ test('local GoTrue performs real TOTP enrollment, AAL2 rotation and factor reset
   assert.ok(aal1Token, 'AAL1 access token missing');
 
   let factorId;
+  let bffAal2;
   try {
     const enrolled = await client.auth.mfa.enroll({
       factorType: 'totp',
@@ -200,7 +202,7 @@ test('local GoTrue performs real TOTP enrollment, AAL2 rotation and factor reset
     });
     assert.equal(challenge.status, 200);
     assert.ok(challenge.payload?.challengeId);
-    const bffAal2 = await bffRequest(bffOrigin, '/api/auth/mfa/verify', {
+    bffAal2 = await bffRequest(bffOrigin, '/api/auth/mfa/verify', {
       method: 'POST', cookie: bffSession.cookie, csrf: bffSession.csrf,
       body: { factorId, challengeId: challenge.payload.challengeId, code: generateTotpCode(secret) },
     });
@@ -214,6 +216,11 @@ test('local GoTrue performs real TOTP enrollment, AAL2 rotation and factor reset
     if (factorId) {
       const reset = await client.auth.mfa.unenroll({ factorId });
       assert.ifError(reset.error);
+      await database.expireAccessTokensForUser(fixture.resources.actorIds.headA);
+      const postUnenroll = await bffRequest(bffOrigin,
+        `/api/payments?period=${fixture.resources.period}&projectId=${fixture.resources.projectA}`,
+        { cookie: bffAal2?.cookie });
+      assert.equal(postUnenroll.status, 401, 'post-unenroll AAL2 BFF session remained usable');
     }
     await client.auth.signOut({ scope: 'local' });
   }

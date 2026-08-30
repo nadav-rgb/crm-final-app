@@ -10,6 +10,7 @@ const IDS = {
   activist: '00000000-0000-4000-8000-000000000011',
   head: '00000000-0000-4000-8000-000000000012',
   disabled: '00000000-0000-4000-8000-000000000013',
+  multiProjectHead: '00000000-0000-4000-8000-000000000014',
 };
 
 function makeHarness() {
@@ -18,6 +19,7 @@ function makeHarness() {
     ['activist', { userId: IDS.activist, email: 'activist@identity.invalid' }],
     ['head', { userId: IDS.head, email: 'head@identity.invalid' }],
     ['disabled', { userId: IDS.disabled, email: 'disabled@identity.invalid' }],
+    ['multi', { userId: IDS.multiProjectHead, email: 'multi@identity.invalid' }],
   ]);
   const profiles = new Map([
     [IDS.activist, {
@@ -32,9 +34,17 @@ function makeHarness() {
       userId: IDS.disabled, name: 'Disabled User', role: 'activist', activistCode: 103,
       securityVersion: 7, disabledAt: '2026-08-27T00:00:00.000Z', projects: [],
     }],
+    [IDS.multiProjectHead, {
+      userId: IDS.multiProjectHead, name: 'Synthetic Multi Project Head', role: 'coord', activistCode: 104,
+      securityVersion: 3, disabledAt: null, projects: [
+        { id: 1, name: 'Project A', role: 'coord' },
+        { id: 2, name: 'Project B', role: 'head' },
+      ],
+    }],
   ]);
   const storedSessions = new Map();
   const auditEvents = [];
+  const rateCalls = [];
   let loginAttempts = 0;
 
   const provider = {
@@ -54,6 +64,7 @@ function makeHarness() {
       };
     },
     async enrollMfa() { return { factorId: '00000000-0000-4000-8000-000000000099', qrCode: 'otpauth://synthetic' }; },
+    async listMfaFactors() { return [{ id: '00000000-0000-4000-8000-000000000099', type: 'totp' }]; },
     async challengeMfa() { return { challengeId: '00000000-0000-4000-8000-000000000098' }; },
     async verifyMfa() { return { aal: 2, accessToken: 'access-aal2', refreshToken: 'refresh-aal2' }; },
     async requestPasswordReset() { return true; },
@@ -92,7 +103,9 @@ function makeHarness() {
   };
 
   const rateLimiter = {
-    async consume() {
+    async consume(input) {
+      rateCalls.push(input);
+      if (input.kind !== 'login') return { allowed: true, retryAfterSeconds: 0 };
       loginAttempts += 1;
       return { allowed: loginAttempts <= 5, retryAfterSeconds: loginAttempts <= 5 ? 0 : 600 };
     },
@@ -104,7 +117,7 @@ function makeHarness() {
   };
   const audit = { async append(event) { auditEvents.push(event); } };
   const service = createAuthService({ identityStore, provider, sessions, rateLimiter, audit });
-  return { service, storedSessions, auditEvents, profiles };
+  return { service, storedSessions, auditEvents, profiles, rateCalls };
 }
 
 async function publicFailure(promise) {
@@ -125,15 +138,29 @@ test('unknown username and bad password have identical public response', async (
   );
 });
 
-test('head at AAL1 receives only mfa_required state without provider tokens or PII', async () => {
+test('head at AAL1 receives an exact status-only response', async () => {
   const { service } = makeHarness();
   const result = await service.login({ username: ' HEAD ', password: 'correct-password', ipKey: 'ip' });
-  assert.deepEqual(pick(result, ['authState', 'aal']), { authState: 'mfa_required', aal: 1 });
-  assert.equal(result.user.name, 'Synthetic Head');
-  assert.equal(result.user.pii, undefined);
-  assert.equal(result.accessToken, undefined);
-  assert.equal(result.refreshToken, undefined);
-  assert.doesNotMatch(JSON.stringify(result), /access-|refresh-|@identity\.invalid/);
+  assert.deepEqual(Object.keys(result).sort(), [
+    'aal', 'authState', 'cookieValue', 'csrfToken', 'mfaEnrolled', 'ok',
+  ]);
+  assert.deepEqual(pick(result, ['authState', 'aal', 'mfaEnrolled']), {
+    authState: 'mfa_required', aal: 1, mfaEnrolled: true,
+  });
+  assert.doesNotMatch(JSON.stringify(result), /Synthetic|activistCode|project|profile|access-|refresh-|@identity\.invalid/i);
+  const resumed = await service.resume(result.cookieValue);
+  assert.deepEqual(Object.keys(resumed).sort(), [
+    'aal', 'authState', 'cookieValue', 'csrfToken', 'mfaEnrolled', 'ok',
+  ]);
+  assert.equal(resumed.authState, 'mfa_required');
+});
+
+test('any active Head membership protects the whole multi-project AAL1 session', async () => {
+  const { service, storedSessions } = makeHarness();
+  const result = await service.login({ username: 'multi', password: 'correct-password', ipKey: 'ip' });
+  assert.equal(result.authState, 'mfa_required');
+  assert.equal([...storedSessions.values()].at(-1).role, 'head');
+  assert.equal(result.user, undefined);
 });
 
 test('login always creates a new authenticated session and ignores fixation material', async () => {
@@ -183,6 +210,24 @@ test('MFA verification rotates the session and unlocks AAL2 without exposing tok
   assert.notEqual(verified.cookieValue, login.cookieValue);
   await assert.rejects(() => service.getSession(login.cookieValue), hasCode('SESSION_INVALID'));
   assert.doesNotMatch(JSON.stringify(verified), /access-aal2|refresh-aal2/);
+});
+
+test('MFA challenge and verify consume distinct shared identity/session/IP buckets', async () => {
+  const { service, rateCalls } = makeHarness();
+  const login = await service.login({ username: 'head', password: 'correct-password', ipKey: 'trusted-ip-prefix' });
+  const session = await service.getSession(login.cookieValue);
+  const challenge = await service.challengeMfa(session, undefined, { ipKey: 'trusted-ip-prefix' });
+  assert.equal(challenge.factorId, '00000000-0000-4000-8000-000000000099');
+  await service.verifyMfa(session, {
+    factorId: challenge.factorId, challengeId: challenge.challengeId, code: '123456',
+  }, { ipKey: 'trusted-ip-prefix' });
+  const securityCalls = rateCalls.filter((call) => call.kind !== 'login');
+  assert.deepEqual(securityCalls.map((call) => call.kind), ['mfa_challenge', 'mfa_verify']);
+  for (const call of securityCalls) {
+    assert.match(call.key, new RegExp(`${IDS.head}.*${session.idHash}.*trusted-ip-prefix`));
+    assert.equal(call.limit, 5);
+    assert.equal(call.windowSeconds, 10 * 60);
+  }
 });
 
 test('recovery session cannot be authorized for business capabilities', async () => {
@@ -248,4 +293,15 @@ test('auth identity lookup and global session invalidation RPCs are service-only
   const rollback = await readFile('migrations/rollback/0018-0024-pre-cutover.sql', 'utf8');
   assert.match(rollback, /drop function if exists public\.app_identity_resolve/i);
   assert.match(rollback, /drop function if exists public\.app_user_security_invalidate/i);
+});
+
+test('production provider refresh re-reads current/next assurance and verified factor state', async () => {
+  const source = await readFile('lib/security/auth-service.mjs', 'utf8');
+  const refresh = source.match(/async refresh\(refreshToken\)[\s\S]*?async enrollMfa/i)?.[0];
+  assert.ok(refresh);
+  assert.match(refresh, /providerMfaState\(client\)/);
+  assert.match(source, /getAuthenticatorAssuranceLevel\(\)/);
+  assert.match(source, /nextLevel\s*===\s*['"]aal2['"]/);
+  assert.match(source, /listFactors\(\)/);
+  assert.match(source, /factorFingerprint/);
 });

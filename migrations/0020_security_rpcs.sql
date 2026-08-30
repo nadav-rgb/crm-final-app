@@ -6,7 +6,12 @@ begin;
 alter table app_private.auth_sessions
   add column if not exists access_token_expires_at timestamptz,
   add column if not exists idle_timeout_seconds integer not null default 28800
-    check (idle_timeout_seconds between 60 and 28800);
+    check (idle_timeout_seconds between 60 and 28800),
+  add column if not exists mfa_protected boolean not null default false,
+  add column if not exists mfa_factor_fingerprint text
+    check (mfa_factor_fingerprint is null or mfa_factor_fingerprint ~ '^[A-Za-z0-9_-]{43}$'),
+  add column if not exists refresh_lock_hash text,
+  add column if not exists refresh_lock_expires_at timestamptz;
 
 create or replace function public.app_identity_resolve(p_normalized_username text)
 returns table (user_id uuid, login_email text)
@@ -53,7 +58,8 @@ create or replace function public.app_session_create(
   p_session_hash text, p_user_id uuid, p_encrypted_access_token text,
   p_encrypted_refresh_token text, p_token_key_version integer,
   p_access_token_expires_at timestamptz, p_csrf_hash text, p_aal smallint,
-  p_security_version integer, p_auth_state text, p_created_at timestamptz,
+  p_security_version integer, p_auth_state text, p_mfa_protected boolean,
+  p_mfa_factor_fingerprint text, p_created_at timestamptz,
   p_idle_timeout_seconds integer, p_idle_expires_at timestamptz,
   p_absolute_expires_at timestamptz
 ) returns void
@@ -69,6 +75,9 @@ begin
      or p_aal not in (1, 2)
      or p_security_version < 1
      or p_auth_state not in ('active', 'mfa_required', 'recovery')
+     or p_mfa_protected is null
+     or (p_mfa_factor_fingerprint is not null
+       and p_mfa_factor_fingerprint !~ '^[A-Za-z0-9_-]{43}$')
      or p_idle_timeout_seconds not between 60 and 28800
      or p_idle_expires_at <= p_created_at
      or p_absolute_expires_at <= p_idle_expires_at
@@ -79,18 +88,20 @@ begin
   insert into app_private.auth_sessions (
     session_hash, user_id, encrypted_access_token, encrypted_refresh_token,
     token_key_version, access_token_expires_at, csrf_hash, aal,
-    security_version, auth_state, created_at, last_seen_at,
+    security_version, auth_state, mfa_protected, mfa_factor_fingerprint,
+    created_at, last_seen_at,
     idle_timeout_seconds, idle_expires_at, absolute_expires_at
   ) values (
     p_session_hash, p_user_id, p_encrypted_access_token, p_encrypted_refresh_token,
     p_token_key_version, p_access_token_expires_at, p_csrf_hash, p_aal,
-    p_security_version, p_auth_state, p_created_at, p_created_at,
+    p_security_version, p_auth_state, p_mfa_protected, p_mfa_factor_fingerprint,
+    p_created_at, p_created_at,
     p_idle_timeout_seconds, p_idle_expires_at, p_absolute_expires_at
   );
 end $$;
 
-revoke all on function public.app_session_create(text,uuid,text,text,integer,timestamptz,text,smallint,integer,text,timestamptz,integer,timestamptz,timestamptz) from public, anon, authenticated;
-grant execute on function public.app_session_create(text,uuid,text,text,integer,timestamptz,text,smallint,integer,text,timestamptz,integer,timestamptz,timestamptz) to service_role;
+revoke all on function public.app_session_create(text,uuid,text,text,integer,timestamptz,text,smallint,integer,text,boolean,text,timestamptz,integer,timestamptz,timestamptz) from public, anon, authenticated;
+grant execute on function public.app_session_create(text,uuid,text,text,integer,timestamptz,text,smallint,integer,text,boolean,text,timestamptz,integer,timestamptz,timestamptz) to service_role;
 
 create or replace function public.app_session_load(p_session_hash text)
 returns table (
@@ -98,7 +109,8 @@ returns table (
   encrypted_refresh_token text, token_key_version integer,
   access_token_expires_at timestamptz, csrf_hash text, aal smallint,
   security_version integer, current_security_version integer,
-  disabled_at timestamptz, auth_state text, created_at timestamptz,
+  disabled_at timestamptz, auth_state text, mfa_protected boolean,
+  mfa_factor_fingerprint text, created_at timestamptz,
   last_seen_at timestamptz, idle_timeout_seconds integer,
   idle_expires_at timestamptz, absolute_expires_at timestamptz,
   revoked_at timestamptz, revoke_reason text
@@ -110,7 +122,8 @@ as $$
     s.encrypted_refresh_token, s.token_key_version, s.access_token_expires_at,
     s.csrf_hash, s.aal, s.security_version,
     p.security_version as current_security_version, p.disabled_at,
-    s.auth_state, s.created_at, s.last_seen_at, s.idle_timeout_seconds,
+    s.auth_state, s.mfa_protected, s.mfa_factor_fingerprint,
+    s.created_at, s.last_seen_at, s.idle_timeout_seconds,
     s.idle_expires_at, s.absolute_expires_at, s.revoked_at, s.revoke_reason
   from app_private.auth_sessions s
   join public.profiles p on p.id = s.user_id
@@ -156,7 +169,8 @@ create or replace function public.app_session_rotate(
   p_encrypted_access_token text, p_encrypted_refresh_token text,
   p_token_key_version integer, p_access_token_expires_at timestamptz,
   p_csrf_hash text, p_aal smallint, p_security_version integer,
-  p_auth_state text, p_created_at timestamptz,
+  p_auth_state text, p_mfa_protected boolean, p_mfa_factor_fingerprint text,
+  p_created_at timestamptz,
   p_idle_timeout_seconds integer, p_idle_expires_at timestamptz,
   p_absolute_expires_at timestamptz, p_reason text
 ) returns boolean
@@ -172,6 +186,9 @@ begin
      or p_new_session_hash = p_old_session_hash
      or p_new_session_hash !~ '^[A-Za-z0-9_-]{43}$'
      or p_csrf_hash !~ '^[A-Za-z0-9_-]{43}$'
+     or p_mfa_protected is null
+     or (p_mfa_factor_fingerprint is not null
+       and p_mfa_factor_fingerprint !~ '^[A-Za-z0-9_-]{43}$')
      or p_security_version <> v_old.security_version
      or p_absolute_expires_at <> v_old.absolute_expires_at
      or length(p_reason) not between 1 and 120 then
@@ -183,20 +200,22 @@ begin
   insert into app_private.auth_sessions (
     session_hash, user_id, encrypted_access_token, encrypted_refresh_token,
     token_key_version, access_token_expires_at, csrf_hash, aal,
-    security_version, auth_state, created_at, last_seen_at,
+    security_version, auth_state, mfa_protected, mfa_factor_fingerprint,
+    created_at, last_seen_at,
     idle_timeout_seconds, idle_expires_at, absolute_expires_at
   ) values (
     p_new_session_hash, v_old.user_id, p_encrypted_access_token,
     p_encrypted_refresh_token, p_token_key_version, p_access_token_expires_at,
-    p_csrf_hash, p_aal, p_security_version, p_auth_state, p_created_at,
-    p_created_at, p_idle_timeout_seconds, p_idle_expires_at,
+    p_csrf_hash, p_aal, p_security_version, p_auth_state,
+    p_mfa_protected, p_mfa_factor_fingerprint, p_created_at, p_created_at,
+    p_idle_timeout_seconds, p_idle_expires_at,
     p_absolute_expires_at
   );
   return true;
 end $$;
 
-revoke all on function public.app_session_rotate(text,text,text,text,integer,timestamptz,text,smallint,integer,text,timestamptz,integer,timestamptz,timestamptz,text) from public, anon, authenticated;
-grant execute on function public.app_session_rotate(text,text,text,text,integer,timestamptz,text,smallint,integer,text,timestamptz,integer,timestamptz,timestamptz,text) to service_role;
+revoke all on function public.app_session_rotate(text,text,text,text,integer,timestamptz,text,smallint,integer,text,boolean,text,timestamptz,integer,timestamptz,timestamptz,text) from public, anon, authenticated;
+grant execute on function public.app_session_rotate(text,text,text,text,integer,timestamptz,text,smallint,integer,text,boolean,text,timestamptz,integer,timestamptz,timestamptz,text) to service_role;
 
 create or replace function public.app_session_revoke(p_session_hash text, p_reason text)
 returns boolean
@@ -216,23 +235,78 @@ end $$;
 revoke all on function public.app_session_revoke(text,text) from public, anon, authenticated;
 grant execute on function public.app_session_revoke(text,text) to service_role;
 
-create or replace function public.app_session_refresh_tokens(
+create or replace function public.app_session_refresh_claim(
   p_session_hash text, p_expected_encrypted_refresh_token text,
-  p_encrypted_access_token text, p_encrypted_refresh_token text,
-  p_token_key_version integer, p_access_token_expires_at timestamptz
+  p_refresh_lock_hash text
 ) returns boolean
 language plpgsql security definer
 set search_path = pg_catalog, public, app_private
 as $$
 declare v_updated integer;
 begin
+  if p_refresh_lock_hash is null
+     or p_refresh_lock_hash !~ '^[A-Za-z0-9_-]{43}$' then return false; end if;
+  update app_private.auth_sessions
+  set refresh_lock_hash = p_refresh_lock_hash,
+      refresh_lock_expires_at = now() + interval '30 seconds'
+  where session_hash = p_session_hash
+    and encrypted_refresh_token = p_expected_encrypted_refresh_token
+    and revoked_at is null
+    and idle_expires_at > now()
+    and absolute_expires_at > now()
+    and (refresh_lock_hash is null or refresh_lock_expires_at <= now());
+  get diagnostics v_updated = row_count;
+  return v_updated = 1;
+end $$;
+
+revoke all on function public.app_session_refresh_claim(text,text,text) from public, anon, authenticated;
+grant execute on function public.app_session_refresh_claim(text,text,text) to service_role;
+
+create or replace function public.app_session_refresh_tokens(
+  p_session_hash text, p_expected_encrypted_refresh_token text,
+  p_refresh_lock_hash text,
+  p_encrypted_access_token text, p_encrypted_refresh_token text,
+  p_token_key_version integer, p_access_token_expires_at timestamptz,
+  p_aal smallint, p_auth_state text, p_mfa_protected boolean,
+  p_mfa_factor_fingerprint text
+) returns boolean
+language plpgsql security definer
+set search_path = pg_catalog, public, app_private
+as $$
+declare v_updated integer;
+begin
+  if p_refresh_lock_hash !~ '^[A-Za-z0-9_-]{43}$'
+     or length(p_encrypted_access_token) not between 20 and 16384
+     or length(p_encrypted_refresh_token) not between 20 and 16384
+     or p_token_key_version < 1
+     or p_access_token_expires_at <= now()
+     or p_aal not in (1, 2)
+     or p_auth_state not in ('active', 'mfa_required')
+     or p_mfa_protected is null
+     or p_mfa_factor_fingerprint is null
+     or p_mfa_factor_fingerprint !~ '^[A-Za-z0-9_-]{43}$'
+     or (p_mfa_protected and (
+       (p_aal = 1 and p_auth_state <> 'mfa_required')
+       or (p_aal = 2 and p_auth_state <> 'active')
+     ))
+     or (not p_mfa_protected and p_auth_state <> 'active') then
+    return false;
+  end if;
   update app_private.auth_sessions
   set encrypted_access_token = p_encrypted_access_token,
       encrypted_refresh_token = p_encrypted_refresh_token,
       token_key_version = p_token_key_version,
-      access_token_expires_at = p_access_token_expires_at
+      access_token_expires_at = p_access_token_expires_at,
+      aal = p_aal,
+      auth_state = p_auth_state,
+      mfa_protected = p_mfa_protected,
+      mfa_factor_fingerprint = p_mfa_factor_fingerprint,
+      refresh_lock_hash = null,
+      refresh_lock_expires_at = null
   where session_hash = p_session_hash
     and encrypted_refresh_token = p_expected_encrypted_refresh_token
+    and refresh_lock_hash = p_refresh_lock_hash
+    and refresh_lock_expires_at > now()
     and revoked_at is null
     and idle_expires_at > now()
     and absolute_expires_at > now();
@@ -240,8 +314,8 @@ begin
   return v_updated = 1;
 end $$;
 
-revoke all on function public.app_session_refresh_tokens(text,text,text,text,integer,timestamptz) from public, anon, authenticated;
-grant execute on function public.app_session_refresh_tokens(text,text,text,text,integer,timestamptz) to service_role;
+revoke all on function public.app_session_refresh_tokens(text,text,text,text,text,integer,timestamptz,smallint,text,boolean,text) from public, anon, authenticated;
+grant execute on function public.app_session_refresh_tokens(text,text,text,text,text,integer,timestamptz,smallint,text,boolean,text) to service_role;
 
 create or replace function public.app_rate_limit_consume(
   p_bucket_hash text, p_limit integer, p_window_seconds integer

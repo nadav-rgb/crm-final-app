@@ -45,7 +45,7 @@
 | 0016_feedback_reports | טבלת `feedback_reports` (עמוד `/feedback`) | ✅ הורץ 2026-07-21 |
 | 0018_security_foundation | memberships, UUID ownership, private sessions/audit/rate-limit | ⛔ לא הורץ — נדרש G5 מאושר |
 | 0019_security_rls | explicit grants, forced RLS, UUID assignment, audit triggers | ⛔ לא הורץ — נדרש G5 מאושר |
-| 0020_security_rpcs | service-only sessions, rate-limit, audit and membership RPCs | ⛔ לא הורץ — נדרש G5 מאושר |
+| 0020_security_rpcs | service-only sessions, datastore refresh lock/CAS, MFA state, rate-limit, audit and membership RPCs | ⛔ לא הורץ — נדרש G5 מאושר |
 | 0021_meetings_security | reminder idempotency/cancellation schema + narrow cancel RPC | ⛔ לא הורץ — נדרש G5 מאושר; single-apply; not fully idempotent |
 | 0022_tours_security | tour reporter/cancellation schema + narrow report RPC | ⛔ לא הורץ — נדרש G5 מאושר; single-apply; not fully idempotent |
 | 0023_notifications_security | UUID ownership + resource-derived event RPC + private generic-push outbox | ⛔ לא הורץ — נדרש G5 מאושר |
@@ -60,7 +60,7 @@
 
 - `0018`: UUID mappings, memberships ו־private storage; כל owner mapping חייב להיות מלא.
 - `0019`: deny-by-default grants/RLS וה־helper `app_has_active_membership`.
-- `0020`: session/rate/audit/governance RPCs; כל function reference חייב להיפתר.
+- `0020`: session/rate/audit/governance RPCs; refresh דורש shared rate bucket, datastore lock/CAS ו-provider MFA state; כל function reference חייב להיפתר.
 - `0021`: תלויה ב־recipient/project UUID contract; validate constraint רק אחרי inventory.
 - `0022`: תלויה ב־tour UUID contract; report actor נגזר רק ב־RPC.
 - `0023`: תלויה ב־0018 ownership וב־0019 helpers; duplicate endpoints עוצרים לפני index.

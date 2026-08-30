@@ -4,6 +4,7 @@ import { useAuth } from '../../lib/AuthStore';
 export default function MfaChallenge({ factorId }) {
   const { challengeMfa, verifyMfa, logout } = useAuth();
   const [challengeId, setChallengeId] = useState(null);
+  const [challengeFactorId, setChallengeFactorId] = useState(factorId ?? null);
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -14,6 +15,7 @@ export default function MfaChallenge({ factorId }) {
     try {
       const result = await challengeMfa(factorId);
       setChallengeId(result.challengeId);
+      setChallengeFactorId(result.factorId ?? factorId);
     } catch {
       setError('לא הצלחנו להתחיל את האימות. בדקו את החיבור ונסו שוב.');
     } finally {
@@ -30,7 +32,7 @@ export default function MfaChallenge({ factorId }) {
     setLoading(true);
     setError('');
     try {
-      await verifyMfa({ factorId, challengeId, code });
+      await verifyMfa({ factorId: challengeFactorId, challengeId, code });
     } catch {
       setError('הקוד לא אושר. הזינו קוד חדש מאפליקציית האימות.');
     } finally {

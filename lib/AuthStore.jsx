@@ -12,7 +12,7 @@ export function AuthProvider({ children }) {
   const [authLoading, setAuthLoading] = useState(true);
   const [requiresMfa, setRequiresMfa] = useState(false);
   const [authState, setAuthState] = useState(null);
-  const [mfaFactors, setMfaFactors] = useState([]);
+  const [mfaEnrolled, setMfaEnrolled] = useState(false);
   const csrfRef = useRef(null);
   const clientRef = useRef(null);
 
@@ -35,7 +35,7 @@ export function AuthProvider({ children }) {
     setFilterProject(null);
     setRequiresMfa(false);
     setAuthState(null);
-    setMfaFactors([]);
+    setMfaEnrolled(false);
   }
 
   function applyAuthResult(result) {
@@ -45,7 +45,7 @@ export function AuthProvider({ children }) {
     setCurrentUser(result.user ?? null);
     setAuthState(result.authState ?? null);
     setRequiresMfa(result.authState === 'mfa_required');
-    setMfaFactors(Array.isArray(result.mfaFactors) ? result.mfaFactors : []);
+    setMfaEnrolled(result.mfaEnrolled === true);
     const initialProjectId = result.user?.project_id ?? authorizedProjects[0]?.id ?? null;
     setActiveProject(authorizedProjects.find((project) => project.id === initialProjectId) ?? null);
     setFilterProject(result.user?.role === 'ceo' ? null : initialProjectId);
@@ -80,11 +80,14 @@ export function AuthProvider({ children }) {
   }
 
   const enrollMfa = () => api()('/api/auth/mfa/enroll', { method: 'POST', body: {} });
-  const challengeMfa = (factorId) => api()('/api/auth/mfa/challenge', { method: 'POST', body: { factorId } });
+  const challengeMfa = (factorId) => api()('/api/auth/mfa/challenge', {
+    method: 'POST', body: factorId ? { factorId } : {},
+  });
 
   async function verifyMfa(input) {
     const result = await api()('/api/auth/mfa/verify', { method: 'POST', body: input });
-    applyAuthResult({ ...result, user: currentUser, projects });
+    const active = await api()('/api/auth/session', { method: 'GET' });
+    applyAuthResult(active);
     return result;
   }
 
@@ -130,7 +133,7 @@ export function AuthProvider({ children }) {
     <AuthContext.Provider value={{
       currentUser, projects, activeProject, filterProject, loginError, authLoading,
       requiresMfa, authState, login, logout, enrollMfa, challengeMfa, verifyMfa,
-      mfaFactors, requestPasswordReset, completePasswordReset, switchProject, can,
+      mfaEnrolled, requestPasswordReset, completePasswordReset, switchProject, can,
       apiFetch,
     }}>
       {children}

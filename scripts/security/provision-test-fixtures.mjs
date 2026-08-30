@@ -59,7 +59,7 @@ const MIGRATION_VERIFICATIONS = Object.freeze({
   ]),
   '0020': Object.freeze([
     migrationCheck('0020', 'rpc-dependencies-resolve', `select case when
-      to_regprocedure('public.app_session_create(text,uuid,text,text,integer,timestamptz,text,smallint,integer,text,timestamptz,integer,timestamptz,timestamptz)') is not null
+      to_regprocedure('public.app_session_create(text,uuid,text,text,integer,timestamptz,text,smallint,integer,text,boolean,text,timestamptz,integer,timestamptz,timestamptz)') is not null
       and to_regprocedure('public.app_rate_limit_consume(text,integer,integer)') is not null
       then 'pass' else 'fail' end`),
     migrationCheck('0020', 'search-paths-fixed', `select case when not exists (

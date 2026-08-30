@@ -694,15 +694,18 @@ test('local PostgreSQL adapter enacts expiry, disabled-user and stale-version st
     },
   });
   assert.equal(typeof database.expireSessionsForUser, 'function');
+  assert.equal(typeof database.expireAccessTokensForUser, 'function');
   assert.equal(typeof database.disableProfile, 'function');
   assert.equal(typeof database.bumpSecurityVersion, 'function');
   await database.expireSessionsForUser(actorId);
+  await database.expireAccessTokensForUser(actorId);
   await database.disableProfile(actorId);
   await database.bumpSecurityVersion(actorId);
-  assert.equal(sql.length, 3);
+  assert.equal(sql.length, 4);
   assert.match(sql[0], /update app_private\.auth_sessions[\s\S]*idle_expires_at[\s\S]*user_id/i);
-  assert.match(sql[1], /update public\.profiles[\s\S]*disabled_at[\s\S]*where id/i);
-  assert.match(sql[2], /security_version\s*=\s*security_version\s*\+\s*1/i);
+  assert.match(sql[1], /update app_private\.auth_sessions[\s\S]*access_token_expires_at[\s\S]*user_id/i);
+  assert.match(sql[2], /update public\.profiles[\s\S]*disabled_at[\s\S]*where id/i);
+  assert.match(sql[3], /security_version\s*=\s*security_version\s*\+\s*1/i);
   for (const statement of sql) assert.match(statement, new RegExp(actorId, 'i'));
 });
 

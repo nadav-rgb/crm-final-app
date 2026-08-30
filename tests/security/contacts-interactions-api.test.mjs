@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import {
   activistA, activistB, activistProjectB, coordA, headA, financeA, ceo,
   contactA, contactOwnedByActivistB, contactProjectB, makeContext,
@@ -117,14 +118,41 @@ test('contact create derives project and activist owner from active membership',
 
 test('duplicate lookup does not enumerate inaccessible projects and fails closed', async () => {
   let queries = 0;
+  const buckets = [];
   const hidden = await checkDuplicateContact(makeContext(activistA), {
     phone: '0500000000', projectId: activistProjectB.projectId,
-  }, { lookup: async () => { queries += 1; return true; } });
+  }, {
+    ipKey: 'trusted-prefix',
+    consumeRate: async (bucket) => { buckets.push(bucket); return { allowed: true }; },
+    lookup: async () => { queries += 1; return true; },
+  });
   assert.deepEqual(hidden, { duplicate: false });
   assert.equal(queries, 0);
+  assert.deepEqual(buckets[0], {
+    kind: 'duplicate_lookup',
+    key: `${activistA.userId}:${activistProjectB.projectId}:trusted-prefix`,
+    limit: 20,
+    windowSeconds: 5 * 60,
+  });
   await assert.rejects(() => checkDuplicateContact(makeContext(activistA), {
     phone: '0500000000', projectId: activistA.projectId,
-  }, { lookup: async () => { throw new Error('db down'); } }), code('DEPENDENCY_UNAVAILABLE'));
+  }, {
+    ipKey: 'trusted-prefix', consumeRate: async () => ({ allowed: true }),
+    lookup: async () => { throw new Error('db down'); },
+  }), code('DEPENDENCY_UNAVAILABLE'));
+  await assert.rejects(() => checkDuplicateContact(makeContext(activistA), {
+    phone: '0500000000', projectId: activistA.projectId,
+  }, {
+    ipKey: 'trusted-prefix', consumeRate: async () => ({ allowed: false }),
+    lookup: async () => false,
+  }), code('RATE_LIMITED'));
+});
+
+test('duplicate route wires the shared datastore limiter into every lookup', async () => {
+  const source = await readFile(new URL('../../pages/api/contacts/check-duplicate.js', import.meta.url), 'utf8');
+  assert.match(source, /consumeServerRateLimit/);
+  assert.match(source, /clientKey\(req\)/);
+  assert.match(source, /consumeRate:\s*consumeServerRateLimit/);
 });
 
 test('interaction authority is derived from session and RLS-loaded contact', async () => {

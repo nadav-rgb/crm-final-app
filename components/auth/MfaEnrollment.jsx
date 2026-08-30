@@ -3,12 +3,11 @@ import { useAuth } from '../../lib/AuthStore';
 import MfaChallenge from './MfaChallenge';
 
 export default function MfaEnrollment() {
-  const { currentUser, mfaFactors, enrollMfa, logout } = useAuth();
+  const { mfaEnrolled, enrollMfa, logout } = useAuth();
   const [enrollment, setEnrollment] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const existingFactorId = mfaFactors[0]?.id;
-  const factorId = existingFactorId ?? enrollment?.factorId;
+  const factorId = enrollment?.factorId;
 
   async function enroll() {
     setLoading(true);
@@ -37,10 +36,10 @@ export default function MfaEnrollment() {
         </p>
         <h1 id="mfa-title" style={{ marginBottom: 'var(--space-sm)', letterSpacing: 0 }}>עוד שלב קצר לפני הכניסה</h1>
         <p style={{ fontSize: 16, lineHeight: 1.7, marginBottom: 'var(--space-2xl)' }}>
-          {currentUser?.name ? `${currentUser.name}, ` : ''}החשבון הזה מוגן באימות דו־שלבי.
+          החשבון הזה מוגן באימות דו־שלבי.
         </p>
 
-        {factorId ? (
+        {mfaEnrolled || factorId ? (
           <>
             {enrollment?.qrCode && (
               <div style={{ marginBottom: 'var(--space-2xl)' }}>
