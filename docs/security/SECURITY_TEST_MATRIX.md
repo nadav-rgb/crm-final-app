@@ -44,4 +44,22 @@
 | SEC-040 | Finance filters cannot expand project/user scope and output is allowlisted | `db-contracts-live.test.mjs` | G5 | Direct JWT positive/negative |
 | SEC-041 | Finance RPC resists search-path hijack and fails closed when audit append fails | `db-contract-reconciliation.test.mjs` and G5 PostgreSQL verification | G3/G5 | Static/live |
 
-Rows marked G5 remain unverified against a real database until the separately approved isolated test-environment gate.
+## G5 evidence mapping
+
+The G5 gate is authorized only for a provably isolated local target. The live files stay explicitly
+skipped without `SECURITY_TEST_CONFIRM_ISOLATED=true` and an exact-loopback URL accepted by
+`assertSafeTestTarget`.
+
+| IDs | Live evidence | Required blocking layer/result |
+| --- | --- | --- |
+| SEC-001, SEC-004, SEC-009, SEC-010, SEC-023, SEC-025 | `rls-live.test.mjs`, `verify-rls-live.mjs` | anonymous/cross-tenant CRUD denied by PostgREST/RLS; all classified tables forced; audit read denied |
+| SEC-015..017, SEC-021, SEC-026..029 | `session-live.test.mjs`, local `verify-http.mjs` | expiry/logout/replay/rotation/disable/stale-version/CSRF/rate/AAL/escalation denied by BFF/session layer |
+| SEC-037 | `db-contracts-live.test.mjs` | other-recipient/project reminder cancel denied; exact own/manager path allowed |
+| SEC-038 | `db-contracts-live.test.mjs` | unassigned/cross-project/reporter forgery denied; exact assigned report allowed |
+| SEC-039 | `db-contracts-live.test.mjs` | event capability/project/recipient spoofing denied; recipients resource-derived |
+| SEC-040 | `db-contracts-live.test.mjs` | CEO/Head/Finance/Activist scopes exact; Coordinator and forged narrowing filters denied; projection keys exact |
+| SEC-041 | live PostgreSQL assertions plus `db-contracts-live.test.mjs` | temporary-schema hijack denied; audit failure aborts projection; no unaudited result returned |
+
+Every live evidence record is limited to case ID, actor class, resource class, blocking layer,
+expected status and actual status. Tokens, credentials, names, notes, payloads and row contents are
+forbidden. Until all live rows, finance parity and real AAL2 are proven, G5 remains `BLOCKED`.

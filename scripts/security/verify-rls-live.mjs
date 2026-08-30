@@ -1,5 +1,26 @@
 import { createClient } from '@supabase/supabase-js';
 
+export const SENSITIVE_TABLES = Object.freeze([
+  'projects',
+  'project_memberships',
+  'profiles',
+  'contacts',
+  'interactions',
+  'base_meeting_reports',
+  'meeting_houses',
+  'meeting_reminders',
+  'tours',
+  'expenses',
+  'bonus_cancellations',
+  'payment_config',
+  'notifications',
+  'notification_reads',
+  'push_subscriptions',
+  'fcm_tokens',
+  'feedback_reports',
+  'activist_directory',
+]);
+
 export function assertSafeTestTarget({ targetUrl, productionUrl, confirmed }) {
   if (confirmed !== true) {
     throw new Error('isolated test target confirmation required');
@@ -13,28 +34,26 @@ export function assertSafeTestTarget({ targetUrl, productionUrl, confirmed }) {
   if (target.origin === production.origin) {
     throw new Error('refused production target');
   }
-  if (!target.hostname.endsWith('.supabase.co') && target.hostname !== 'localhost') {
-    throw new Error('refused unknown test target');
+  if (target.username || target.password) {
+    throw new Error('refused target URL credentials');
   }
+  if (!['http:', 'https:'].includes(target.protocol)) {
+    throw new Error('refused non-HTTP test target');
+  }
+  if (!['localhost', '127.0.0.1', '[::1]'].includes(target.hostname)) {
+    throw new Error('refused non-loopback test target');
+  }
+
+  return Object.freeze({ origin: target.origin, hostname: target.hostname });
 }
 
 export async function verifyAnonymousIsolation({ targetUrl, publishableKey }) {
   const client = createClient(targetUrl, publishableKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  const tables = [
-    'contacts',
-    'interactions',
-    'meeting_houses',
-    'base_meeting_reports',
-    'profiles',
-    'push_subscriptions',
-    'meeting_reminders',
-    'audit_events',
-  ];
   const results = [];
 
-  for (const table of tables) {
+  for (const table of SENSITIVE_TABLES) {
     const { data, error } = await client.from(table).select('*').limit(1);
     const leaked = !error && Array.isArray(data) && data.length > 0;
     results.push({ table, blocked: Boolean(error) || data?.length === 0, leaked });
@@ -44,7 +63,7 @@ export async function verifyAnonymousIsolation({ targetUrl, publishableKey }) {
 
 async function main() {
   const targetUrl = process.env.SECURITY_TEST_SUPABASE_URL;
-  const productionUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const productionUrl = process.env.SECURITY_TEST_PRODUCTION_COMPARISON_URL;
   assertSafeTestTarget({
     targetUrl,
     productionUrl,
