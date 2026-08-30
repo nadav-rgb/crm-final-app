@@ -94,13 +94,12 @@ test('I2 assignment-array compatibility rejects nulls, duplicates, over-limit an
 });
 
 test('I2 canonical production readers and writers use UUID identities', async () => {
-  const [webPush, fcm, reminderCron, nextActionCron, tourSync, notify, crmStore] = await Promise.all([
+  const [webPush, fcm, reminderCron, nextActionCron, tourSync, crmStore] = await Promise.all([
     read('lib/webPushSend.js'),
     read('lib/fcmAdmin.js'),
     read('pages/api/cron/send-reminders.js'),
     read('pages/api/cron/next-action-reminders.js'),
     read('pages/api/cron/tours-sheet-sync.js'),
-    read('lib/notifyRecipients.js'),
     read('lib/CrmStore.jsx'),
   ]);
 
@@ -110,14 +109,12 @@ test('I2 canonical production readers and writers use UUID identities', async ()
   }
 
   assert.match(reminderCron, /\.select\(['"]id,type,recipient_user_id,remind_at,sent['"]\)/);
-  assert.match(reminderCron, /targetUserId\s*=\s*reminder\.recipient_user_id/);
-  assert.match(reminderCron, /recipient_user_id:\s*targetUserId/);
+  assert.match(reminderCron, /enqueueServiceNotificationEvent/);
   assert.doesNotMatch(reminderCron, /\.select\(['"]\*['"]\)/);
   assert.doesNotMatch(reminderCron, /reminder\.(?:coordinator_id|activist_id)/);
 
-  assert.match(nextActionCron, /\.select\(['"]id, name, assigned_user_id, next_action, next_action_date['"]\)/);
-  assert.match(nextActionCron, /targetUserId\s*=\s*c\.assigned_user_id/);
-  assert.match(nextActionCron, /recipient_user_id:\s*targetUserId/);
+  assert.match(nextActionCron, /\.select\(['"]id['"]\)/);
+  assert.match(nextActionCron, /eventType:\s*['"]next_action_due['"]/);
   assert.doesNotMatch(nextActionCron, /c\.activist_id/);
 
   assert.match(tourSync, /\.select\(['"]id,name['"]\)/);
@@ -127,8 +124,6 @@ test('I2 canonical production readers and writers use UUID identities', async ()
   }
   assert.doesNotMatch(tourSync, /guide_activist_id:\s*guide\.code|host_activist_id:\s*host\.code|assigned_activists:\s*\[\]/);
 
-  assert.match(notify, /recipient_user_id:\s*r\.user_id/);
-  assert.doesNotMatch(notify, /recipient_id:\s*String\(r\.activist_code\)/);
   assert.match(crmStore, /activist_id:\s*contact\.activistCode/);
   assert.doesNotMatch(crmStore, /activist_id:\s*contact\.assignedUserId/);
 });

@@ -60,7 +60,7 @@ base_meeting_reports/activist_directory) מסוננת בשרת לפי activist_i
 - `meetingHousesStorage.js` — CRUD בתי מפגש, deriveHouseStatus()
 - `baseMeetingUtils.js` — buildBaseMeetingsFromHouses()
 - `notificationDemo.js` — facade תאימות בזיכרון/דרך BFF לפעמון in-app. **לא שולח Push**
-- `notifyRecipients.js` — ⚠️ שרת בלבד: נמענים + פעמון + Push. ראה "התראות" למטה
+- `security/notification-delivery.mjs` — ⚠️ שרת בלבד: claim אטומי של outbox ושליחת Push גנרית
 - `notifyApi.js` — עטיפות לקוח לקריאת endpoints ההתראות
 - `aiDemo.js` — סיכומי AI דמו (משותף לדוחות ובתי מפגש שהסתיימו)
 - `reminderSchedulerDemo.js`, `activistStats.js`, `paymentCalc.js`
@@ -110,33 +110,34 @@ base_meeting_reports/activist_directory) מסוננת בשרת לפי activist_i
 | | פעמון (in-app) | Push (טלפון/מחשב) |
 |---|---|---|
 | מה זה | שורה בטבלת `notifications` | web-push + FCM למכשיר |
-| נכתב מ | דפדפן או שרת | **שרת בלבד** |
+| נכתב מ | RPC נגזר-משאב בלבד | **שרת בלבד** |
 | דורש | — | `SUPABASE_SECRET_KEY` + VAPID/FCM secrets |
 
-**כלל ברזל:** כל התראה ל**משתמש אחר** נכתבת **בצד-שרת**, דרך `lib/notifyRecipients.js`.
-`createDemoNotification` בדפדפן כותב שורת פעמון בלבד — הוא **לא יכול** לשלוח Push, כי המפתחות
-לא קיימים בדפדפן. זה היה שורש התלונה "אני לא מקבל התראות" (2026-07-21).
+**כלל ברזל:** כל התראה עוברת דרך `app_enqueue_notification_event`, שמקבל סוג אירוע ומזהה
+משאב בלבד, גוזר נמענים/תוכן/קישור במסד וכותב outbox אטומי. רק השרת רשאי לבצע
+`app_claim_notification_delivery` ולשלוח WebPush/FCM. אין לכתוב `notifications` ישירות ואין
+להעביר title/body/url/recipient מהלקוח או מ-cron.
 
 **להוסיף מסלול התראה חדש:**
-1. endpoint תחת `pages/api/` שמייבא `getProjectManagers` + `notifyRecipients` מ-`lib/notifyRecipients.js`
+1. להוסיף event allowlisted ב-`app_enqueue_notification_event` עם lookup משאב והרשאה מפורשים
 2. עטיפה ב-`lib/notifyApi.js`, וקריאה ממנה בדף — fire-and-forget
-3. **אבטחה (חובה):** ב-endpoint שפעיל רגיל קורא לו (`requireAuth`) — הלקוח שולח **מזהה בלבד**,
-   לא טקסט ולא רשימת נמענים. השרת קורא את השורה מה-DB, מוודא בעלות, ומרכיב את ההודעה בעצמו.
-   ראה `pages/api/interactions/notify.js`.
+3. **אבטחה (חובה):** הלקוח שולח **מזהה בלבד**, לא טקסט ולא רשימת נמענים. ה-RPC קורא את
+   השורה, מוודא בעלות ומרכיב את שורת הפעמון בעצמו. ראה `pages/api/interactions/notify.js`.
    ⚠️ **"מה-DB" ≠ "מאומת".** שדה שהמשתמש עצמו כותב (`contacts.name`, `mitzvot_history`,
    `notes`) הוא עדיין קלט שלו — קריאה שלו מהשרת לא הופכת אותו לבטוח. כל ערך כזה שנכנס
    לטקסט ההתראה חייב רשימה לבנה או חסם אורך, אחרת פעיל יכול לשגר טקסט חופשי כ-Push
    לכל צוות הניהול ולמנכ"ל. ראה `pages/api/mitzvot/notify.js` (`KNOWN_MITZVOT`).
-4. **`url` = יעד הלחיצה. חובה, ותמיד לפריט עצמו** — ראה למטה.
+4. פרטי העסק וה-deep-link נשארים בשורת הפעמון המאומתת. Payload מסך-הנעילה תמיד גנרי.
 
 **`url` — לאן הלחיצה על ההתראה מובילה**
-השדה `url` ב-`notifyRecipients` הוא deep-link, לא קישוט. הוא זורם לשלושה מסלולי-לחיצה נפרדים:
+השדה `url` בשורת `notifications` הוא deep-link, לא קישוט. Push תמיד פותח `/notifications`
+כדי לא לחשוף פרטי משאב על מסך הנעילה:
 
 | מסלול | מי מטפל | הערה |
 |---|---|---|
 | פעמון in-app | `pages/notifications.jsx` → `router.push(n.link)` | |
-| דפדפן / PWA | `public/sw.js` → `notificationclick` | ממקד חלון קיים ומנווט אותו |
-| אפליקציית אנדרואיד | `lib/nativePush.js` → `pushNotificationActionPerformed` | **בלי המאזין הזה הלחיצה נוחתת במסך הבית** |
+| דפדפן / PWA | `public/sw.js` → `notificationclick` | פותח את מרכז ההתראות בלבד |
+| אפליקציית אנדרואיד | `lib/nativePush.js` → `pushNotificationActionPerformed` | פותח את מרכז ההתראות בלבד |
 
 - **לכוון לפריט, לא לרשימה:** `/contact/{id}`, `/meeting-houses/{id}`, `/tours?tour={id}` —
   לא `/contacts` או `/tours`. ההתראה אומרת "משהו קרה"; המשתמש רוצה לראות **מה**.

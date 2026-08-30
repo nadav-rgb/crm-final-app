@@ -13,9 +13,8 @@
 //
 // שני הכיוונים דורשים service account ייעודי וגיליון/טווח allowlisted.
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
-import { getProjectManagers, notifyRecipients } from '../../../lib/notifyRecipients';
-import { formatDateHe } from '../../../lib/formatDate';
 import { getPrivateSheetsConfig, redactExternalError, requireCronAuth } from '../../../lib/security/external-data.mjs';
+import { enqueueServiceNotificationEvent } from '../../../lib/security/notification-delivery.mjs';
 import {
   fetchSheetTours, getSheetsToken, appendSheetRow, updateSheetRow,
   sheetDateToIso, isoToSheetDate, normalizeName,
@@ -144,20 +143,12 @@ export default async function handler(req, res) {
     created.push({ tourNumber: row.tourNumber, settlement: row.settlement, date: iso, tour: newTour });
     crmByNumber.set(row.tourNumber, newTour);
 
-    // התראה רק למי שיש לו תפקיד בסיור. הרכזים מקבלים דוח מסכם אחד בסוף, לא הודעה לכל סיור.
-    const roleTargets = [];
-    roleTargets.push({ userId: host.userId, role: 'המשפחה המארחת' });
-    if (guide.ok && guide.userId !== host.userId) roleTargets.push({ userId: guide.userId, role: 'המדריך' });
-
-    for (const t of roleTargets) {
-      await notifyRecipients(admin, [{ user_id: t.userId, name: userName(t.userId) }], {
-        title: 'שובצת לסיור',
-        body: `נקבעת בתור ${t.role} בסיור ${row.tourNumber} ב${row.settlement} בתאריך ${formatDateHe(iso)}.`,
-        url: `/tours?tour=${newTour.id}`,
-        type: 'assignment',
-        priority: 'high',
-        clientId: c => `tour_sheet_created_${row.tourNumber}_${c}`,
+    try {
+      await enqueueServiceNotificationEvent(admin, {
+        eventType: 'tour_created', resourceId: newTour.id, projectId: PROJECT_ID,
       });
+    } catch {
+      skipped.push(`סיור ${row.tourNumber}: ההתראה לא נשלחה`);
     }
   }
 
@@ -208,20 +199,15 @@ export default async function handler(req, res) {
   // שקט כשהכל מסונכרן — התראה יומית שאומרת "אין שינוי" מאמנת אנשים להתעלם ממנה
   if (lines.length === 0) return res.status(200).json({ ok: true, ...summary, quiet: true });
 
-  const managers = await getProjectManagers(admin, PROJECT_ID);
-  const today = new Date().toISOString().slice(0, 10);
-  const notified = await notifyRecipients(
-    admin,
-    managers,
-    {
-      title: 'סנכרון סיורים מול הגיליון',
-      body: lines.join('. '),
-      url: '/tours',
-      type: 'system',
-      priority: skipped.length || writeFailed ? 'high' : 'normal',
-      clientId: c => `tours_sheet_sync_${today}_${c}`,
-    },
-  );
+  let notified = 0;
+  try {
+    const delivery = await enqueueServiceNotificationEvent(admin, {
+      eventType: 'tour_sheet_sync', resourceId: PROJECT_ID, projectId: PROJECT_ID,
+    });
+    notified = delivery.queued;
+  } catch {
+    lines.push('שליחת התראת הסיכום נכשלה');
+  }
 
-  return res.status(200).json({ ok: true, ...summary, lines, notified: notified.length });
+  return res.status(200).json({ ok: true, ...summary, lines, notified });
 }

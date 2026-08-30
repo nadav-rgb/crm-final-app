@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { secureHandler } from '../../../lib/security/api-handler.mjs';
 import { SecurityError } from '../../../lib/security/errors.mjs';
+import { enqueueNotificationEvent } from '../../../lib/security/domains/notifications.mjs';
 
 const schema = z.object({ reportId: z.union([z.string().uuid(), z.number().int().positive()]) }).strict();
 
@@ -13,7 +14,7 @@ export default secureHandler({ method: 'POST', schema, resourceType: 'base_meeti
   if (context.globalRole !== 'ceo' && report.actor_user_id !== context.userId && !['head', 'coord'].includes(membership?.role)) {
     throw new SecurityError(404, 'NOT_FOUND', 'Report was not found');
   }
-  const { data, error: notifyError } = await context.db.rpc('enqueue_base_meeting_notification', { p_report_id: report.id });
-  if (notifyError) throw new SecurityError(503, 'DEPENDENCY_UNAVAILABLE', 'Notification delivery is unavailable', { cause: notifyError });
-  return { notified: Array.isArray(data) ? data : [] };
+  return enqueueNotificationEvent(context, {
+    eventType: 'base_meeting_reported', resourceId: report.id,
+  });
 });

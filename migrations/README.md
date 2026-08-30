@@ -48,7 +48,7 @@
 | 0020_security_rpcs | service-only sessions, rate-limit, audit and membership RPCs | ⛔ לא הורץ — נדרש G5 מאושר |
 | 0021_meetings_security | reminder idempotency/cancellation schema + narrow cancel RPC | ⛔ לא הורץ — נדרש G5 מאושר; single-apply; not fully idempotent |
 | 0022_tours_security | tour reporter/cancellation schema + narrow report RPC | ⛔ לא הורץ — נדרש G5 מאושר; single-apply; not fully idempotent |
-| 0023_notifications_security | UUID-only notification/push ownership + event-authorized enqueue RPC | ⛔ לא הורץ — נדרש G5 מאושר |
+| 0023_notifications_security | UUID ownership + resource-derived event RPC + private generic-push outbox | ⛔ לא הורץ — נדרש G5 מאושר |
 | 0024_finance_security | aggregate finance projection with caller-derived scope and atomic audit | ⛔ לא הורץ — נדרש G5 מאושר |
 
 ## שרשרת Security Hardening הרשמית — לא להרצה ללא G5

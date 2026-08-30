@@ -5,9 +5,8 @@
 // Dedup דרך client_id ייחודי (כולל את התאריך) — אם הפעיל ישנה תאריך, תֵצֵא תזכורת חדשה.
 // אין צורך בשינוי סכמה: משתמשים בטבלת notifications הקיימת.
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
-import { sendFcmToActivist } from '../../../lib/fcmAdmin';
-import { sendWebPushToActivist } from '../../../lib/webPushSend';
 import { requireCronAuth } from '../../../lib/security/external-data.mjs';
+import { enqueueServiceNotificationEvent } from '../../../lib/security/notification-delivery.mjs';
 
 // "היום" + השעה לפי שעון ישראל (UTC+3).
 function israelNow() {
@@ -30,7 +29,7 @@ export default async function handler(req, res) {
 
   const { data: contacts, error } = await supabase
     .from('contacts')
-    .select('id, name, assigned_user_id, next_action, next_action_date')
+    .select('id')
     .eq('is_active', true)
     .not('next_action', 'is', null)
     .not('next_action_date', 'is', null)
@@ -43,34 +42,15 @@ export default async function handler(req, res) {
   let processed = 0;
 
   for (const c of contacts) {
-    const targetUserId = c.assigned_user_id;
-    const clientId = `next_action__${c.id}__${c.next_action_date}`;
-    const title = '📌 תזכורת: פעולה הבאה';
-    const body = `${c.next_action} — ${c.name}`;
-    const url = `/contact/${c.id}`;
-
-    // Dedup + פעמון: ננסה לרשום שורת notifications. אם כבר קיימת (אותו contact+תאריך) —
-    // ignoreDuplicates מחזיר ריק ⇒ כבר התרענו, מדלגים בלי לשלוח push שוב.
-    const { data: inserted, error: insErr } = await supabase
-      .from('notifications')
-      .upsert(
-        { recipient_user_id: targetUserId, type: 'next_action', title, body, url, priority: 'normal', client_id: clientId },
-        { onConflict: 'client_id', ignoreDuplicates: true }
-      )
-      .select('id');
-
-    if (insErr) { console.error('next-action notif insert:', insErr.message); continue; }
-    if (!inserted?.length) continue; // כבר נשלח לתאריך הזה
-
-    processed++;
-
-    // web-push לכל מכשירי הפעיל (מנוי מת נמחק נקודתית בתוך ה-helper)
-    const web = await sendWebPushToActivist(supabase, targetUserId, { title, body, url });
-    sent += web.sent;
-
-    // FCM (אפליקציית Capacitor) — no-op אם לא מוגדר
-    const fcm = await sendFcmToActivist(supabase, targetUserId, { title, body, url });
-    sent += fcm.sent || 0;
+    try {
+      const delivery = await enqueueServiceNotificationEvent(supabase, {
+        eventType: 'next_action_due', resourceId: c.id,
+      });
+      if (delivery.queued > 0) processed++;
+      sent += delivery.sent;
+    } catch {
+      console.error('next-action notification delivery failed');
+    }
   }
 
   return res.status(200).json({ sent, processed });

@@ -17,8 +17,11 @@ revoke all on function public.app_finance_summary(text,integer,uuid) from public
 drop function if exists public.app_finance_summary(text,integer,uuid);
 
 -- 0023: restore legacy compatibility columns before their NOT NULL constraints.
+revoke all on function public.app_claim_notification_delivery(uuid) from public, anon, authenticated, service_role;
+drop function if exists public.app_claim_notification_delivery(uuid);
 revoke all on function public.app_enqueue_notification_event(text,text,integer) from public, anon, authenticated;
 drop function if exists public.app_enqueue_notification_event(text,text,integer);
+drop table if exists app_private.notification_delivery_outbox;
 drop index if exists public.push_subscriptions_endpoint_uq;
 
 update public.notifications n set recipient_id = p.activist_code::text

@@ -2,30 +2,9 @@
 // 1) קובע תזכורות למפגשי היום בצד השרת (ensureRemindersForDate) — בלי תלות בפתיחת דף.
 // 2) שולח את התזכורות שהגיע זמנן (web-push לכל המכשירים + FCM לאפליקציה).
 import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
-import { sendFcmToActivist } from '../../../lib/fcmAdmin';
-import { sendWebPushToActivist } from '../../../lib/webPushSend';
 import { ensureRemindersForDate, israelToday } from '../../../lib/meetingReminderScheduler';
 import { requireCronAuth } from '../../../lib/security/external-data.mjs';
-
-const MESSAGES = {
-  activist_1: {
-    title: '📋 נא למלא דיווח על המפגש',
-    body: 'המפגש הסתיים — מלא את הדיווח הקצר כדי לשמור על הרצף',
-  },
-  activist_2: {
-    title: '⏰ תזכורת: דיווח ממתין',
-    body: 'עדיין לא מילאת את הדיווח על המפגש. לחץ למילוי',
-  },
-  activist_3: {
-    title: '⚠️ תזכורת אחרונה — דיווח דחוף',
-    body: 'זו התזכורת האחרונה. עד 12:00 יש למלא את הדיווח',
-  },
-  coordinator: {
-    title: '🚨 פעיל לא מילא דיווח',
-    body: 'פעיל לא הגיש דיווח עד 12:00. נדרשת התערבות ישירה',
-    urgent: true,
-  },
-};
+import { enqueueServiceNotificationEvent } from '../../../lib/security/notification-delivery.mjs';
 
 export default async function handler(req, res) {
   try {
@@ -60,35 +39,16 @@ export default async function handler(req, res) {
   let sent = 0;
 
   for (const reminder of reminders) {
-    const targetUserId = reminder.recipient_user_id;
-
-    const msg = MESSAGES[reminder.type];
-    const payload = { ...msg, url: '/base-meetings' };
-
-    // שורת פעמון בנוסף ל-Push: Push שנדחה/נמחק מהמסך לא משאיר שום זכר באפליקציה,
-    // ואז תזכורת שהוחמצה נעלמת. client_id דטרמיניסטי — הרצה חוזרת לא מכפילה.
-    const { error: bellErr } = await supabase.from('notifications').upsert({
-      recipient_user_id: targetUserId,
-      client_id: `reminder__${reminder.id}`,
-      type: reminder.type === 'coordinator' ? 'missing_report' : 'base_report_reminder',
-      title: msg.title,
-      body: msg.body,
-      url: '/base-meetings',
-      priority: 'high',
-    }, { onConflict: 'client_id' });
-    if (bellErr) console.error('send-reminders bell upsert failed:', bellErr.message);
-
-    const web = await sendWebPushToActivist(supabase, targetUserId, payload);
-    sent += web.sent;
-
-    // FCM נייטיב לאפליקציה (no-op אם לא מוגדר FCM_SERVICE_ACCOUNT)
-    const fcm = await sendFcmToActivist(supabase, targetUserId, payload);
-    sent += fcm.sent || 0;
-
-    await supabase
-      .from('meeting_reminders')
-      .update({ sent: true })
-      .eq('id', reminder.id);
+    try {
+      const delivery = await enqueueServiceNotificationEvent(supabase, {
+        eventType: reminder.type === 'coordinator' ? 'missing_report' : 'base_report_reminder',
+        resourceId: reminder.id,
+      });
+      sent += delivery.sent;
+      await supabase.from('meeting_reminders').update({ sent: true }).eq('id', reminder.id);
+    } catch {
+      console.error('meeting reminder delivery failed');
+    }
   }
 
   return res.status(200).json({ sent, scheduled });
