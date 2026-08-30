@@ -1,18 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createClient } from '@supabase/supabase-js';
-import { assertSafeTestTarget } from '../../scripts/security/verify-rls-live.mjs';
+import { computeDeterministicFinanceExpected } from '../../scripts/security/provision-test-fixtures.mjs';
+import {
+  createLocalPostgresAdapter,
+  runDirectPostgresAssertions,
+} from '../../scripts/security/g5-local-orchestrator.mjs';
+import { loadVerifiedLocalTarget } from '../../scripts/security/verify-rls-live.mjs';
 
 const enabled = process.env.SECURITY_TEST_CONFIRM_ISOLATED === 'true';
 const live = { skip: enabled ? false : 'requires confirmed isolated G5 loopback target' };
 
 function loadFixture() {
-  const targetUrl = process.env.SECURITY_TEST_SUPABASE_URL;
-  const productionUrl = process.env.SECURITY_TEST_PRODUCTION_COMPARISON_URL;
-  assertSafeTestTarget({ targetUrl, productionUrl, confirmed: enabled });
+  const target = loadVerifiedLocalTarget();
+  const { targetUrl } = target;
   const publishableKey = process.env.SECURITY_TEST_SUPABASE_PUBLISHABLE_KEY;
   const fixture = JSON.parse(process.env.SECURITY_TEST_DIRECT_JWT_FIXTURE ?? '{}');
-  if (!publishableKey || !fixture.tokens || !fixture.resources) {
+  if (!publishableKey || !fixture.tokens || !fixture.resources?.actorIds
+    || !fixture.resources?.securityRunId) {
     throw new Error('isolated direct-JWT fixture is incomplete');
   }
   const client = (token) => createClient(targetUrl, publishableKey, {
@@ -22,6 +27,7 @@ function loadFixture() {
   return {
     clients: Object.fromEntries(Object.entries(fixture.tokens).map(([key, token]) => [key, client(token)])),
     resources: fixture.resources,
+    target,
   };
 }
 
@@ -97,6 +103,10 @@ test('direct JWT cannot forge notification event authority or tenant', live, asy
 
 test('direct JWT finance filters only narrow scope and projection keys are exact', live, async () => {
   const { clients, resources } = loadFixture();
+  const financeExpected = computeDeterministicFinanceExpected({
+    runId: resources.securityRunId,
+    actorIds: resources.actorIds,
+  });
   await expectDenied(clients.financeA.rpc('app_finance_summary', {
     p_period: resources.period, p_project_id: resources.projectB, p_user_id: null,
   }));
@@ -113,16 +123,20 @@ test('direct JWT finance filters only narrow scope and projection keys are exact
     p_period: resources.period, p_project_id: resources.projectA, p_user_id: null,
   }));
 
-  for (const actor of ['ceoAal2', 'headAal2', 'financeA', 'activistA']) {
+  const expectedByActor = {
+    ceoAal2: financeExpected.byActor.ceoAal2ProjectA,
+    headAal2: financeExpected.byActor.headAal2,
+    financeA: financeExpected.byActor.financeA,
+    activistA: financeExpected.byActor.activistA,
+  };
+  for (const actor of Object.keys(expectedByActor)) {
     const data = await expectAllowed(clients[actor].rpc('app_finance_summary', {
       p_period: resources.period,
       p_project_id: resources.projectA,
       p_user_id: actor === 'activistA' ? resources.activistA : null,
     }));
     assertFinanceProjection(data);
-    if (resources.financeExpected?.[actor]) {
-      assert.deepEqual(data, resources.financeExpected[actor]);
-    }
+    assert.deepEqual(data, expectedByActor[actor]);
   }
 });
 
@@ -132,11 +146,25 @@ test('unauthorized direct JWT cannot read the private audit store', live, async 
   await expectDenied(clients.activistA.schema('app_private').from('audit_events').select('id').limit(1));
 });
 
-test('live PostgreSQL assertions prove search-path and atomic-audit behavior', live, () => {
-  const assertions = JSON.parse(process.env.SECURITY_TEST_POSTGRES_ASSERTIONS ?? '{}');
+test('live PostgreSQL assertions prove search-path and atomic-audit behavior', live, async () => {
+  const { resources, target } = loadFixture();
+  const dockerExecutable = process.env.SECURITY_TEST_DOCKER_CLI;
+  assert.ok(dockerExecutable, 'absolute local Docker CLI path missing');
+  const database = createLocalPostgresAdapter({
+    repoRoot: process.cwd(),
+    target: target.safety,
+    dockerExecutable,
+  });
+  const assertions = await runDirectPostgresAssertions({
+    database,
+    actorId: resources.actorIds.ceo,
+    projectId: resources.projectA,
+    expectedRows: 2,
+    period: resources.period,
+  });
   assert.deepEqual(assertions, {
-    searchPathHijack: 'denied',
-    financeAuditFailure: 'denied',
+    searchPathHijack: 'pass',
+    financeAuditFailure: 'pass',
     unauditedRowsReturned: 0,
   });
 });

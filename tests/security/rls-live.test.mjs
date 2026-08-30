@@ -3,19 +3,47 @@ import assert from 'node:assert/strict';
 import { createClient } from '@supabase/supabase-js';
 import {
   assertSafeTestTarget,
+  loadVerifiedLocalTarget,
   verifyAnonymousIsolation,
 } from '../../scripts/security/verify-rls-live.mjs';
 
 const enabled = process.env.SECURITY_TEST_CONFIRM_ISOLATED === 'true';
 const live = { skip: enabled ? false : 'requires confirmed isolated G5 loopback target' };
 const syntheticProduction = 'https://production-project.invalid';
+const testProjectId = 'mekarvim-security-g5-unit-test';
+const testApiPort = 54321;
+
+function verifiedStackIdentity(overrides = {}) {
+  const projectId = overrides.projectId ?? testProjectId;
+  const apiPort = overrides.apiPort ?? testApiPort;
+  return {
+    verified: overrides.verified ?? true,
+    projectId,
+    apiPort,
+    containers: overrides.containers ?? [
+      { name: `supabase_db_${projectId}`, projectId, role: 'database' },
+      { name: `supabase_kong_${projectId}`, projectId, role: 'api', hostApiPort: apiPort },
+      { name: `supabase_auth_${projectId}`, projectId, role: 'auth' },
+      { name: `supabase_rest_${projectId}`, projectId, role: 'rest' },
+    ],
+  };
+}
+
+function safeTarget(targetUrl = `http://127.0.0.1:${testApiPort}`) {
+  return {
+    targetUrl,
+    productionUrl: syntheticProduction,
+    confirmed: true,
+    expectedProjectId: testProjectId,
+    expectedApiPort: testApiPort,
+    stackIdentity: verifiedStackIdentity(),
+  };
+}
 
 function loadDirectFixture() {
-  const targetUrl = process.env.SECURITY_TEST_SUPABASE_URL;
-  const productionUrl = process.env.SECURITY_TEST_PRODUCTION_COMPARISON_URL;
+  const { targetUrl } = loadVerifiedLocalTarget();
   const publishableKey = process.env.SECURITY_TEST_SUPABASE_PUBLISHABLE_KEY;
   const fixture = JSON.parse(process.env.SECURITY_TEST_DIRECT_JWT_FIXTURE ?? '{}');
-  assertSafeTestTarget({ targetUrl, productionUrl, confirmed: enabled });
   if (!publishableKey || !fixture.tokens || !fixture.resources) {
     throw new Error('isolated direct-JWT fixture is incomplete');
   }
@@ -38,24 +66,22 @@ test('G5 target guard accepts only explicitly confirmed exact loopback origins',
     'http://[::1]:54321',
   ]) {
     assert.doesNotThrow(() => assertSafeTestTarget({
-      targetUrl,
-      productionUrl: syntheticProduction,
-      confirmed: true,
+      ...safeTarget(targetUrl),
     }));
   }
 });
 
 test('G5 target guard rejects production equality, missing confirmation, spoofing and remote targets', () => {
   const rejected = [
-    { targetUrl: syntheticProduction, productionUrl: syntheticProduction, confirmed: true },
-    { targetUrl: 'http://localhost:54321', productionUrl: syntheticProduction, confirmed: false },
-    { targetUrl: 'http://localhost:54321', productionUrl: syntheticProduction, confirmed: undefined },
-    { targetUrl: 'http://localhost.evil.example:54321', productionUrl: syntheticProduction, confirmed: true },
-    { targetUrl: 'http://127.0.0.1.evil.example:54321', productionUrl: syntheticProduction, confirmed: true },
-    { targetUrl: 'http://remote-test.supabase.co', productionUrl: syntheticProduction, confirmed: true },
-    { targetUrl: 'https://remote-test.supabase.co', productionUrl: syntheticProduction, confirmed: true },
-    { targetUrl: 'http://prod.example@localhost:54321', productionUrl: syntheticProduction, confirmed: true },
-    { targetUrl: 'ftp://localhost:54321', productionUrl: syntheticProduction, confirmed: true },
+    { ...safeTarget(syntheticProduction), productionUrl: syntheticProduction },
+    { ...safeTarget(), confirmed: false },
+    { ...safeTarget(), confirmed: undefined },
+    safeTarget('http://localhost.evil.example:54321'),
+    safeTarget('http://127.0.0.1.evil.example:54321'),
+    safeTarget('http://remote-test.supabase.co'),
+    safeTarget('https://remote-test.supabase.co'),
+    safeTarget('http://prod.example@localhost:54321'),
+    safeTarget('ftp://localhost:54321'),
   ];
 
   for (const input of rejected) {
@@ -63,11 +89,160 @@ test('G5 target guard rejects production equality, missing confirmation, spoofin
   }
 });
 
+test('G5 target guard rejects non-root, decorated, HTTPS, wrong-port and unrelated loopback origins', () => {
+  for (const targetUrl of [
+    'http://127.0.0.1:54321/not-the-root',
+    'http://127.0.0.1:54321/?query=1',
+    'http://127.0.0.1:54321/#fragment',
+    'https://127.0.0.1:54321',
+    'http://127.0.0.1:1',
+    'http://localhost:65535',
+  ]) {
+    assert.throws(() => assertSafeTestTarget(safeTarget(targetUrl)), /refused|exact|identity|port/i);
+  }
+});
+
+test('G5 target guard rejects wrong project, container label and unverified identity', () => {
+  for (const stackIdentity of [
+    verifiedStackIdentity({ projectId: 'mekarvim-security-g5-wrong' }),
+    verifiedStackIdentity({ verified: false }),
+    verifiedStackIdentity({
+      containers: [
+        { name: `supabase_db_${testProjectId}`, projectId: 'mekarvim-security-g5-wrong', role: 'database' },
+        { name: `supabase_kong_${testProjectId}`, projectId: testProjectId, role: 'api', hostApiPort: testApiPort },
+        { name: `supabase_auth_${testProjectId}`, projectId: testProjectId, role: 'auth' },
+        { name: `supabase_rest_${testProjectId}`, projectId: testProjectId, role: 'rest' },
+      ],
+    }),
+  ]) {
+    assert.throws(() => assertSafeTestTarget({
+      ...safeTarget(),
+      stackIdentity,
+    }), /refused|identity|project|container/i);
+  }
+});
+
+test('Docker inspection derives the exact project-labelled local stack identity', async () => {
+  const module = await import('../../scripts/security/verify-rls-live.mjs');
+  assert.equal(typeof module.inspectLocalStackIdentity, 'function');
+  const inspections = [
+    ['database', 'db'], ['api', 'kong'], ['auth', 'auth'], ['rest', 'rest'],
+  ].map(([role, component], index) => ({
+    Id: String(index + 1).repeat(12),
+    Name: `/supabase_${component}_${testProjectId}`,
+    Config: { Labels: { 'com.supabase.cli.project': testProjectId } },
+    NetworkSettings: role === 'api' ? {
+      Ports: { '8000/tcp': [{ HostIp: '127.0.0.1', HostPort: String(testApiPort) }] },
+    } : { Ports: {} },
+  }));
+  const runDocker = (args) => {
+    if (args[0] === 'ps') {
+      return { status: 0, stdout: inspections.map((item) => item.Id).join('\n'), stderr: '' };
+    }
+    if (args[0] === 'inspect') {
+      return { status: 0, stdout: JSON.stringify(inspections), stderr: '' };
+    }
+    return { status: 1, stdout: '', stderr: 'unexpected command' };
+  };
+
+  assert.deepEqual(module.inspectLocalStackIdentity({
+    projectId: testProjectId,
+    apiPort: testApiPort,
+    runDocker,
+  }), verifiedStackIdentity());
+});
+
+test('Docker inspection fails closed on missing, mixed-label or non-loopback containers', async () => {
+  const { inspectLocalStackIdentity } = await import('../../scripts/security/verify-rls-live.mjs');
+  assert.equal(typeof inspectLocalStackIdentity, 'function');
+  const base = [
+    ['database', 'db'], ['api', 'kong'], ['auth', 'auth'], ['rest', 'rest'],
+  ].map(([role, component], index) => ({
+    Id: String(index + 1).repeat(12),
+    Name: `/supabase_${component}_${testProjectId}`,
+    Config: { Labels: { 'com.supabase.cli.project': testProjectId } },
+    NetworkSettings: role === 'api' ? {
+      Ports: { '8000/tcp': [{ HostIp: '127.0.0.1', HostPort: String(testApiPort) }] },
+    } : { Ports: {} },
+  }));
+  const attempt = (inspections) => inspectLocalStackIdentity({
+    projectId: testProjectId,
+    apiPort: testApiPort,
+    runDocker(args) {
+      return args[0] === 'ps'
+        ? { status: 0, stdout: inspections.map((item) => item.Id).join('\n'), stderr: '' }
+        : { status: 0, stdout: JSON.stringify(inspections), stderr: '' };
+    },
+  });
+
+  assert.throws(() => attempt(base.slice(0, 3)), /identity|container/i);
+  assert.throws(() => attempt(base.map((item, index) => index === 0 ? {
+    ...item,
+    Config: { Labels: { 'com.supabase.cli.project': 'mekarvim-security-g5-wrong' } },
+  } : item)), /label|project|identity/i);
+  assert.throws(() => attempt(base.map((item, index) => index === 1 ? {
+    ...item,
+    NetworkSettings: { Ports: { '8000/tcp': [{ HostIp: '0.0.0.0', HostPort: String(testApiPort) }] } },
+  } : item)), /loopback|port|identity/i);
+});
+
+test('live target loader measures Docker identity instead of accepting a caller verdict', async () => {
+  const { loadVerifiedLocalTarget } = await import('../../scripts/security/verify-rls-live.mjs');
+  assert.equal(typeof loadVerifiedLocalTarget, 'function');
+  const inspections = [
+    ['db', 'database'], ['kong', 'api'], ['auth', 'auth'], ['rest', 'rest'],
+  ].map(([component, role], index) => ({
+    Id: String(index + 5).repeat(12),
+    Name: `/supabase_${component}_${testProjectId}`,
+    Config: { Labels: { 'com.supabase.cli.project': testProjectId } },
+    NetworkSettings: role === 'api' ? {
+      Ports: { '8000/tcp': [{ HostIp: '127.0.0.1', HostPort: String(testApiPort) }] },
+    } : { Ports: {} },
+  }));
+  const result = loadVerifiedLocalTarget({
+    env: {
+      SECURITY_TEST_CONFIRM_ISOLATED: 'true',
+      SECURITY_TEST_SUPABASE_URL: `http://127.0.0.1:${testApiPort}`,
+      SECURITY_TEST_PRODUCTION_COMPARISON_URL: syntheticProduction,
+      SECURITY_TEST_PROJECT_ID: testProjectId,
+      SECURITY_TEST_SUPABASE_API_PORT: String(testApiPort),
+    },
+    runDocker(args) {
+      return args[0] === 'ps'
+        ? { status: 0, stdout: inspections.map((item) => item.Id).join('\n'), stderr: '' }
+        : { status: 0, stdout: JSON.stringify(inspections), stderr: '' };
+    },
+  });
+  assert.equal(result.targetUrl, `http://127.0.0.1:${testApiPort}`);
+  assert.equal(result.stackIdentity.verified, true);
+  assert.equal(result.stackIdentity.projectId, testProjectId);
+
+  assert.throws(() => loadVerifiedLocalTarget({
+    env: {
+      SECURITY_TEST_CONFIRM_ISOLATED: 'true',
+      SECURITY_TEST_SUPABASE_URL: `http://127.0.0.1:${testApiPort}`,
+      SECURITY_TEST_PRODUCTION_COMPARISON_URL: syntheticProduction,
+      SECURITY_TEST_PROJECT_ID: testProjectId,
+      SECURITY_TEST_SUPABASE_API_PORT: String(testApiPort),
+      SECURITY_TEST_STACK_IDENTITY: JSON.stringify(verifiedStackIdentity()),
+    },
+    runDocker: () => ({ status: 1, stdout: '', stderr: 'daemon unavailable' }),
+  }), /inspection|identity/i);
+
+  assert.throws(() => loadVerifiedLocalTarget({
+    env: {
+      SECURITY_TEST_CONFIRM_ISOLATED: 'true',
+      SECURITY_TEST_SUPABASE_URL: `http://127.0.0.1:${testApiPort}`,
+      SECURITY_TEST_PRODUCTION_COMPARISON_URL: syntheticProduction,
+      SECURITY_TEST_PROJECT_ID: testProjectId,
+      SECURITY_TEST_SUPABASE_API_PORT: String(testApiPort),
+    },
+  }), /absolute local Docker CLI/i);
+});
+
 test('anonymous isolation denies every classified public surface', live, async () => {
-  const targetUrl = process.env.SECURITY_TEST_SUPABASE_URL;
-  const productionUrl = process.env.SECURITY_TEST_PRODUCTION_COMPARISON_URL;
+  const { targetUrl } = loadVerifiedLocalTarget();
   const publishableKey = process.env.SECURITY_TEST_SUPABASE_PUBLISHABLE_KEY;
-  assertSafeTestTarget({ targetUrl, productionUrl, confirmed: enabled });
   assert.ok(publishableKey, 'missing local publishable key');
 
   const results = await verifyAnonymousIsolation({ targetUrl, publishableKey });
@@ -76,10 +251,8 @@ test('anonymous isolation denies every classified public surface', live, async (
 });
 
 test('direct PostgREST rejects anonymous PII mutation independently of the BFF', live, async () => {
-  const targetUrl = process.env.SECURITY_TEST_SUPABASE_URL;
-  const productionUrl = process.env.SECURITY_TEST_PRODUCTION_COMPARISON_URL;
+  const { targetUrl } = loadVerifiedLocalTarget();
   const publishableKey = process.env.SECURITY_TEST_SUPABASE_PUBLISHABLE_KEY;
-  assertSafeTestTarget({ targetUrl, productionUrl, confirmed: enabled });
   assert.ok(publishableKey, 'missing local publishable key');
   const client = createClient(targetUrl, publishableKey, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -149,10 +322,8 @@ test('RLS role projection is exact across CEO, Head, Coordinator, Finance and Ac
 });
 
 test('service-only posture inventory proves forced RLS without exposing row data', live, async () => {
-  const targetUrl = process.env.SECURITY_TEST_SUPABASE_URL;
-  const productionUrl = process.env.SECURITY_TEST_PRODUCTION_COMPARISON_URL;
+  const { targetUrl } = loadVerifiedLocalTarget();
   const serviceRoleKey = process.env.SECURITY_TEST_SUPABASE_SERVICE_ROLE_KEY;
-  assertSafeTestTarget({ targetUrl, productionUrl, confirmed: enabled });
   assert.ok(serviceRoleKey, 'missing process-local service-role key');
   const service = createClient(targetUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },

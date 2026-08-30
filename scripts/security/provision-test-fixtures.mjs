@@ -1,7 +1,12 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHmac, randomBytes, randomUUID } from 'node:crypto';
+import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { createClient } from '@supabase/supabase-js';
+import { toPaymentConfigDto } from '../../lib/security/domains/finance.mjs';
 import { assertSafeTestTarget } from './verify-rls-live.mjs';
+
+const require = createRequire(import.meta.url);
+const { calcMonthlyPayment, deriveMitzvotBonuses } = require('../../lib/paymentCalc.js');
 
 export const MIGRATION_SEQUENCE = Object.freeze([
   '0018', '0019', '0020', '0021', '0022', '0023', '0024',
@@ -17,14 +22,108 @@ const MIGRATIONS = Object.freeze({
   '0024': 'migrations/0024_finance_security.sql',
 });
 
+function migrationCheck(id, name, sql) {
+  return Object.freeze({ id: `${id}-${name}`, sql, expected: 'pass' });
+}
+
 const MIGRATION_VERIFICATIONS = Object.freeze({
-  '0018': ['private-schema-revoked', 'legacy-owner-backfills-complete', 'identity-map-unique'],
-  '0019': ['all-sensitive-tables-force-rls', 'grants-exact', 'audit-triggers-redacted'],
-  '0020': ['rpc-dependencies-resolve', 'search-paths-fixed', 'rpc-grants-exact'],
-  '0021': ['reminder-format-constraint', 'cancel-rpc-narrows-authority', 'no-broad-row-mutation'],
-  '0022': ['tour-report-constraints', 'report-rpc-derives-actor', 'report-columns-not-broadly-granted'],
-  '0023': ['uuid-ownership-complete', 'endpoint-unique', 'event-authority-resource-derived'],
-  '0024': ['finance-scope-narrows-only', 'projection-allowlisted', 'audit-atomic-and-redacted'],
+  '0018': Object.freeze([
+    migrationCheck('0018', 'private-schema-revoked', `select case when to_regnamespace('app_private') is not null
+      and not has_schema_privilege('anon','app_private','usage')
+      and not has_schema_privilege('authenticated','app_private','usage')
+      then 'pass' else 'fail' end`),
+    migrationCheck('0018', 'owner-backfills-complete', `select case when
+      not exists (select 1 from public.contacts where assigned_user_id is null)
+      and not exists (select 1 from public.interactions where actor_user_id is null)
+      and not exists (select 1 from public.expenses where actor_user_id is null)
+      and not exists (select 1 from public.notifications where recipient_user_id is null)
+      then 'pass' else 'fail' end`),
+    migrationCheck('0018', 'identity-map-unique', `select case when
+      (select count(*) from public.profiles where activist_code is not null)
+        = (select count(distinct activist_code) from public.profiles where activist_code is not null)
+      and not exists (select 1 from public.project_memberships where user_id is null or project_id is null)
+      then 'pass' else 'fail' end`),
+  ]),
+  '0019': Object.freeze([
+    migrationCheck('0019', 'all-sensitive-tables-force-rls', `select case when not exists (
+      select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace
+      where n.nspname='public' and c.relname = any(array['projects','project_memberships','profiles','contacts','interactions','base_meeting_reports','meeting_houses','meeting_reminders','tours','expenses','bonus_cancellations','payment_config','notifications','notification_reads','push_subscriptions','fcm_tokens','feedback_reports'])
+      and (not c.relrowsecurity or not c.relforcerowsecurity)) then 'pass' else 'fail' end`),
+    migrationCheck('0019', 'grants-exact', `select case when not exists (
+      select 1 from information_schema.role_table_grants where table_schema='app_private'
+      and grantee in ('anon','authenticated')) then 'pass' else 'fail' end`),
+    migrationCheck('0019', 'audit-triggers-redacted', `select case when
+      to_regprocedure('app_private.audit_row_change()') is not null
+      and (select count(*) from pg_trigger where tgname like 'audit_%_changes' and not tgisinternal) >= 16
+      then 'pass' else 'fail' end`),
+  ]),
+  '0020': Object.freeze([
+    migrationCheck('0020', 'rpc-dependencies-resolve', `select case when
+      to_regprocedure('public.app_session_create(text,uuid,text,text,integer,timestamptz,text,smallint,integer,text,timestamptz,integer,timestamptz,timestamptz)') is not null
+      and to_regprocedure('public.app_rate_limit_consume(text,integer,integer)') is not null
+      then 'pass' else 'fail' end`),
+    migrationCheck('0020', 'search-paths-fixed', `select case when not exists (
+      select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+      where n.nspname='public' and p.proname like 'app_%'
+      and not coalesce(p.proconfig,'{}') && array['search_path=pg_catalog, public','search_path=pg_catalog, public, app_private'])
+      then 'pass' else 'fail' end`),
+    migrationCheck('0020', 'rpc-grants-exact', `select case when
+      has_function_privilege('service_role','public.app_session_load(text)','execute')
+      and not has_function_privilege('authenticated','public.app_session_load(text)','execute')
+      then 'pass' else 'fail' end`),
+  ]),
+  '0021': Object.freeze([
+    migrationCheck('0021', 'reminder-format-constraint', `select case when
+      exists (select 1 from pg_constraint where conname='meeting_reminders_idempotency_format_chk')
+      then 'pass' else 'fail' end`),
+    migrationCheck('0021', 'cancel-rpc-narrows-authority', `select case when
+      to_regprocedure('public.app_cancel_meeting_reminders(text)') is not null
+      and has_function_privilege('authenticated','public.app_cancel_meeting_reminders(text)','execute')
+      then 'pass' else 'fail' end`),
+    migrationCheck('0021', 'no-broad-row-mutation', `select case when
+      not has_column_privilege('authenticated','public.meeting_reminders','cancelled_at','update')
+      then 'pass' else 'fail' end`),
+  ]),
+  '0022': Object.freeze([
+    migrationCheck('0022', 'tour-report-constraints', `select case when
+      exists (select 1 from pg_constraint where conname='tours_status_security_chk')
+      and exists (select 1 from pg_constraint where conname='tours_cancellation_reason_len_chk')
+      then 'pass' else 'fail' end`),
+    migrationCheck('0022', 'report-rpc-derives-actor', `select case when
+      to_regprocedure('public.app_submit_tour_report(text,jsonb)') is not null
+      then 'pass' else 'fail' end`),
+    migrationCheck('0022', 'report-columns-not-broadly-granted', `select case when
+      not has_column_privilege('authenticated','public.tours','reported_by_user_id','update')
+      then 'pass' else 'fail' end`),
+  ]),
+  '0023': Object.freeze([
+    migrationCheck('0023', 'uuid-ownership-complete', `select case when
+      not exists (select 1 from public.notifications where recipient_user_id is null)
+      and not exists (select 1 from public.push_subscriptions where user_id is null)
+      and not exists (select 1 from public.fcm_tokens where user_id is null)
+      then 'pass' else 'fail' end`),
+    migrationCheck('0023', 'endpoint-unique', `select case when
+      to_regclass('public.push_subscriptions_endpoint_uq') is not null
+      then 'pass' else 'fail' end`),
+    migrationCheck('0023', 'event-authority-resource-derived', `select case when
+      to_regprocedure('public.app_enqueue_notification_event(text,text,integer)') is not null
+      and has_function_privilege('authenticated','public.app_enqueue_notification_event(text,text,integer)','execute')
+      then 'pass' else 'fail' end`),
+  ]),
+  '0024': Object.freeze([
+    migrationCheck('0024', 'finance-scope-narrows-only', `select case when
+      to_regprocedure('public.app_finance_summary(text,integer,uuid)') is not null
+      and has_function_privilege('authenticated','public.app_finance_summary(text,integer,uuid)','execute')
+      then 'pass' else 'fail' end`),
+    migrationCheck('0024', 'projection-allowlisted', `select case when
+      pg_get_function_result('public.app_finance_summary(text,integer,uuid)'::regprocedure)
+      = 'TABLE(user_id uuid, name text, period text, activity_total numeric, bonus_total numeric, tour_total numeric, expense_total numeric, grand_total numeric)'
+      then 'pass' else 'fail' end`),
+    migrationCheck('0024', 'audit-atomic-and-redacted', `select case when
+      position('insert into app_private.audit_events' in lower(pg_get_functiondef('public.app_finance_summary(text,integer,uuid)'::regprocedure))) > 0
+      and position('rowcount' in lower(pg_get_functiondef('public.app_finance_summary(text,integer,uuid)'::regprocedure))) > 0
+      then 'pass' else 'fail' end`),
+  ]),
 });
 
 const CLEANUP_TABLES = new Set([
@@ -57,6 +156,36 @@ const BLOCKING_LAYERS = new Set([
 
 export function createSecurityRunId() {
   return randomUUID();
+}
+
+function decodeBase32(value) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  const normalized = String(value ?? '').toUpperCase().replaceAll('=', '').replace(/[^A-Z2-7]/g, '');
+  if (!normalized) throw new Error('invalid TOTP secret encoding');
+  let bits = '';
+  for (const char of normalized) {
+    const index = alphabet.indexOf(char);
+    if (index < 0) throw new Error('invalid TOTP secret encoding');
+    bits += index.toString(2).padStart(5, '0');
+  }
+  const bytes = [];
+  for (let index = 0; index + 8 <= bits.length; index += 8) {
+    bytes.push(Number.parseInt(bits.slice(index, index + 8), 2));
+  }
+  return Buffer.from(bytes);
+}
+
+export function generateTotpCode(secret, timestamp = Date.now()) {
+  const counter = BigInt(Math.floor(timestamp / 30_000));
+  const message = Buffer.alloc(8);
+  message.writeBigUInt64BE(counter);
+  const digest = createHmac('sha1', decodeBase32(secret)).update(message).digest();
+  const offset = digest[digest.length - 1] & 0x0f;
+  const binary = ((digest[offset] & 0x7f) << 24)
+    | (digest[offset + 1] << 16)
+    | (digest[offset + 2] << 8)
+    | digest[offset + 3];
+  return String(binary % 1_000_000).padStart(6, '0');
 }
 
 export function buildMigrationPlan(schemaFixture) {
@@ -107,8 +236,8 @@ export function buildLegacyFixtureRows(runId, actorIds) {
     throw new Error('legacy fixture refused: synthetic actor map is incomplete');
   }
 
-  const projectA = 910001;
-  const projectB = 910002;
+  const projectA = 1;
+  const projectB = 2;
   const codes = Object.freeze({
     headA: 1001, headB: 1002, coordA: 1003, financeA: 1004,
     activistA1: 1101, activistA2: 1102, activistB1: 1201,
@@ -257,12 +386,98 @@ export function buildLegacyFixtureRows(runId, actorIds) {
   });
 }
 
+function inPeriod(date, period) {
+  return typeof date === 'string' && date.slice(0, 7) === period;
+}
+
+function sum(rows, selector) {
+  return rows.reduce((total, row) => total + Number(selector(row) ?? 0), 0);
+}
+
+export function computeDeterministicFinanceExpected({ runId, actorIds }) {
+  const fixture = buildLegacyFixtureRows(runId, actorIds);
+  const config = toPaymentConfigDto(fixture.payment_config[0]);
+  const period = '2026-08';
+  const periodInput = { year: 2026, month: 7 };
+  const mitzvot = deriveMitzvotBonuses(fixture.contacts, config.MITZVOT_BONUS_PER_LEVEL);
+  const newParticipants = fixture.contacts
+    .filter((contact) => inPeriod(contact.joined_at, period)
+      && (contact.source === 'external' || contact.referred_by != null))
+    .map((contact) => ({
+      activist_id: contact.activist_id,
+      contact_id: contact.id,
+      contactName: contact.name,
+    }));
+  const cancelled = new Set(fixture.bonus_cancellations.map((row) => row.bonus_key));
+  const activists = fixture.profiles.filter((profile) => profile.role === 'activist'
+    && !['disabled', 'staleSecurityVersion'].some((alias) => actorIds[alias] === profile.id));
+
+  const rows = activists.map((profile) => {
+    const actorMitzvot = mitzvot.filter((bonus) => Number(bonus.activist_id) === Number(profile.activist_code)
+      && bonus.month === '2026-7');
+    const actorNewParticipants = newParticipants
+      .filter((bonus) => Number(bonus.activist_id) === Number(profile.activist_code));
+    const payment = calcMonthlyPayment(
+      profile.activist_code,
+      fixture.interactions,
+      fixture.contacts,
+      actorMitzvot,
+      actorNewParticipants,
+      config,
+      cancelled,
+      periodInput,
+    );
+    const activityTotal = sum(payment.breakdown.filter((entry) => entry.type === 'קשר'), (entry) => entry.amount);
+    const bonusTotal = sum(payment.breakdown.filter((entry) => entry.type !== 'קשר'), (entry) => entry.amount);
+    const expenseTotal = sum(fixture.expenses.filter((expense) =>
+      Number(expense.activist_id) === Number(profile.activist_code) && inPeriod(expense.date, period)),
+    (expense) => expense.amount);
+    const tourTotal = fixture.tours.filter((tour) =>
+      Number(tour.guide_activist_id) === Number(profile.activist_code)
+      && tour.status === 'completed' && inPeriod(tour.date, period)).length * config.TOUR_GUIDE_RATE;
+    return {
+      user_id: profile.id,
+      name: profile.name,
+      period,
+      activity_total: activityTotal,
+      bonus_total: bonusTotal,
+      tour_total: tourTotal,
+      expense_total: expenseTotal,
+      grand_total: activityTotal + bonusTotal + tourTotal + expenseTotal,
+      project_id: profile.project_id,
+    };
+  }).sort((left, right) => left.name.localeCompare(right.name) || left.user_id.localeCompare(right.user_id));
+  const projected = (projectId) => rows.filter((row) => row.project_id === projectId)
+    .map(({ project_id: _projectId, ...row }) => row);
+  const projectA = projected(1);
+  const projectB = projected(2);
+  return Object.freeze({
+    projectA: Object.freeze(projectA),
+    projectB: Object.freeze(projectB),
+    all: Object.freeze([...projectA, ...projectB].sort((left, right) =>
+      left.name.localeCompare(right.name) || left.user_id.localeCompare(right.user_id))),
+    byActor: Object.freeze({
+      activistA: Object.freeze(projectA.filter((row) => row.user_id === actorIds.activistA1)),
+      headAal2: Object.freeze(projectA),
+      financeA: Object.freeze(projectA),
+      ceoAal2ProjectA: Object.freeze(projectA),
+    }),
+  });
+}
+
 export async function provisionLegacyDatabase({
   client, runId, actorIds, targetUrl, productionUrl, confirmed,
+  expectedProjectId, expectedApiPort, stackIdentity, rowsByTable: suppliedRows,
 }) {
-  assertSafeTestTarget({ targetUrl, productionUrl, confirmed });
+  assertSafeTestTarget({
+    targetUrl, productionUrl, confirmed, expectedProjectId, expectedApiPort, stackIdentity,
+  });
   if (!client) throw new Error('legacy fixture refused: local service client required');
-  const rowsByTable = buildLegacyFixtureRows(runId, actorIds);
+  const rowsByTable = suppliedRows ?? buildLegacyFixtureRows(runId, actorIds);
+  if (rowsByTable?.projects?.[0]?.security_run_id !== runId
+    || rowsByTable?.profiles?.some((row) => row.security_run_id !== runId)) {
+    throw new Error('legacy fixture refused: prebuilt rows do not match exact run');
+  }
   for (const [table, rows] of Object.entries(rowsByTable)) {
     const { error } = await client.from(table).insert(rows);
     if (error) throw new Error(`legacy fixture stopped at ${table}`);
@@ -278,6 +493,9 @@ export async function provisionLegacyDatabase({
     meetingB: rowsByTable.meeting_houses[1].id,
     tourAssignedA: rowsByTable.tours[0].id,
     tourB: rowsByTable.tours[1].id,
+    activistA: actorIds.activistA1,
+    activistB: actorIds.activistB1,
+    rowsByTable,
     period: '2026-08',
   });
 }
@@ -309,8 +527,13 @@ function syntheticCredential() {
   return randomBytes(32).toString('base64url');
 }
 
-function serviceClient({ targetUrl, productionUrl, confirmed, serviceRoleKey }) {
-  assertSafeTestTarget({ targetUrl, productionUrl, confirmed });
+function serviceClient({
+  targetUrl, productionUrl, confirmed, expectedProjectId, expectedApiPort, stackIdentity,
+  serviceRoleKey,
+}) {
+  assertSafeTestTarget({
+    targetUrl, productionUrl, confirmed, expectedProjectId, expectedApiPort, stackIdentity,
+  });
   if (typeof serviceRoleKey !== 'string' || serviceRoleKey.length < 20) {
     throw new Error('fixture provisioning refused: local service credential required in process memory');
   }
@@ -325,8 +548,11 @@ function serviceClient({ targetUrl, productionUrl, confirmed, serviceRoleKey }) 
  */
 export async function createSyntheticAuthActorsWithClient({
   client, runId, targetUrl, productionUrl, confirmed,
+  expectedProjectId, expectedApiPort, stackIdentity,
 }) {
-  assertSafeTestTarget({ targetUrl, productionUrl, confirmed });
+  assertSafeTestTarget({
+    targetUrl, productionUrl, confirmed, expectedProjectId, expectedApiPort, stackIdentity,
+  });
   if (!client?.auth?.admin || !UUID.test(runId ?? '')) {
     throw new Error('fixture provisioning refused: local admin client and exact run id required');
   }
@@ -356,6 +582,7 @@ export async function createSyntheticAuthActorsWithClient({
     }
     createdUserIds.push(data.user.id);
     actors.set(actor.alias, Object.freeze({
+      alias: actor.alias,
       id: data.user.id,
       email,
       password,
@@ -369,6 +596,77 @@ export async function createSyntheticAuthActorsWithClient({
   return Object.freeze({ runId, blueprint, actors, client });
 }
 
+export async function createDirectJwtFixture({ actors, createClientForActor, database }) {
+  const required = [
+    'ceo', 'headA', 'headB', 'coordA', 'activistA1', 'activistA2',
+    'activistB1', 'financeA', 'disabled', 'staleSecurityVersion',
+  ];
+  if (!(actors instanceof Map) || required.some((alias) => !UUID.test(actors.get(alias)?.id ?? ''))
+    || typeof createClientForActor !== 'function'
+    || typeof database?.disableProfile !== 'function'
+    || typeof database?.bumpSecurityVersion !== 'function') {
+    throw new Error('direct-JWT fixture refused: local actor state is incomplete');
+  }
+
+  const tokens = {};
+  const tokenNames = Object.freeze({
+    coordA: 'coordA',
+    activistA1: 'activistA',
+    activistA2: 'activistA2',
+    activistB1: 'activistB',
+    financeA: 'financeA',
+    disabled: 'disabled',
+    staleSecurityVersion: 'staleSecurityVersion',
+  });
+
+  for (const alias of required) {
+    const actor = actors.get(alias);
+    const client = createClientForActor(actor);
+    const signedIn = await client.auth.signInWithPassword({
+      email: actor.email,
+      password: actor.password,
+    });
+    const aal1 = signedIn?.data?.session?.access_token;
+    if (signedIn?.error || !aal1) throw new Error(`direct-JWT fixture stopped at ${alias} AAL1`);
+
+    if (alias === 'ceo' || alias === 'headA') {
+      const prefix = alias === 'ceo' ? 'ceo' : 'head';
+      tokens[`${prefix}Aal1`] = aal1;
+      let factorId;
+      try {
+        const enrolled = await client.auth.mfa.enroll({
+          factorType: 'totp', friendlyName: `security-direct-${alias}`,
+        });
+        factorId = enrolled?.data?.id;
+        const secret = enrolled?.data?.totp?.secret;
+        if (enrolled?.error || !factorId || !secret) {
+          throw new Error(`direct-JWT fixture stopped at ${alias} enrollment`);
+        }
+        const verified = await client.auth.mfa.challengeAndVerify({
+          factorId,
+          code: generateTotpCode(secret),
+        });
+        const aal2 = verified?.data?.access_token;
+        if (verified?.error || !aal2) throw new Error(`direct-JWT fixture stopped at ${alias} AAL2`);
+        tokens[`${prefix}Aal2`] = aal2;
+      } finally {
+        if (factorId) {
+          const reset = await client.auth.mfa.unenroll({ factorId });
+          if (reset?.error) throw new Error(`direct-JWT fixture factor cleanup failed at ${alias}`);
+        }
+        await client.auth.signOut({ scope: 'local' });
+      }
+    } else {
+      if (tokenNames[alias]) tokens[tokenNames[alias]] = aal1;
+      await client.auth.signOut({ scope: 'local' });
+    }
+  }
+
+  await database.disableProfile(actors.get('disabled').id);
+  await database.bumpSecurityVersion(actors.get('staleSecurityVersion').id);
+  return Object.freeze({ tokens: Object.freeze(tokens) });
+}
+
 export async function provisionSyntheticAuthActors(options) {
   const client = serviceClient(options);
   const runId = options.runId ?? createSecurityRunId();
@@ -378,13 +676,19 @@ export async function provisionSyntheticAuthActors(options) {
     targetUrl: options.targetUrl,
     productionUrl: options.productionUrl,
     confirmed: options.confirmed,
+    expectedProjectId: options.expectedProjectId,
+    expectedApiPort: options.expectedApiPort,
+    stackIdentity: options.stackIdentity,
   });
 }
 
 export async function cleanupSyntheticFixtures({
   client, runId, targetUrl, productionUrl, confirmed,
+  expectedProjectId, expectedApiPort, stackIdentity,
 }) {
-  assertSafeTestTarget({ targetUrl, productionUrl, confirmed });
+  assertSafeTestTarget({
+    targetUrl, productionUrl, confirmed, expectedProjectId, expectedApiPort, stackIdentity,
+  });
   if (!client || !UUID.test(runId ?? '')) {
     throw new Error('cleanup refused: client and exact run id required');
   }
@@ -429,15 +733,9 @@ export async function cleanupSyntheticFixtures({
 }
 
 async function main() {
-  const runId = createSecurityRunId();
-  const blueprint = buildSyntheticFixtureBlueprint(runId);
-  const plan = buildMigrationPlan('tests/security/fixtures/legacy-security-schema.sql');
-  process.stdout.write(`${JSON.stringify({
-    mode: 'synthetic-plan-only',
-    projectCount: blueprint.projects.length,
-    actorCount: blueprint.actors.length,
-    migrationCount: plan.length,
-  })}\n`);
+  const { runConfiguredLocalG5 } = await import('./g5-local-orchestrator.mjs');
+  const result = await runConfiguredLocalG5();
+  process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

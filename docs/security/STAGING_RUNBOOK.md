@@ -10,8 +10,12 @@ hostname, a missing confirmation flag, or an ambiguous target is a hard stop.
 - Create the stack under the ignored directory
   `.superpowers/sdd/2026-08-27-security-hardening/g5-local/` with a unique project id beginning
   `mekarvim-security-g5-`.
-- Accept only exact loopback origins whose URL hostname is `localhost`, `127.0.0.1`, or `[::1]`.
-  Hostname suffixes, URL userinfo, non-HTTP schemes, and every remote Supabase hostname are refused.
+- Accept only the canonical root origin on the captured API port whose URL hostname is `localhost`,
+  `127.0.0.1`, or `[::1]`. Paths, queries, fragments, HTTPS, wrong ports, hostname suffixes, URL
+  userinfo, and every remote Supabase hostname are refused.
+- Before every mutation, inspect Docker directly. Require exactly one database, Kong, Auth and
+  PostgREST container with the unique project label/name, and require Kong's captured API port to
+  be loopback-bound. A caller-supplied identity verdict is never accepted.
 - Set `SECURITY_TEST_CONFIRM_ISOLATED=true` only in the live-test process. Compare the local origin
   through `SECURITY_TEST_PRODUCTION_COMPARISON_URL`; never load `.env.local`.
 - Keep the local publishable key, service-role key, database password, synthetic passwords, JWTs,
@@ -45,7 +49,8 @@ Never weaken forced RLS, grants, resource-derived authority, fixed `search_path`
 
 ## Exact forward order
 
-The machine-readable contract is exported by `scripts/security/provision-test-fixtures.mjs`.
+The machine-readable contract is exported by `scripts/security/provision-test-fixtures.mjs` and
+executed by `scripts/security/g5-local-orchestrator.mjs`.
 The only forward order is `0018 → 0019 → 0020 → 0021 → 0022 → 0023 → 0024`.
 
 | Step | Preconditions | Required verification before continuing |
@@ -82,13 +87,23 @@ Each evidence row is restricted to case ID, actor class, resource class, blockin
 status and actual status. Reports may add aggregate counts, but never tokens, passwords, cookies,
 emails, names, notes, payloads or database rows.
 
-Run the direct PostgREST/JWT, local BFF, finance parity and session suites:
+The only supported executable path owns stack creation, reset, forward/rollback/forward migration,
+actor/token provisioning, local BFF startup, live suites, sanitized evidence, exact cleanup and
+verified stack shutdown. Supply only absolute local executable paths and non-secret port choices;
+do not supply fixture JSON, expected finance rows, PostgreSQL verdicts, session verdicts, tokens or
+credentials. The runner never loads `.env.local`.
 
 ```powershell
-npm run test:security -- tests/security/rls-live.test.mjs tests/security/session-live.test.mjs tests/security/db-contracts-live.test.mjs
-node scripts/security/verify-rls-live.mjs
-node scripts/security/verify-http.mjs
+$env:SECURITY_TEST_EXECUTE_LOCAL_G5 = 'true'
+$env:SECURITY_TEST_SUPABASE_CLI = 'C:\absolute\path\to\supabase.exe'
+$env:SECURITY_TEST_DOCKER_CLI = 'C:\absolute\path\to\docker.exe'
+node scripts/security/provision-test-fixtures.mjs
 ```
+
+The runner launches the three live suites itself and derives evidence only after their child
+process exits successfully. Failure output is not copied into the report because the child holds
+process-memory credentials. Per-step PostgreSQL checks and sanitized inventories are executed
+directly; the operator does not write pass/fail JSON.
 
 Real local TOTP must enroll, challenge, verify, prove AAL1 denial and AAL2 success, rotate the
 session, exercise factor reset/unenroll, and erase the secret from memory. If local GoTrue cannot
@@ -96,13 +111,14 @@ perform a provider operation, record the exact provider-level blocker; do not in
 
 ## Exact cleanup and shutdown
 
-1. Show sanitized per-table counts for the exact `security_run_id`.
-2. Delete child resources only with `eq('security_run_id', exactRunId)` after the cleanup guard
-   validates the UUID and allowlisted table.
-3. Delete only Auth users whose metadata has that exact run id; cascading profiles/memberships may
-   then be removed. Delete the two exact tagged projects last.
-4. Verify every exact-run count is zero, then rerun the anonymous isolation probe and posture
-   inventory.
+1. Build one in-process exact registry for every seeded public row, derived membership, private
+   Auth identity, Auth user, session hash, audit event id and rate-bucket hash.
+2. Count every exact selector and refuse cleanup if any selector is not unique. Delete private
+   FK blockers and dependent public rows first, profiles/memberships next, exact Auth users after
+   their audit references, and the two exact projects last.
+3. Inventory and delete any audit rows created by cleanup itself in a second exact derived-resource
+   pass; verify every registry selector is zero and every private-resource inventory is empty.
+4. Capture the sanitized post-cleanup posture inventory. No row values or identifiers enter evidence.
 5. Stop/remove only containers and volumes whose verified label contains the unique local project
    id. Confirm no listener for that project remains. Do not prune Docker or delete unrelated
    containers/volumes.

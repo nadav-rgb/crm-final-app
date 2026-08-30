@@ -46,19 +46,20 @@
 
 ## G5 evidence mapping
 
-The G5 gate is authorized only for a provably isolated local target. The live files stay explicitly
-skipped without `SECURITY_TEST_CONFIRM_ISOLATED=true` and an exact-loopback URL accepted by
-`assertSafeTestTarget`.
+The G5 gate is authorized only for the exact task-owned disposable local stack. The live files stay
+explicitly skipped without `SECURITY_TEST_CONFIRM_ISOLATED=true`; execution additionally requires
+the canonical root origin, captured API port, unique `mekarvim-security-g5-*` project id, and a
+positive Docker inspection of the exact Supabase project labels/container names.
 
 | IDs | Live evidence | Required blocking layer/result |
 | --- | --- | --- |
 | SEC-001, SEC-004, SEC-009, SEC-010, SEC-023, SEC-025 | `rls-live.test.mjs`, `verify-rls-live.mjs` | anonymous/cross-tenant CRUD denied by PostgREST/RLS; all classified tables forced; audit read denied |
-| SEC-015..017, SEC-021, SEC-026..029 | `session-live.test.mjs`, local `verify-http.mjs` | expiry/logout/replay/rotation/disable/stale-version/CSRF/rate/AAL/escalation denied by BFF/session layer |
+| SEC-015..017, SEC-021, SEC-026..029 | `session-live.test.mjs` | actual local DB/BFF requests prove expiry/logout/replay/rotation/disable/stale-version/CSRF/rate/AAL/escalation denial |
 | SEC-037 | `db-contracts-live.test.mjs` | other-recipient/project reminder cancel denied; exact own/manager path allowed |
 | SEC-038 | `db-contracts-live.test.mjs` | unassigned/cross-project/reporter forgery denied; exact assigned report allowed |
 | SEC-039 | `db-contracts-live.test.mjs` | event capability/project/recipient spoofing denied; recipients resource-derived |
 | SEC-040 | `db-contracts-live.test.mjs` | CEO/Head/Finance/Activist scopes exact; Coordinator and forged narrowing filters denied; projection keys exact |
-| SEC-041 | live PostgreSQL assertions plus `db-contracts-live.test.mjs` | temporary-schema hijack denied; audit failure aborts projection; no unaudited result returned |
+| SEC-041 | direct PostgreSQL queries in `db-contracts-live.test.mjs` | temporary-schema hijack denied; a synthetic local audit-trigger failure aborts projection before any result is assigned |
 
 Every live evidence record is limited to case ID, actor class, resource class, blocking layer,
 expected status and actual status. Tokens, credentials, names, notes, payloads and row contents are

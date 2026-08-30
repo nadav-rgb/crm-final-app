@@ -116,7 +116,13 @@ test('live verifier refuses an unconfirmed or production target', () => {
     /isolated test target confirmation required/,
   );
   assert.throws(
-    () => assertSafeTestTarget({ targetUrl: 'https://prod.supabase.co', productionUrl: 'https://prod.supabase.co', confirmed: true }),
+    () => assertSafeTestTarget({
+      targetUrl: 'https://prod.supabase.co',
+      productionUrl: 'https://prod.supabase.co',
+      confirmed: true,
+      expectedProjectId: 'mekarvim-security-g5-production-refusal',
+      expectedApiPort: 54321,
+    }),
     /refused production target/,
   );
 });
