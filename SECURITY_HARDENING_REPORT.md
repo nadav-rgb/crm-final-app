@@ -183,30 +183,40 @@ reported.
 
 ## Test Evidence
 
-Fresh Task-21 verification was performed from a clean tracked start state. The full security suite
-contains 16 explicit live skips; they are skips, not passes.
+Fresh Task-21 Fix Round 1 verification was performed from reviewed commit
+`de5bfc872d47c9c0ce56e4866462315cbe60fcc2`. The full security suite contains 16 explicit live
+skips; they are skips, not passes. Commands below are literal sanitized reproductions of the
+commands used in this Windows worktree. Android SDK variables were set only in the Gradle process.
+The loopback launcher used synthetic settings and a closed loopback provider URL; it did not contact
+Supabase.
 
 | Command | Status | Exact result |
 | --- | --- | --- |
-| `npm ci` | PASS | 277 packages installed; 278 audited; 0 vulnerabilities; only recorded deprecation/install-script review warnings |
-| `npm run test:baseline` | PASS | 51/51: interaction report 27/27 and payment ordering 24/24 |
-| `npm run test:security` | PASS | 269 total; 253 pass; 16 explicit live skips; 0 fail |
-| Focused finance + jsPDF + ExcelJS/UUID tests | PASS | 31/31; 0 skip; 0 fail |
-| Report-completeness/security-redaction test | PASS | 5/5 after an observed 5/5 RED caused solely by the absent report |
-| `npm run build` | PASS | Next.js 16.3.3 Webpack production build; recorded non-fatal warnings only |
-| Loopback HTTP verifier | PASS | Exact 200, 401, 403, 404, and 500; required headers; five unique nonces; no wildcard CORS; owned listener cleaned up |
-| Client-bundle scan | PASS | 0 findings |
-| Current secret scan | PASS | 0 findings |
-| Tracked secret scan | PASS | 0 findings |
-| History secret scan | PASS | 0 findings |
-| `npm audit --json` | PASS | 0 Critical, 0 High, 0 Moderate, 0 Low, 0 total; 310 dependencies reported |
-| `npm audit --omit=dev --json` | PASS | 0 Critical, 0 High, 0 Moderate, 0 Low, 0 total; 310 dependencies reported |
-| Android static hardening tests | PASS | 6/6 |
-| Android `testDebugUnitTest assembleDebug` | PASS | Build successful; 169 actionable tasks (82 executed, 87 up-to-date) after explicitly selecting the installed local SDK |
-| Android release without signing configuration | PASS | Gradle failed closed with the required missing-signing message; no release was produced |
-| G5 controlled live security testing | BLOCKED | Docker/local Supabase unavailable; orchestrator, migrations, direct-JWT, provider MFA, cleanup, and posture checks were not executed |
-| Month report against an approved isolated source | NOT RUN | Script inspection found `.env.local`, privileged Supabase access, live table reads, and person-level output; target isolation could not be proven |
-| Payroll XLSX against an approved isolated source | NOT RUN | Same unproven privileged data path; deterministic production workbook compatibility was covered by the 31-test focused set |
+| `npm ci` | PASS (exit 0) | 277 packages installed; 278 audited; 0 vulnerabilities; deprecation and `allow-scripts` review warnings only |
+| `npm run test:baseline` | PASS (exit 0) | 51 total; 51 pass; 0 skip; 0 fail (27 interaction + 24 payment) |
+| `npm run verify:interaction-report` | PASS (exit 0) | 27 total; 27 pass; 0 skip; 0 fail |
+| `node scripts/verify-payment-order.cjs` | PASS (exit 0) | 24 total; 24 pass; 0 skip; 0 fail |
+| `npm run test:security` | PASS (exit 0) | 270 total; 254 pass; 16 explicit live skips; 0 fail; known module-type and synthetic-fixture LF-to-CRLF warnings only |
+| `node --test tests/security/finance-reports-feedback.test.mjs tests/security/jspdf-compatibility.test.mjs tests/security/exceljs-uuid-compatibility.test.mjs` | PASS (exit 0) | 31 total; 31 pass; 0 skip; 0 fail |
+| `npm run test:security -- tests/security/report-completeness.test.mjs` | PASS (exit 0) | 6 total; 6 pass; 0 skip; 0 fail; preceding RED was 6 total, 5 pass, 1 contract failure |
+| `npm run build` | PASS (exit 0) | Next.js 16.3.3 Webpack production build; known `optimizeFonts`, middleware-convention, and `_app.getInitialProps` warnings only |
+| `node .superpowers/sdd/2026-08-27-security-hardening/start-g4-http.mjs` | PASS (owned process started) | Synthetic production server ready on `127.0.0.1:43877`; pre-start listener count 0 |
+| `$env:SECURITY_HTTP_BASE_URL='http://127.0.0.1:43877'; node scripts/security/verify-http.mjs` | PASS (exit 0) | exact 200/401/403/404/500; required headers; five unique nonces; no wildcard CORS; verifier PASS |
+| `Ctrl+C` to the owned launcher; `Get-NetTCPConnection -LocalPort 43877 -State Listen` | PASS (cleanup check) | Owned launcher stopped; 0 listeners on port 43877 |
+| `node scripts/security/scan-client-bundle.mjs` | PASS (exit 0) | 0 findings; `client-bundle clean` |
+| `node scripts/security/scan-secrets.mjs --current` | PASS (exit 0) | 0 findings; `secret-scan clean` |
+| `node scripts/security/scan-secrets.mjs --tracked` | PASS (exit 0) | 0 findings; `secret-scan clean` |
+| `node scripts/security/scan-secrets.mjs --history` | PASS (exit 0) | 0 findings; `secret-scan clean` |
+| `npm audit --json` | PASS (exit 0) | 0 Critical; 0 High; 0 Moderate; 0 Low; 0 total; 310 dependencies in metadata |
+| `npm audit --omit=dev --json` | PASS (exit 0) | 0 Critical; 0 High; 0 Moderate; 0 Low; 0 total; 310 dependencies in metadata |
+| `node --test tests/security/android-hardening.test.mjs` | PASS (exit 0) | 6 total; 6 pass; 0 skip; 0 fail |
+| `$env:ANDROID_HOME=Join-Path $env:LOCALAPPDATA 'Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; if (-not (Test-Path -LiteralPath $env:ANDROID_HOME -PathType Container)) { throw 'installed Android SDK not found' }; android\gradlew.bat -p android testDebugUnitTest assembleDebug` | PASS (exit 0) | Process-only SDK environment; BUILD SUCCESSFUL; 169 actionable tasks (82 executed, 87 up-to-date); safe flatDir, SDK XML, API, and Gradle deprecation warnings |
+| `$env:ANDROID_HOME=Join-Path $env:LOCALAPPDATA 'Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; if (Test-Path -LiteralPath 'android\keystore.properties') { throw 'unexpected release signing configuration present' }; android\gradlew.bat -p android assembleRelease` | EXPECTED FAIL (exit 1) | Release signing configuration missing: android/keystore.properties; assertion PASS; failure occurred at the intended signing guard |
+| `node scripts/security/g5-local-orchestrator.mjs` | BLOCKED (NOT RUN) | 16 live cases remained explicit skips; Docker daemon down after Windows error 1920; no isolated target; no migration or live case ran |
+| `node scripts/verify-month-report.cjs <year> <month>` | NOT RUN | Inspection only: `.env.local`; privileged Supabase; person-level output; no approved isolated source |
+| `node scripts/verify-payroll-xlsx.cjs <year> <month>` | NOT RUN | Inspection only: `.env.local`; privileged Supabase; person/payroll output; no approved isolated source |
+| `git diff --check` | PASS (exit 0) | 0 whitespace errors; LF-to-CRLF working-copy warnings for both Task-21 files |
+| `git status --short --branch` | PASS (exit 0) | `## security/hardening-p0`; ` M SECURITY_HARDENING_REPORT.md`; ` M tests/security/report-completeness.test.mjs`; exactly two tracked Task-21 files modified |
 
 The accepted Task-20 blocked-boundary review independently recorded 264 total security tests,
 248 passes, 16 explicit live skips, and no failures before the five Task-21 report tests were added.
@@ -308,20 +318,32 @@ UNVERIFIED.
 
 ## External Blockers
 
-1. Provide a working Docker engine for the exact task-owned disposable local Supabase stack, or an
-   explicitly approved isolated security-test project whose identity is provably distinct from
-   Production.
-2. Capture the required pre-migration snapshot/backup, then execute the guarded G5 orchestrator in
+1. The Docker daemon remains down. The exact blocker is the zero-byte, non-directory runtime
+   reparse/socket artifact
+   `C:\Users\nadav\AppData\Local\Docker\run\dockerInference`. Windows returned error 1920 for both
+   authorized narrow literal-entry mechanisms: `fsutil reparsepoint delete` and an in-memory Win32
+   `CreateFileW` delete-on-close attempt using `FILE_FLAG_OPEN_REPARSE_POINT`. Neither mechanism
+   opened or removed the entry, and no neighboring artifact was modified.
+2. No compatible installed local container runtime, standalone PostgreSQL/Supabase stack, or
+   independent full-stack WSL distribution exists. No configured or provable dedicated TEST
+   Supabase target exists. The cached pinned Supabase CLI payload is not a substitute for its
+   unavailable container engine. No migration or live G5 case ran.
+3. The required next action is separately authorized elevated/offline repair limited to the exact
+   `dockerInference` entry (potentially after a host reboot), or separately authorized provisioning
+   of a compatible isolated runtime. Never use a broad reset, recursive delete, prune, Docker data
+   directory removal, volume removal, or WSL removal as a substitute.
+4. After an isolated runtime is proven, capture the required pre-migration snapshot/backup, then
+   execute the guarded G5 orchestrator in
    the sole approved order `0018` through `0024`, stopping on any failed verification.
-3. Complete all 16 currently skipped live cases, including direct-JWT/PostgREST RLS, cross-tenant,
+5. Complete all 16 currently skipped live cases, including direct-JWT/PostgREST RLS, cross-tenant,
    IDOR/BOLA, audit, finance parity, cleanup, and post-cleanup posture evidence.
-4. Enable and validate Supabase TOTP/AAL2, password recovery, redirect, refresh, revocation, disabled
+6. Enable and validate Supabase TOTP/AAL2, password recovery, redirect, refresh, revocation, disabled
    user, and stale-security-version behavior in the isolated target.
-5. Verify staging headers/HSTS and configured Anthropic, private Sheets, private-or-disabled GitHub,
+7. Verify staging headers/HSTS and configured Anthropic, private Sheets, private-or-disabled GitHub,
    push, scheduler, Firebase restrictions, and mobile-device behavior without using Production.
-6. Confirm provider credential rotation/restriction status in the relevant consoles. Values must not
+8. Confirm provider credential rotation/restriction status in the relevant consoles. Values must not
    be copied into reports or Git.
-7. After all controlled evidence is green, obtain independent security review and explicit owner
+9. After all controlled evidence is green, obtain independent security review and explicit owner
    authorization before any Production migration, deployment, or real-data use.
 
 ## Rollback

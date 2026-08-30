@@ -49,6 +49,48 @@ const classifiedDatabaseObjects = [
   'activist_directory',
 ];
 
+const protectedTables = classifiedDatabaseObjects.filter((object) => object !== 'activist_directory');
+
+function sectionUnderHeading(report, heading) {
+  const startPattern = new RegExp(`^## ${escapeRegex(heading)}\\r?$`, 'm');
+  const match = startPattern.exec(report);
+  assert.ok(match, `missing H2 section: ${heading}`);
+  const remainder = report.slice(match.index + match[0].length);
+  const nextHeading = /\r?\n## /.exec(remainder);
+  return nextHeading ? remainder.slice(0, nextHeading.index) : remainder;
+}
+
+function markdownCells(line) {
+  if (!line.startsWith('|') || !line.endsWith('|')) return null;
+  return line.slice(1, -1).split('|').map((cell) => cell.trim());
+}
+
+function tableRows(section, headerCells) {
+  const lines = section.split(/\r?\n/);
+  const headerIndex = lines.findIndex((line) => {
+    const cells = markdownCells(line);
+    return cells && cells.length === headerCells.length
+      && cells.every((cell, index) => cell === headerCells[index]);
+  });
+  assert.notEqual(headerIndex, -1, `missing table header: ${headerCells.join(' | ')}`);
+
+  const separator = markdownCells(lines[headerIndex + 1] ?? '');
+  assert.ok(
+    separator
+      && separator.length === headerCells.length
+      && separator.every((cell) => /^:?-{3,}:?$/.test(cell)),
+    `invalid table separator: ${headerCells.join(' | ')}`,
+  );
+
+  const rows = [];
+  for (const line of lines.slice(headerIndex + 2)) {
+    const cells = markdownCells(line);
+    if (!cells) break;
+    rows.push(cells);
+  }
+  return rows;
+}
+
 test('security hardening report contains the complete required section contract', async () => {
   const report = await readReport();
   for (const heading of requiredHeadings) {
@@ -72,9 +114,9 @@ test('blocked run has one negative verdict and exact live-evidence statuses', as
   assert.doesNotMatch(report, new RegExp(escapeRegex(prohibitedPositiveVerdict)));
   assert.doesNotMatch(report, new RegExp(escapeRegex(prohibitedAbsoluteClaim), 'i'));
   for (const required of [
-    /\| G5 controlled live security testing \| BLOCKED \|/,
-    /\| Month report against an approved isolated source \| NOT RUN \|/,
-    /\| Payroll XLSX against an approved isolated source \| NOT RUN \|/,
+    /\| `node scripts\/security\/g5-local-orchestrator\.mjs` \| BLOCKED \(NOT RUN\) \|/,
+    /\| `node scripts\/verify-month-report\.cjs <year> <month>` \| NOT RUN \|/,
+    /\| `node scripts\/verify-payroll-xlsx\.cjs <year> <month>` \| NOT RUN \|/,
     /Live database posture[^\n]*UNVERIFIED/,
     /Live cross-tenant, IDOR, RLS, and provider MFA behavior[^\n]*UNVERIFIED/,
     /16 explicit live skips/,
@@ -95,19 +137,116 @@ test('report keeps deterministic evidence distinct from unperformed live proof',
     '6e3a950c52bc18f7e29730b0e6443762f75b81c1',
     'a2af2026de052fd696f948a8375dcec7cc5704f7',
   ]) assert.match(report, new RegExp(commit));
-  assert.match(report, /\| Command \| Status \| Exact result \|/);
   assert.match(report, /\| Critical \| High \| Moderate \| Low \| Total \|/);
+});
+
+test('test evidence names every required command with exact status and bounded result', async () => {
+  const report = await readReport();
+  const rows = tableRows(sectionUnderHeading(report, 'Test Evidence'), [
+    'Command', 'Status', 'Exact result',
+  ]);
+  const byCommand = new Map();
+  for (const row of rows) {
+    assert.equal(row.length, 3, `command evidence row must have exactly three fields: ${row.join(' | ')}`);
+    assert.ok(row.every(Boolean), `command evidence row must have no empty field: ${row.join(' | ')}`);
+    assert.ok(!byCommand.has(row[0]), `duplicate command evidence row: ${row[0]}`);
+    byCommand.set(row[0], row.slice(1));
+  }
+
+  const required = [
+    ['`npm ci`', /^PASS \(exit 0\)$/, /packages installed; .* audited; 0 vulnerabilities/],
+    ['`npm run test:baseline`', /^PASS \(exit 0\)$/, /51 total; 51 pass; 0 skip; 0 fail/],
+    ['`npm run verify:interaction-report`', /^PASS \(exit 0\)$/, /27 total; 27 pass; 0 skip; 0 fail/],
+    ['`node scripts/verify-payment-order.cjs`', /^PASS \(exit 0\)$/, /24 total; 24 pass; 0 skip; 0 fail/],
+    ['`npm run test:security`', /^PASS \(exit 0\)$/, /\d+ total; \d+ pass; 16 explicit live skips; 0 fail/],
+    [
+      '`node --test tests/security/finance-reports-feedback.test.mjs tests/security/jspdf-compatibility.test.mjs tests/security/exceljs-uuid-compatibility.test.mjs`',
+      /^PASS \(exit 0\)$/,
+      /31 total; 31 pass; 0 skip; 0 fail/,
+    ],
+    [
+      '`npm run test:security -- tests/security/report-completeness.test.mjs`',
+      /^PASS \(exit 0\)$/,
+      /\d+ total; \d+ pass; 0 skip; 0 fail/,
+    ],
+    ['`npm run build`', /^PASS \(exit 0\)$/, /Next\.js 16\.3\.3 Webpack production build/],
+    [
+      '`node .superpowers/sdd/2026-08-27-security-hardening/start-g4-http.mjs`',
+      /^PASS \(owned process started\)$/,
+      /127\.0\.0\.1:43877/,
+    ],
+    [
+      "`$env:SECURITY_HTTP_BASE_URL='http://127.0.0.1:43877'; node scripts/security/verify-http.mjs`",
+      /^PASS \(exit 0\)$/,
+      /exact 200\/401\/403\/404\/500; .* five unique nonces/,
+    ],
+    [
+      '`Ctrl+C` to the owned launcher; `Get-NetTCPConnection -LocalPort 43877 -State Listen`',
+      /^PASS \(cleanup check\)$/,
+      /0 listeners/,
+    ],
+    ['`node scripts/security/scan-client-bundle.mjs`', /^PASS \(exit 0\)$/, /0 findings/],
+    ['`node scripts/security/scan-secrets.mjs --current`', /^PASS \(exit 0\)$/, /0 findings/],
+    ['`node scripts/security/scan-secrets.mjs --tracked`', /^PASS \(exit 0\)$/, /0 findings/],
+    ['`node scripts/security/scan-secrets.mjs --history`', /^PASS \(exit 0\)$/, /0 findings/],
+    ['`npm audit --json`', /^PASS \(exit 0\)$/, /0 Critical; 0 High; 0 Moderate; 0 Low; 0 total/],
+    ['`npm audit --omit=dev --json`', /^PASS \(exit 0\)$/, /0 Critical; 0 High; 0 Moderate; 0 Low; 0 total/],
+    ['`node --test tests/security/android-hardening.test.mjs`', /^PASS \(exit 0\)$/, /6 total; 6 pass; 0 skip; 0 fail/],
+    [
+      "`$env:ANDROID_HOME=Join-Path $env:LOCALAPPDATA 'Android\\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; if (-not (Test-Path -LiteralPath $env:ANDROID_HOME -PathType Container)) { throw 'installed Android SDK not found' }; android\\gradlew.bat -p android testDebugUnitTest assembleDebug`",
+      /^PASS \(exit 0\)$/,
+      /BUILD SUCCESSFUL; \d+ actionable tasks/,
+    ],
+    [
+      "`$env:ANDROID_HOME=Join-Path $env:LOCALAPPDATA 'Android\\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; if (Test-Path -LiteralPath 'android\\keystore.properties') { throw 'unexpected release signing configuration present' }; android\\gradlew.bat -p android assembleRelease`",
+      /^EXPECTED FAIL \(exit 1\)$/,
+      /Release signing configuration missing: android\/keystore\.properties; assertion PASS/,
+    ],
+    ['`node scripts/security/g5-local-orchestrator.mjs`', /^BLOCKED \(NOT RUN\)$/, /16 live cases remained explicit skips/],
+    ['`node scripts/verify-month-report.cjs <year> <month>`', /^NOT RUN$/, /`\.env\.local`; privileged Supabase; person-level output/],
+    ['`node scripts/verify-payroll-xlsx.cjs <year> <month>`', /^NOT RUN$/, /`\.env\.local`; privileged Supabase; person\/payroll output/],
+    ['`git diff --check`', /^PASS \(exit 0\)$/, /0 whitespace errors; LF-to-CRLF working-copy warnings for both Task-21 files/],
+    ['`git status --short --branch`', /^PASS \(exit 0\)$/, /exactly two tracked Task-21 files modified/],
+  ];
+
+  for (const [command, statusPattern, resultPattern] of required) {
+    assert.ok(byCommand.has(command), `missing literal command evidence row: ${command}`);
+    const [status, result] = byCommand.get(command);
+    assert.match(status, statusPattern, `wrong status for ${command}`);
+    assert.match(result, resultPattern, `incomplete exact result for ${command}`);
+  }
 });
 
 test('database matrix covers every classified object and CRUD/RPC evidence field', async () => {
   const report = await readReport();
-  assert.match(
-    report,
-    /\| Object \| Evidence status \| RLS \| SELECT \| INSERT \| UPDATE \| DELETE \| Relevant RPC\/control \|/,
-  );
-  for (const object of classifiedDatabaseObjects) {
-    assert.match(report, new RegExp('^\\| `' + escapeRegex(object) + '` \\|', 'm'), `missing matrix row: ${object}`);
+  const rows = tableRows(sectionUnderHeading(report, 'Database / RLS Matrix'), [
+    'Object', 'Evidence status', 'RLS', 'SELECT', 'INSERT', 'UPDATE', 'DELETE', 'Relevant RPC/control',
+  ]);
+  assert.equal(rows.length, 18, 'database matrix must contain exactly 18 classified rows');
+
+  const names = [];
+  for (const row of rows) {
+    assert.equal(row.length, 8, `matrix row must have exactly eight fields: ${row.join(' | ')}`);
+    assert.ok(row.every(Boolean), `matrix row must have no empty field: ${row.join(' | ')}`);
+    const objectMatch = /^`([^`]+)`$/.exec(row[0]);
+    assert.ok(objectMatch, `matrix object must be one canonical code-formatted name: ${row[0]}`);
+    names.push(objectMatch[1]);
+    assert.equal(row[1], 'Static PASS; live UNVERIFIED', `wrong evidence status for ${objectMatch[1]}`);
   }
+
+  assert.equal(new Set(names).size, 18, 'database matrix must not contain duplicate object rows');
+  assert.deepEqual([...names].sort(), [...classifiedDatabaseObjects].sort());
+
+  for (const table of protectedTables) {
+    const row = rows.find(([object]) => object === `\`${table}\``);
+    assert.equal(row[2], 'Enable + force', `${table} must be classified as a protected RLS table`);
+  }
+  const viewRow = rows.find(([object]) => object === '`activist_directory`');
+  assert.equal(
+    viewRow[2],
+    'Security-invoker view over protected sources',
+    'activist_directory must be the sole classified security-invoker view',
+  );
 });
 
 test('report contains no credential values or real-looking PII evidence', async () => {
