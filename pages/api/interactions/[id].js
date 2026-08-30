@@ -5,7 +5,7 @@ import { deleteInteraction, updateInteraction } from '../../../lib/security/doma
 import { requireContactsBff } from '../../../lib/security/domains/route-support.mjs';
 
 const handler = secureHandler({
-  method: ['PATCH', 'DELETE'], schema: interactionUpdateSchema, maxBytes: 4_096,
+  method: ['PATCH', 'DELETE'], schema: interactionUpdateSchema, maxBytes: 16_384,
   parseBody: (req, schema, options) => req.method === 'PATCH' ? parseJson(req, schema, options) : undefined,
   resourceType: 'interaction',
 }, async (context, input, req) => {

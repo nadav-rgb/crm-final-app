@@ -1,11 +1,11 @@
 import { parseJson } from '../../../../lib/security/http.mjs';
 import { secureHandler } from '../../../../lib/security/api-handler.mjs';
-import { interactionCreateSchema } from '../../../../lib/security/schemas.mjs';
+import { interactionBodySchema } from '../../../../lib/security/schemas.mjs';
 import { createInteraction, listContactInteractions } from '../../../../lib/security/domains/interactions.mjs';
 import { requireContactsBff } from '../../../../lib/security/domains/route-support.mjs';
 
 const handler = secureHandler({
-  method: ['GET', 'POST'], schema: interactionCreateSchema.omit({ contactId: true }), maxBytes: 4_096,
+  method: ['GET', 'POST'], schema: interactionBodySchema, maxBytes: 16_384,
   parseBody: (req, schema, options) => req.method === 'POST' ? parseJson(req, schema, options) : undefined,
   resourceType: 'interaction',
 }, async (context, input, req) => {

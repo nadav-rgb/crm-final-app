@@ -324,7 +324,7 @@ export default function AddInteractionPage() {
 
       // await: ההתראות בצד-שרת קוראות את השורה מה-DB, אז היא חייבת לנחות קודם.
       // ה-state כבר עודכן בתוך addInteraction לפני ה-await — המסך לא ממתין.
-      const { error: saveError } = await addInteraction(interactionPayload);
+      const { data: savedInteraction, error: saveError } = await addInteraction(interactionPayload);
 
       // כשל שמירה — עד היום המסך הציג "הקשר תועד!" גם כשה-insert נכשל, והפעיל
       // חשב שדיווח. עכשיו הטופס נשאר פתוח עם הודעה, והמנעול נפתח לניסיון חוזר.
@@ -333,11 +333,12 @@ export default function AddInteractionPage() {
         return;
       }
       rowSaved = true;
+      const savedInteractionPayload = { ...interactionPayload, ...savedInteraction, id: savedInteraction.id };
 
       // מפגש רב-משתתפים — שורת קשר נגזרת לכל לקוח נוסף שהשתתף, כדי שגם אצלו הקשר ייספר
       // ולא יידרדר ל"על סף ניתוק". התשלום לא מושפע: המפגש מזכה פעם אחת בלבד (paymentCalc).
       if (form.multi && participantClients.length > 0) {
-        const { error: partError } = await addParticipantInteractions(interactionPayload, participantClients.map(p => p.id));
+        const { error: partError } = await addParticipantInteractions(savedInteractionPayload, participantClients.map(p => p.id));
         // כשל כאן לא מבטל את המפגש עצמו — הוא כבר נשמר ומשולם. אבל בלי חיווי,
         // המשתתף שלא נרשם ממשיך להידרדר ל"על סף ניתוק" בלי שאף אחד ידע.
         if (partError) {
@@ -347,15 +348,15 @@ export default function AddInteractionPage() {
 
       // סיכום AI אוטומטי — מיועד לרכז בלבד (הפעיל לא רואה אותו). fire-and-forget:
       // לא חוסם את השמירה, וכשל AI מאבד רק את הסיכום — הקשר כבר נשמר.
-      summarizeInteractionText(apiFetch, interactionPayload.id).then(async summary => {
+      summarizeInteractionText(apiFetch, savedInteractionPayload.id).then(async summary => {
         if (!summary) return;
-        notifyInteractionApi(apiFetch, { interactionId: interactionPayload.id, kind: 'summary' });
+        notifyInteractionApi(apiFetch, { interactionId: savedInteractionPayload.id, kind: 'summary' });
       }).catch(() => {});
 
       if (isAchdut && payableCheck) {
         // התראה לפעיל עצמו (פעמון מקומי) — הוא כבר מול המסך, לא צריך Push.
         createPaymentInteractionNotifications({
-          interaction: interactionPayload,
+          interaction: savedInteractionPayload,
           contact,
           activist: currentUser,
           paymentResult: payableCheck,
@@ -366,14 +367,14 @@ export default function AddInteractionPage() {
           // רק לדיווח מזכה: על דיווח שלא זיכה, שורת הפעמון של הדפדפן מפרטת גם את
           // סיבת אי-הזכאות, וכתיבה מהשרת הייתה דורסת אותה בטקסט דל יותר.
           notifyInteractionApi(apiFetch, {
-            interactionId: interactionPayload.id,
+            interactionId: savedInteractionPayload.id,
             kind: 'self_payment',
             amount: payableCheck.amount,
           });
 
           // התראה + Push לניהול הפרויקט — צד-שרת.
           notifyInteractionApi(apiFetch, {
-            interactionId: interactionPayload.id,
+            interactionId: savedInteractionPayload.id,
             kind: 'payment',
             amount: payableCheck.amount,
           });

@@ -5,7 +5,7 @@ import { createContact, listContacts } from '../../../lib/security/domains/conta
 import { activeMemberLookup, requireContactsBff } from '../../../lib/security/domains/route-support.mjs';
 
 const handler = secureHandler({
-  method: ['GET', 'POST'], schema: contactCreateSchema, maxBytes: 4_096,
+  method: ['GET', 'POST'], schema: contactCreateSchema, maxBytes: 65_536,
   parseBody: (req, schema, options) => req.method === 'POST' ? parseJson(req, schema, options) : undefined,
   resourceType: 'contact',
 }, async (context, input, req) => {

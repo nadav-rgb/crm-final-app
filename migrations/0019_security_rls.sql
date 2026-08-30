@@ -221,9 +221,11 @@ begin
     select * from (values
       ('projects', array['name']::text[]),
       ('contacts', array[
-        'name','phone','city','notes','mitzvot','mitzvot_history','high_potential',
+        'name','phone','city','area','depth','profession','age','gender','notes',
+        'mitzvot','mitzvot_history','high_potential','days_since_last_contact',
         'joined_at','source','referred_by','next_action','next_action_date',
-        'last_contact_at','last_interaction_at'
+        'last_interaction_date','how_met','is_graduate','meeting_place_city',
+        'meeting_place_number','meetingHouseCity','meetingHouseNumber','meetingHouseKey'
       ]::text[]),
       ('interactions', array[
         'type','quality','notes','participants','date','time','duration_minutes',

@@ -10,7 +10,8 @@ const CrmContext = createContext(null);
 
 // העמודות הקיימות בטבלת interactions ב-Supabase — סינון לפני כתיבה (משמיט mitzvot_level וכו')
 const INTERACTION_COLUMNS = [
-  'type', 'quality', 'notes',
+  'type', 'quality', 'date', 'time', 'duration_minutes', 'outcome', 'notes',
+  'description', 'ai_summary', 'next_action', 'next_action_date',
 ];
 
 function mapBaseReport(report) {
@@ -31,11 +32,20 @@ async function insertInteractionViaApi(apiFetch, interaction) {
     const result = await apiFetch(`/api/contacts/${encodeURIComponent(interaction.contact_id)}/interactions`, {
       method: 'POST',
       body: {
-        occurredAt: new Date(`${interaction.date}T${interaction.time || '00:00'}:00`).toISOString(),
+        date: interaction.date,
+        time: interaction.time || '00:00',
         type: interaction.type,
         quality: interaction.quality || undefined,
+        durationMinutes: interaction.duration_minutes ?? 0,
+        outcome: interaction.outcome || undefined,
         notes: interaction.notes || undefined,
-        participantIds: Array.isArray(interaction.participants) ? interaction.participants : [],
+        description: interaction.description || undefined,
+        aiSummary: interaction.ai_summary || undefined,
+        nextAction: interaction.next_action ?? undefined,
+        nextActionDate: interaction.next_action_date ?? undefined,
+        participants: interaction.participants && !Array.isArray(interaction.participants)
+          ? interaction.participants
+          : undefined,
       },
     });
     return { data: result.interaction, error: null };
@@ -65,26 +75,81 @@ function toContactRow(contact) {
   CONTACT_COLUMNS.forEach(key => {
     if (contact[key] !== undefined) row[key] = contact[key];
   });
-  // ברירות מחדל בטוחות (מכסה עמודות NOT NULL שהטופס לא ממלא)
-  const ageNum = Number(row.age);
-  row.age            = Number.isFinite(ageNum) && row.age !== '' && row.age !== null ? ageNum : null;
-  row.high_potential = row.high_potential ?? false;
-  row.is_graduate    = row.is_graduate ?? false;
-  row.area           = row.area ?? null;
-  row.depth          = row.depth ?? null;
-  row.source         = row.source ?? null;
-  // נרמול שדות תאריך — string ריק גורם ל-"invalid input syntax for type date" ב-Postgres
-  row.last_interaction_date = safeDate(row.last_interaction_date);
-  row.next_action_date      = safeDate(row.next_action_date);
-  row.joined_at             = safeDate(row.joined_at);
+  if (row.age !== undefined) {
+    const ageNum = Number(row.age);
+    row.age = Number.isFinite(ageNum) && row.age !== '' && row.age !== null ? ageNum : null;
+  }
+  // נרמול רק שדות שנשלחו; PATCH מצומצם אינו מאפס שדות אחרים.
+  for (const field of ['last_interaction_date', 'next_action_date', 'joined_at']) {
+    if (row[field] !== undefined) row[field] = safeDate(row[field]);
+  }
   return row;
+}
+
+const CONTACT_API_FIELDS = Object.freeze({
+  name: 'name', phone: 'phone', city: 'city', area: 'area', depth: 'depth',
+  profession: 'profession', age: 'age', gender: 'gender', high_potential: 'highPotential',
+  days_since_last_contact: 'daysSinceLastContact', last_interaction_date: 'lastInteractionDate',
+  next_action: 'nextAction', next_action_date: 'nextActionDate', source: 'source',
+  joined_at: 'joinedAt', notes: 'notes', how_met: 'howMet', mitzvot: 'mitzvot',
+  mitzvot_history: 'mitzvotHistory', is_graduate: 'isGraduate', referred_by: 'referredBy',
+  meeting_place_city: 'meetingPlaceCity', meeting_place_number: 'meetingPlaceNumber',
+  meetingHouseCity: 'meetingHouseCity', meetingHouseNumber: 'meetingHouseNumber',
+  meetingHouseKey: 'meetingHouseKey', tour_id: 'tourId',
+});
+
+function contactApiBody(contact, { includeProject = false } = {}) {
+  const row = toContactRow(contact);
+  const body = {};
+  for (const [legacyField, apiField] of Object.entries(CONTACT_API_FIELDS)) {
+    if (row[legacyField] !== undefined) body[apiField] = row[legacyField];
+  }
+  if (includeProject && row.project_id !== undefined) body.projectId = Number(row.project_id);
+  return body;
+}
+
+function contactDtoToLegacyRow(contact) {
+  return {
+    id: contact.id,
+    name: contact.name,
+    phone: contact.phone ?? null,
+    city: contact.city ?? '',
+    area: contact.area ?? '',
+    depth: contact.depth ?? '',
+    profession: contact.profession ?? '',
+    age: contact.age ?? null,
+    gender: contact.gender ?? null,
+    high_potential: Boolean(contact.highPotential),
+    days_since_last_contact: Number(contact.daysSinceLastContact ?? 0),
+    last_interaction_date: contact.lastInteractionDate ?? null,
+    next_action: contact.nextAction ?? null,
+    next_action_date: contact.nextActionAt ?? null,
+    source: contact.source ?? null,
+    joined_at: contact.joinedAt ?? null,
+    notes: contact.notes ?? '',
+    how_met: contact.howMet ?? '',
+    mitzvot: contact.mitzvot ?? {},
+    mitzvot_history: contact.mitzvotHistory ?? [],
+    is_graduate: Boolean(contact.isGraduate),
+    referred_by: contact.referredBy ?? null,
+    meeting_place_city: contact.meetingPlaceCity ?? '',
+    meeting_place_number: contact.meetingPlaceNumber ?? '',
+    meetingHouseCity: contact.meetingHouseCity ?? '',
+    meetingHouseNumber: contact.meetingHouseNumber ?? '',
+    meetingHouseKey: contact.meetingHouseKey ?? '',
+    tour_id: contact.tourId ?? null,
+    is_active: contact.status !== 'inactive',
+    assigned_user_id: contact.assignedUserId,
+    activist_id: contact.activistCode,
+    project_id: contact.projectId,
+  };
 }
 
 async function insertContactViaApi(apiFetch, contact) {
   try {
     const result = await apiFetch('/api/contacts', {
       method: 'POST',
-      body: { name: contact.name, phone: contact.phone || undefined, city: contact.city || undefined, notes: contact.notes || undefined },
+      body: contactApiBody(contact, { includeProject: true }),
     });
     return { data: result.contact, error: null };
   } catch (error) {
@@ -96,13 +161,10 @@ async function insertContactViaApi(apiFetch, contact) {
 async function loadContactsFromApi(apiFetch, currentUser) {
   try {
     const result = await apiFetch('/api/contacts', { method: 'GET' });
-    const data = (result.contacts || []).map(contact => ({
-      ...contact,
-      assigned_user_id: contact.assignedUserId,
-      activist_id: contact.assignedUserId,
-      next_action_date: contact.nextActionAt,
-      project_id: currentUser?.project_id ?? null,
-    }));
+    const details = await Promise.all((result.contacts || []).map((contact) => (
+      apiFetch(`/api/contacts/${encodeURIComponent(contact.id)}`, { method: 'GET' })
+    )));
+    const data = details.map(({ contact }) => contactDtoToLegacyRow(contact));
     return { data, error: null };
   } catch (error) {
     return { data: null, error };
@@ -112,7 +174,7 @@ async function loadContactsFromApi(apiFetch, currentUser) {
 // מחזירה { error } — הקורא (updateMitzvot) חייב לדעת אם השמירה נחתה לפני שהוא מציג
 // "עודכן בהצלחה" ולפני שהוא מפעיל התראה שקוראת את השורה מה-DB.
 async function updateContactFieldsViaApi(apiFetch, contactId, fields) {
-  const allowed = Object.fromEntries(Object.entries(fields).filter(([key]) => ['name', 'phone', 'city', 'notes'].includes(key)));
+  const allowed = contactApiBody(fields);
   if (Object.keys(allowed).length === 0) return { error: null };
   try {
     await apiFetch(`/api/contacts/${encodeURIComponent(contactId)}`, { method: 'PATCH', body: allowed });
@@ -300,12 +362,24 @@ export function CrmProvider({ children }) {
         markDataUnavailable('interactions');
         return;
       }
-      const data = settled.flatMap(result => result.value.interactions || []).map(interaction => ({
-        ...interaction,
+      const data = settled.flatMap((result, index) => (result.value.interactions || []).map(interaction => ({
+        id: interaction.id,
         contact_id: interaction.contactId,
-        date: interaction.occurredAt?.slice(0, 10),
-        time: interaction.occurredAt?.slice(11, 16),
-      }));
+        activist_id: interaction.activistCode,
+        project_id: contacts[index]?.project_id ?? null,
+        date: interaction.date ?? interaction.occurredAt?.slice(0, 10),
+        time: interaction.time ?? interaction.occurredAt?.slice(11, 16),
+        type: interaction.type,
+        quality: interaction.quality,
+        duration_minutes: interaction.durationMinutes,
+        outcome: interaction.outcome,
+        notes: interaction.notes,
+        description: interaction.description,
+        ai_summary: interaction.aiSummary,
+        next_action: interaction.nextAction,
+        next_action_date: interaction.nextActionDate,
+        participants: interaction.participants,
+      })));
       setInteractions(data);
       markDataLoaded('interactions');
     })();
@@ -371,6 +445,22 @@ export function CrmProvider({ children }) {
       setInteractions(prev => prev.filter(i => i.id !== newInteraction.id));
       return insertResult;
     }
+    const savedInteraction = insertResult.data;
+    const savedInteractionRow = {
+      ...newInteraction,
+      id: savedInteraction.id,
+      activist_id: savedInteraction.activistCode ?? newInteraction.activist_id,
+      date: savedInteraction.date ?? newInteraction.date,
+      time: savedInteraction.time ?? newInteraction.time,
+      duration_minutes: savedInteraction.durationMinutes ?? newInteraction.duration_minutes,
+      outcome: savedInteraction.outcome ?? newInteraction.outcome,
+      description: savedInteraction.description ?? newInteraction.description,
+      ai_summary: savedInteraction.aiSummary ?? newInteraction.ai_summary,
+      next_action: savedInteraction.nextAction ?? newInteraction.next_action,
+      next_action_date: savedInteraction.nextActionDate ?? newInteraction.next_action_date,
+      participants: savedInteraction.participants ?? newInteraction.participants,
+    };
+    setInteractions(prev => prev.map(row => row.id === newInteraction.id ? savedInteractionRow : row));
 
     const interactionDate = new Date(date);
     const today = new Date(); today.setHours(0,0,0,0);
@@ -397,7 +487,7 @@ export function CrmProvider({ children }) {
     if (next_action_date !== undefined) contactFields.next_action_date = next_action_date;
     updateContactFieldsViaApi(apiFetch, contact_id, contactFields);
 
-    return insertResult;
+    return { data: savedInteractionRow, error: null };
   }
 
   // מפגש רב-משתתפים — כל לקוח שהשתתף מקבל שורת קשר משלו, אחרת הסטטוס שלו
@@ -412,7 +502,7 @@ export function CrmProvider({ children }) {
     // id = base.id + idx + 1 — base.id הוא Date.now(), אז המזהים הנגזרים ייחודיים וצמודים לו.
     const results = await Promise.all(ids.map((pid, idx) => addInteraction({
       ...base,
-      id:           base.id + idx + 1,
+      id:           Date.now() + idx + 1,
       contact_id:   pid,
       participants: { ...(base.participants || {}), derived_from: base.id },
     })));
@@ -424,8 +514,21 @@ export function CrmProvider({ children }) {
     if (!fields || Object.keys(fields).length === 0) return { error: null };
     const row = {};
     INTERACTION_COLUMNS.forEach(key => { if (fields[key] !== undefined) row[key] = fields[key]; });
+    const body = {
+      ...(row.type !== undefined ? { type: row.type } : {}),
+      ...(row.quality !== undefined ? { quality: row.quality } : {}),
+      ...(row.date !== undefined ? { date: row.date } : {}),
+      ...(row.time !== undefined ? { time: row.time } : {}),
+      ...(row.duration_minutes !== undefined ? { durationMinutes: row.duration_minutes } : {}),
+      ...(row.outcome !== undefined ? { outcome: row.outcome } : {}),
+      ...(row.notes !== undefined ? { notes: row.notes } : {}),
+      ...(row.description !== undefined ? { description: row.description } : {}),
+      ...(row.ai_summary !== undefined ? { aiSummary: row.ai_summary } : {}),
+      ...(row.next_action !== undefined ? { nextAction: row.next_action } : {}),
+      ...(row.next_action_date !== undefined ? { nextActionDate: row.next_action_date } : {}),
+    };
     let error = null;
-    try { await apiFetch(`/api/interactions/${encodeURIComponent(interactionId)}`, { method: 'PATCH', body: row }); }
+    try { await apiFetch(`/api/interactions/${encodeURIComponent(interactionId)}`, { method: 'PATCH', body }); }
     catch (caught) { error = caught; }
     if (error) { console.error('Failed to update interaction', error); return { error }; }
     setInteractions(prev => prev.map(i => i.id === interactionId ? { ...i, ...row } : i));
@@ -445,21 +548,20 @@ export function CrmProvider({ children }) {
     // random integer 100M–999M: בטוח ב-int4, רחוק מ-seed data (1001-9999), לא גולש כמו Date.now()
     const tempId = Math.floor(Math.random() * 900_000_000) + 100_000_000;
     const newContact = { ...contactData, id: tempId, mitzvot: contactData.mitzvot || {}, mitzvot_history: [] };
-    const { error } = await insertContactViaApi(apiFetch, newContact);
+    const insertResult = await insertContactViaApi(apiFetch, newContact);
+    const { error } = insertResult;
 
     if (error) {
       return { error };
     }
 
-    const syncResult = await loadContactsFromApi(apiFetch, currentUser);
-    if (syncResult.error) {
-      return { error: syncResult.error };
-    }
-    setContacts(syncResult.data);
+    const savedContact = insertResult.data;
+    const savedContactRow = contactDtoToLegacyRow(savedContact);
+    setContacts(prev => [savedContactRow, ...prev]);
 
     // בונוס "הבאת משתתף חדש" נגזר אוטומטית מ-source/referred_by של הלקוח (ראה newParticipantBonuses לעיל).
 
-    return { data: syncResult.data };
+    return { data: savedContactRow, error: null };
   }
 
   // F1 — עריכת פרטי לקוח קיים. שומר ל-Supabase + עדכון optimistic.

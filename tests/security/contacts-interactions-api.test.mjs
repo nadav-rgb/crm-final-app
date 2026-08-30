@@ -24,7 +24,7 @@ import { contactCreateSchema, contactUpdateSchema, interactionCreateSchema } fro
 
 const rowA = {
   id: contactA.id, project_id: contactA.projectId, assigned_user_id: contactA.assignedUserId,
-  name: 'לקוח בדיקה', city: 'עיר בדיקה', status: 'active', next_action_at: null,
+  name: 'לקוח בדיקה', city: 'עיר בדיקה', is_active: true, next_action_date: null,
   phone: '0500000000', notes: '<script>alert(1)</script>', mitzvot: { demo: 1 }, mitzvot_history: [],
 };
 
@@ -101,7 +101,7 @@ test('oversized notes are rejected before repository mutation', () => {
 
 test('list projection excludes PII and detail escapes untrusted text', () => {
   const list = toContactListDto(rowA);
-  assert.deepEqual(Object.keys(list).sort(), ['assignedUserId', 'city', 'id', 'name', 'nextActionAt', 'status']);
+  assert.deepEqual(Object.keys(list).sort(), ['assignedUserId', 'city', 'id', 'name', 'nextActionAt', 'projectId', 'status']);
   assert.equal(JSON.stringify(list).includes('0500000000'), false);
   const detail = toContactDetailDto(makeContext(activistA), rowA);
   assert.equal(detail.notes, '&lt;script&gt;alert(1)&lt;/script&gt;');

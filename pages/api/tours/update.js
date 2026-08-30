@@ -1,10 +1,10 @@
 import { z } from 'zod';
 import { secureHandler } from '../../../lib/security/api-handler.mjs';
-import { tourUpdateCommandSchema } from '../../../lib/security/schemas.mjs';
+import { textResourceIdSchema, tourUpdateCommandSchema } from '../../../lib/security/schemas.mjs';
 import { updateTour } from '../../../lib/security/domains/tours.mjs';
 
 const schema = z.object({
-  tourId: z.union([z.string().uuid(), z.number().int().positive()]),
+  tourId: textResourceIdSchema,
   changes: tourUpdateCommandSchema,
 }).strict();
 

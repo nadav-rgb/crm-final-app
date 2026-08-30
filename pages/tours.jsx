@@ -57,7 +57,7 @@ const MONTH_NAMES_HE = ['ינואר', 'פברואר', 'מרץ', 'אפריל', '�
 const WEEKDAY_NAMES_HE = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'];
 
 export default function ToursPage() {
-  const { can, currentUser, apiFetch } = useAuth();
+  const { can, currentUser, activeProject, apiFetch } = useAuth();
   const { activists } = useCrm();
   const [tours, setTours] = useState([]);
   const [creating, setCreating] = useState(false);
@@ -206,7 +206,7 @@ export default function ToursPage() {
 
     const saved = await upsertTourApi(apiFetch, {
       ...fields,
-      id: globalThis.crypto.randomUUID(),
+      projectId: activeProject?.id ?? currentUser?.project_id,
     });
     setBusy(false);
     if (!saved) { setErrors({ submit: 'שמירת הסיור נכשלה — נסה שוב' }); return; }

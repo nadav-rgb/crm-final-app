@@ -166,7 +166,7 @@ test('C1 direct grants cannot transfer authority or bypass protected workflows',
 
   for (const functionName of [
     'app_reassign_contact', 'app_soft_delete_contact', 'app_delete_interaction',
-    'app_delete_expense', 'app_review_feedback',
+    'app_link_contact_tour', 'app_delete_expense', 'app_review_feedback',
   ]) {
     assert.match(rpcSql, new RegExp(`create or replace function public\\.${functionName}\\b`, 'i'));
   }
@@ -175,7 +175,7 @@ test('C1 direct grants cannot transfer authority or bypass protected workflows',
     assert.match(tourSql, new RegExp(`create or replace function public\\.${functionName}\\b`, 'i'));
   }
   for (const functionName of [
-    'app_reassign_contact', 'app_soft_delete_contact', 'app_delete_interaction',
+    'app_reassign_contact', 'app_soft_delete_contact', 'app_link_contact_tour', 'app_delete_interaction',
     'app_delete_expense', 'app_review_feedback', 'app_assign_meeting_house',
     'app_assign_tour', 'app_cancel_tour', 'app_delete_tour',
   ]) {

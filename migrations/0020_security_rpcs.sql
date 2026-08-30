@@ -400,7 +400,7 @@ grant execute on function public.app_membership_change(text,uuid,uuid,integer,te
 -- authorization and target membership are derived in the transaction, and the
 -- 0019 row trigger appends the actor-correct audit event atomically.
 create or replace function public.app_reassign_contact(
-  p_contact_id uuid, p_assigned_user_id uuid
+  p_contact_id text, p_assigned_user_id uuid
 ) returns boolean
 language plpgsql security definer
 set search_path = pg_catalog, public, app_private
@@ -411,7 +411,7 @@ declare
 begin
   if auth.uid() is null or p_contact_id is null or p_assigned_user_id is null then return false; end if;
   select c.project_id into v_project_id
-  from public.contacts c where c.id = p_contact_id for update;
+  from public.contacts c where c.id::text = p_contact_id for update;
   if not found or not (
     public.app_is_ceo() or public.app_has_project_role(v_project_id, array['head','coord'])
   ) then return false; end if;
@@ -423,13 +423,13 @@ begin
   if not found or v_legacy_code is null then return false; end if;
   update public.contacts
   set assigned_user_id = p_assigned_user_id, activist_id = v_legacy_code
-  where id = p_contact_id;
+  where id::text = p_contact_id;
   return found;
 end $$;
-revoke all on function public.app_reassign_contact(uuid,uuid) from public, anon;
-grant execute on function public.app_reassign_contact(uuid,uuid) to authenticated;
+revoke all on function public.app_reassign_contact(text,uuid) from public, anon;
+grant execute on function public.app_reassign_contact(text,uuid) to authenticated;
 
-create or replace function public.app_soft_delete_contact(p_contact_id uuid)
+create or replace function public.app_soft_delete_contact(p_contact_id text)
 returns boolean
 language plpgsql security definer
 set search_path = pg_catalog, public, app_private
@@ -440,19 +440,45 @@ declare
 begin
   if auth.uid() is null or p_contact_id is null then return false; end if;
   select c.project_id, c.assigned_user_id into v_project_id, v_assigned_user_id
-  from public.contacts c where c.id = p_contact_id and c.is_active = true for update;
+  from public.contacts c where c.id::text = p_contact_id and c.is_active = true for update;
   if not found or not (
     public.app_is_ceo()
     or public.app_has_project_role(v_project_id, array['head','coord'])
     or (v_assigned_user_id = auth.uid() and public.app_has_project_role(v_project_id, array['activist']))
   ) then return false; end if;
-  update public.contacts set is_active = false where id = p_contact_id and is_active = true;
+  update public.contacts set is_active = false where id::text = p_contact_id and is_active = true;
   return found;
 end $$;
-revoke all on function public.app_soft_delete_contact(uuid) from public, anon;
-grant execute on function public.app_soft_delete_contact(uuid) to authenticated;
+revoke all on function public.app_soft_delete_contact(text) from public, anon;
+grant execute on function public.app_soft_delete_contact(text) to authenticated;
 
-create or replace function public.app_delete_interaction(p_interaction_id uuid)
+create or replace function public.app_link_contact_tour(p_contact_id text, p_tour_id text)
+returns boolean
+language plpgsql security definer
+set search_path = pg_catalog, public, app_private
+as $$
+declare
+  v_project_id integer;
+  v_assigned_user_id uuid;
+begin
+  if auth.uid() is null or nullif(btrim(p_contact_id), '') is null then return false; end if;
+  select c.project_id, c.assigned_user_id into v_project_id, v_assigned_user_id
+  from public.contacts c where c.id::text = p_contact_id for update;
+  if not found or not (
+    public.app_is_ceo()
+    or public.app_has_project_role(v_project_id, array['head','coord'])
+    or (v_assigned_user_id = auth.uid() and public.app_has_project_role(v_project_id, array['activist']))
+  ) then return false; end if;
+  if p_tour_id is not null and not exists (
+    select 1 from public.tours t where t.id::text = p_tour_id and t.project_id = v_project_id
+  ) then return false; end if;
+  update public.contacts set tour_id = p_tour_id where id::text = p_contact_id;
+  return found;
+end $$;
+revoke all on function public.app_link_contact_tour(text,text) from public, anon;
+grant execute on function public.app_link_contact_tour(text,text) to authenticated;
+
+create or replace function public.app_delete_interaction(p_interaction_id text)
 returns boolean
 language plpgsql security definer
 set search_path = pg_catalog, public, app_private
@@ -461,17 +487,17 @@ declare v_project_id integer;
 begin
   if auth.uid() is null or p_interaction_id is null then return false; end if;
   select i.project_id into v_project_id
-  from public.interactions i where i.id = p_interaction_id for update;
+  from public.interactions i where i.id::text = p_interaction_id for update;
   if not found or not (
     public.app_is_ceo() or public.app_has_project_role(v_project_id, array['head'])
   ) then return false; end if;
-  delete from public.interactions where id = p_interaction_id;
+  delete from public.interactions where id::text = p_interaction_id;
   return found;
 end $$;
-revoke all on function public.app_delete_interaction(uuid) from public, anon;
-grant execute on function public.app_delete_interaction(uuid) to authenticated;
+revoke all on function public.app_delete_interaction(text) from public, anon;
+grant execute on function public.app_delete_interaction(text) to authenticated;
 
-create or replace function public.app_delete_expense(p_expense_id uuid)
+create or replace function public.app_delete_expense(p_expense_id bigint)
 returns boolean
 language plpgsql security definer
 set search_path = pg_catalog, public, app_private
@@ -487,8 +513,8 @@ begin
   delete from public.expenses where id = p_expense_id;
   return found;
 end $$;
-revoke all on function public.app_delete_expense(uuid) from public, anon;
-grant execute on function public.app_delete_expense(uuid) to authenticated;
+revoke all on function public.app_delete_expense(bigint) from public, anon;
+grant execute on function public.app_delete_expense(bigint) to authenticated;
 
 create or replace function public.app_review_feedback(p_feedback_id uuid, p_status text)
 returns boolean

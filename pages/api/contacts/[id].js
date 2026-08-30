@@ -5,7 +5,7 @@ import { getContact, softDeleteContact, toContactDetailDto, updateContact } from
 import { activeMemberLookup, requireContactsBff } from '../../../lib/security/domains/route-support.mjs';
 
 const handler = secureHandler({
-  method: ['GET', 'PATCH', 'DELETE'], schema: contactUpdateSchema, maxBytes: 4_096,
+  method: ['GET', 'PATCH', 'DELETE'], schema: contactUpdateSchema, maxBytes: 65_536,
   parseBody: (req, schema, options) => req.method === 'PATCH' ? parseJson(req, schema, options) : undefined,
   resourceType: 'contact',
 }, async (context, input, req) => {

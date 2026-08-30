@@ -252,9 +252,9 @@ export function buildLegacyFixtureRows(runId, actorIds) {
     activist_code: codes[alias] ?? null,
     security_run_id: runId,
   });
-  const contactA = randomUUID();
-  const contactA2 = randomUUID();
-  const contactB = randomUUID();
+  const contactA = 910001;
+  const contactA2 = 910002;
+  const contactB = 910003;
   const meetingA = `security-${runId}-meeting-a`;
   const meetingB = `security-${runId}-meeting-b`;
   const tourA = `security-${runId}-tour-a`;
@@ -297,17 +297,17 @@ export function buildLegacyFixtureRows(runId, actorIds) {
     ],
     interactions: [
       {
-        id: randomUUID(), contact_id: contactA, project_id: projectA,
+        id: 920001, contact_id: contactA, project_id: projectA,
         activist_id: codes.activistA1, type: 'טלפוני', quality: 'ידידותי',
         duration_minutes: 20, date: '2026-08-05', participants: {}, security_run_id: runId,
       },
       {
-        id: randomUUID(), contact_id: contactA2, project_id: projectA,
+        id: 920002, contact_id: contactA2, project_id: projectA,
         activist_id: codes.activistA2, type: 'פרונטלי', quality: 'תורני',
         duration_minutes: 45, date: '2026-08-06', participants: {}, security_run_id: runId,
       },
       {
-        id: randomUUID(), contact_id: contactB, project_id: projectB,
+        id: 920003, contact_id: contactB, project_id: projectB,
         activist_id: codes.activistB1, type: 'וידאו', quality: 'ידידותי',
         duration_minutes: 30, date: '2026-08-07', participants: {}, security_run_id: runId,
       },
@@ -345,8 +345,8 @@ export function buildLegacyFixtureRows(runId, actorIds) {
       },
     ],
     expenses: [
-      { id: randomUUID(), project_id: projectA, activist_id: codes.activistA1, date: '2026-08-12', amount: 17, description: 'Synthetic expense A', security_run_id: runId },
-      { id: randomUUID(), project_id: projectB, activist_id: codes.activistB1, date: '2026-08-13', amount: 19, description: 'Synthetic expense B', security_run_id: runId },
+      { id: 930001, project_id: projectA, activist_id: codes.activistA1, date: '2026-08-12', amount: 17, description: 'Synthetic expense A', security_run_id: runId },
+      { id: 930002, project_id: projectB, activist_id: codes.activistB1, date: '2026-08-13', amount: 19, description: 'Synthetic expense B', security_run_id: runId },
     ],
     bonus_cancellations: [
       { id: randomUUID(), project_id: projectA, activist_id: codes.activistA2, cancelled_by: codes.coordA, bonus_key: `${codes.activistA2}|synthetic|2026-7`, security_run_id: runId },

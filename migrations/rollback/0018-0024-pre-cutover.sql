@@ -90,10 +90,11 @@ alter table public.meeting_reminders
 -- 0020 service and authenticated RPCs.
 drop function if exists public.check_contact_duplicate(integer,text);
 drop function if exists public.app_review_feedback(uuid,text);
-drop function if exists public.app_delete_expense(uuid);
-drop function if exists public.app_delete_interaction(uuid);
-drop function if exists public.app_soft_delete_contact(uuid);
-drop function if exists public.app_reassign_contact(uuid,uuid);
+drop function if exists public.app_delete_expense(bigint);
+drop function if exists public.app_delete_interaction(text);
+drop function if exists public.app_link_contact_tour(text,text);
+drop function if exists public.app_soft_delete_contact(text);
+drop function if exists public.app_reassign_contact(text,uuid);
 drop function if exists public.app_user_security_invalidate(uuid,text);
 drop function if exists public.app_identity_resolve(text);
 drop function if exists public.app_membership_change(text,uuid,uuid,integer,text,text);
