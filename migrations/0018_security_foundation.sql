@@ -221,6 +221,418 @@ do $$ begin
   ) then raise exception 'security backfill refused: tours assigned mapping missing'; end if;
 end $$;
 
+-- Compatibility is a maintained database invariant until the numeric authority
+-- columns are removed. A write may supply either representation, but supplying
+-- both with different identities is always rejected. These trigger functions are
+-- private, fixed-search-path SECURITY DEFINER routines so forced RLS cannot make
+-- validation depend on the caller and there is no caller-settable bypass flag.
+create or replace function app_private.sync_identity_pair()
+returns trigger
+language plpgsql security definer
+set search_path = pg_catalog, public, app_private
+as $$
+declare
+  v_uuid_column text := tg_argv[0];
+  v_legacy_column text := tg_argv[1];
+  v_new_json jsonb := to_jsonb(new);
+  v_old_json jsonb;
+  v_new_uuid uuid;
+  v_new_legacy text;
+  v_uuid_changed boolean := false;
+  v_legacy_changed boolean := false;
+  v_resolved_uuid uuid;
+  v_resolved_code integer;
+begin
+  if tg_nargs <> 2 then
+    raise exception 'identity pair trigger is misconfigured' using errcode = '23514';
+  end if;
+
+  v_new_uuid := nullif(v_new_json ->> v_uuid_column, '')::uuid;
+  v_new_legacy := nullif(btrim(v_new_json ->> v_legacy_column), '');
+  if tg_op = 'UPDATE' then
+    v_old_json := to_jsonb(old);
+    v_uuid_changed := (v_new_json -> v_uuid_column)
+      is distinct from (v_old_json -> v_uuid_column);
+    v_legacy_changed := (v_new_json -> v_legacy_column)
+      is distinct from (v_old_json -> v_legacy_column);
+
+    if v_uuid_changed and v_legacy_changed
+       and ((v_new_uuid is null) <> (v_new_legacy is null)) then
+      raise exception 'identity pair divergence: %.%/%',
+        tg_table_name, v_uuid_column, v_legacy_column using errcode = '23514';
+    end if;
+  end if;
+
+  if v_new_uuid is null and v_new_legacy is null then
+    return jsonb_populate_record(
+      new, jsonb_build_object(v_uuid_column, null, v_legacy_column, null)
+    );
+  end if;
+
+  if tg_op = 'UPDATE' and v_uuid_changed and not v_legacy_changed then
+    if v_new_uuid is null then
+      return jsonb_populate_record(
+        new, jsonb_build_object(v_uuid_column, null, v_legacy_column, null)
+      );
+    end if;
+    select p.id, p.activist_code into v_resolved_uuid, v_resolved_code
+    from public.profiles p
+    where p.id = v_new_uuid and p.activist_code is not null;
+  elsif tg_op = 'UPDATE' and v_legacy_changed and not v_uuid_changed then
+    if v_new_legacy is null then
+      return jsonb_populate_record(
+        new, jsonb_build_object(v_uuid_column, null, v_legacy_column, null)
+      );
+    end if;
+    select p.id, p.activist_code into v_resolved_uuid, v_resolved_code
+    from public.profiles p
+    where p.activist_code::text = v_new_legacy;
+  elsif v_new_uuid is not null then
+    select p.id, p.activist_code into v_resolved_uuid, v_resolved_code
+    from public.profiles p
+    where p.id = v_new_uuid and p.activist_code is not null;
+  else
+    select p.id, p.activist_code into v_resolved_uuid, v_resolved_code
+    from public.profiles p
+    where p.activist_code::text = v_new_legacy;
+  end if;
+
+  if not found or v_resolved_uuid is null or v_resolved_code is null then
+    raise exception 'identity pair mapping missing: %.%/%',
+      tg_table_name, v_uuid_column, v_legacy_column using errcode = '23514';
+  end if;
+  if v_new_uuid is not null
+     and not (tg_op = 'UPDATE' and v_legacy_changed and not v_uuid_changed)
+     and v_new_uuid is distinct from v_resolved_uuid then
+    raise exception 'identity pair divergence: %.%/%',
+      tg_table_name, v_uuid_column, v_legacy_column using errcode = '23514';
+  end if;
+  if v_new_legacy is not null
+     and not (tg_op = 'UPDATE' and v_uuid_changed and not v_legacy_changed)
+     and v_new_legacy is distinct from v_resolved_code::text then
+    raise exception 'identity pair divergence: %.%/%',
+      tg_table_name, v_uuid_column, v_legacy_column using errcode = '23514';
+  end if;
+
+  return jsonb_populate_record(new, jsonb_build_object(
+    v_uuid_column, v_resolved_uuid,
+    v_legacy_column, v_resolved_code
+  ));
+end $$;
+
+create or replace function app_private.sync_identity_array_pair()
+returns trigger
+language plpgsql security definer
+set search_path = pg_catalog, public, app_private
+as $$
+declare
+  v_uuid_column text := tg_argv[0];
+  v_legacy_column text := tg_argv[1];
+  v_new_json jsonb := to_jsonb(new);
+  v_old_json jsonb;
+  v_uuid_json jsonb;
+  v_legacy_json jsonb;
+  v_uuid_changed boolean := false;
+  v_legacy_changed boolean := false;
+  v_uuid_count integer;
+  v_legacy_count integer;
+  v_uuid_mapped integer;
+  v_legacy_mapped integer;
+  v_from_uuid_users uuid[];
+  v_from_uuid_codes integer[];
+  v_from_legacy_users uuid[];
+  v_from_legacy_codes integer[];
+  v_final_users uuid[];
+  v_final_codes integer[];
+begin
+  if tg_nargs <> 2 then
+    raise exception 'identity array trigger is misconfigured' using errcode = '23514';
+  end if;
+  v_uuid_json := coalesce(v_new_json -> v_uuid_column, '[]'::jsonb);
+  v_legacy_json := coalesce(v_new_json -> v_legacy_column, '[]'::jsonb);
+  if jsonb_typeof(v_uuid_json) <> 'array' or jsonb_typeof(v_legacy_json) <> 'array' then
+    raise exception 'identity array divergence: %.%/%',
+      tg_table_name, v_uuid_column, v_legacy_column using errcode = '23514';
+  end if;
+
+  v_uuid_count := jsonb_array_length(v_uuid_json);
+  v_legacy_count := jsonb_array_length(v_legacy_json);
+  if v_uuid_count > 100 or v_legacy_count > 100
+     or exists (
+       select 1 from jsonb_array_elements_text(v_uuid_json) requested(value)
+       where value is null
+     )
+     or exists (
+       select 1 from jsonb_array_elements_text(v_legacy_json) requested(value)
+       where value is null
+     )
+     or (select count(distinct value) from jsonb_array_elements_text(v_uuid_json) requested(value))
+       <> v_uuid_count
+     or (select count(distinct value) from jsonb_array_elements_text(v_legacy_json) requested(value))
+       <> v_legacy_count then
+    raise exception 'identity array divergence: %.%/%',
+      tg_table_name, v_uuid_column, v_legacy_column using errcode = '23514';
+  end if;
+
+  select coalesce(array_agg(p.id order by p.id), '{}'::uuid[]),
+         coalesce(array_agg(p.activist_code order by p.id), '{}'::integer[]),
+         count(*)::integer
+    into v_from_uuid_users, v_from_uuid_codes, v_uuid_mapped
+  from jsonb_array_elements_text(v_uuid_json) requested(user_id)
+  join public.profiles p on p.id = requested.user_id::uuid
+  where p.activist_code is not null;
+
+  select coalesce(array_agg(p.id order by p.id), '{}'::uuid[]),
+         coalesce(array_agg(p.activist_code order by p.id), '{}'::integer[]),
+         count(*)::integer
+    into v_from_legacy_users, v_from_legacy_codes, v_legacy_mapped
+  from jsonb_array_elements_text(v_legacy_json) requested(activist_code)
+  join public.profiles p on p.activist_code::text = requested.activist_code;
+
+  if v_uuid_mapped <> v_uuid_count or v_legacy_mapped <> v_legacy_count then
+    raise exception 'identity array mapping missing: %.%/%',
+      tg_table_name, v_uuid_column, v_legacy_column using errcode = '23514';
+  end if;
+
+  if tg_op = 'UPDATE' then
+    v_old_json := to_jsonb(old);
+    v_uuid_changed := (v_new_json -> v_uuid_column)
+      is distinct from (v_old_json -> v_uuid_column);
+    v_legacy_changed := (v_new_json -> v_legacy_column)
+      is distinct from (v_old_json -> v_legacy_column);
+  end if;
+
+  if v_uuid_count > 0 and v_legacy_count > 0
+     and not (tg_op = 'UPDATE' and v_uuid_changed <> v_legacy_changed)
+     and v_from_uuid_users is distinct from v_from_legacy_users then
+    raise exception 'identity array divergence: %.%/%',
+      tg_table_name, v_uuid_column, v_legacy_column using errcode = '23514';
+  end if;
+  if tg_op = 'UPDATE' and v_uuid_changed and v_legacy_changed
+     and ((v_uuid_count = 0) <> (v_legacy_count = 0)) then
+    raise exception 'identity array divergence: %.%/%',
+      tg_table_name, v_uuid_column, v_legacy_column using errcode = '23514';
+  end if;
+
+  if tg_op = 'UPDATE' and v_legacy_changed and not v_uuid_changed then
+    v_final_users := v_from_legacy_users;
+    v_final_codes := v_from_legacy_codes;
+  elsif v_uuid_count > 0 or (tg_op = 'UPDATE' and v_uuid_changed) then
+    v_final_users := v_from_uuid_users;
+    v_final_codes := v_from_uuid_codes;
+  else
+    v_final_users := v_from_legacy_users;
+    v_final_codes := v_from_legacy_codes;
+  end if;
+
+  return jsonb_populate_record(new, jsonb_build_object(
+    v_uuid_column, to_jsonb(v_final_users),
+    v_legacy_column, to_jsonb(v_final_codes)
+  ));
+end $$;
+
+create or replace function app_private.sync_meeting_reminder_identity()
+returns trigger
+language plpgsql security definer
+set search_path = pg_catalog, public, app_private
+as $$
+declare
+  v_new_json jsonb := to_jsonb(new);
+  v_old_json jsonb;
+  v_legacy_column text;
+  v_unused_column text;
+  v_new_uuid uuid;
+  v_new_legacy text;
+  v_uuid_changed boolean := false;
+  v_legacy_changed boolean := false;
+  v_resolved_uuid uuid;
+  v_resolved_code integer;
+begin
+  if new.type = 'coordinator' then
+    v_legacy_column := 'coordinator_id';
+    v_unused_column := 'activist_id';
+  else
+    v_legacy_column := 'activist_id';
+    v_unused_column := 'coordinator_id';
+  end if;
+  if nullif(btrim(v_new_json ->> v_unused_column), '') is not null then
+    raise exception 'identity pair divergence: meeting_reminders.recipient_user_id/%',
+      v_legacy_column using errcode = '23514';
+  end if;
+
+  v_new_uuid := nullif(v_new_json ->> 'recipient_user_id', '')::uuid;
+  v_new_legacy := nullif(btrim(v_new_json ->> v_legacy_column), '');
+  if tg_op = 'UPDATE' then
+    v_old_json := to_jsonb(old);
+    if (v_new_json ->> 'type') is distinct from (v_old_json ->> 'type') then
+      raise exception 'identity pair divergence: meeting_reminders recipient type'
+        using errcode = '23514';
+    end if;
+    v_uuid_changed := (v_new_json -> 'recipient_user_id')
+      is distinct from (v_old_json -> 'recipient_user_id');
+    v_legacy_changed := (v_new_json -> v_legacy_column)
+      is distinct from (v_old_json -> v_legacy_column);
+    if v_uuid_changed and v_legacy_changed
+       and ((v_new_uuid is null) <> (v_new_legacy is null)) then
+      raise exception 'identity pair divergence: meeting_reminders.recipient_user_id/%',
+        v_legacy_column using errcode = '23514';
+    end if;
+  end if;
+
+  if v_new_uuid is null and v_new_legacy is null then
+    raise exception 'identity pair mapping missing: meeting_reminders.recipient_user_id/%',
+      v_legacy_column using errcode = '23514';
+  end if;
+  if tg_op = 'UPDATE' and v_uuid_changed and not v_legacy_changed then
+    select p.id, p.activist_code into v_resolved_uuid, v_resolved_code
+    from public.profiles p where p.id = v_new_uuid and p.activist_code is not null;
+  elsif tg_op = 'UPDATE' and v_legacy_changed and not v_uuid_changed then
+    select p.id, p.activist_code into v_resolved_uuid, v_resolved_code
+    from public.profiles p where p.activist_code::text = v_new_legacy;
+  elsif v_new_uuid is not null then
+    select p.id, p.activist_code into v_resolved_uuid, v_resolved_code
+    from public.profiles p where p.id = v_new_uuid and p.activist_code is not null;
+  else
+    select p.id, p.activist_code into v_resolved_uuid, v_resolved_code
+    from public.profiles p where p.activist_code::text = v_new_legacy;
+  end if;
+  if not found or v_resolved_uuid is null or v_resolved_code is null then
+    raise exception 'identity pair mapping missing: meeting_reminders.recipient_user_id/%',
+      v_legacy_column using errcode = '23514';
+  end if;
+  if (v_new_uuid is not null
+      and not (tg_op = 'UPDATE' and v_legacy_changed and not v_uuid_changed)
+      and v_new_uuid is distinct from v_resolved_uuid)
+     or (v_new_legacy is not null
+      and not (tg_op = 'UPDATE' and v_uuid_changed and not v_legacy_changed)
+      and v_new_legacy is distinct from v_resolved_code::text) then
+    raise exception 'identity pair divergence: meeting_reminders.recipient_user_id/%',
+      v_legacy_column using errcode = '23514';
+  end if;
+  return jsonb_populate_record(new, jsonb_build_object(
+    'recipient_user_id', v_resolved_uuid,
+    v_legacy_column, v_resolved_code,
+    v_unused_column, null
+  ));
+end $$;
+
+revoke all on function app_private.sync_identity_pair() from public, anon, authenticated;
+revoke all on function app_private.sync_identity_array_pair() from public, anon, authenticated;
+revoke all on function app_private.sync_meeting_reminder_identity() from public, anon, authenticated;
+
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'contacts_identity_pair_chk') then
+    alter table public.contacts add constraint contacts_identity_pair_chk
+      check ((assigned_user_id is null) = (activist_id is null)) not valid;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'interactions_identity_pair_chk') then
+    alter table public.interactions add constraint interactions_identity_pair_chk
+      check ((actor_user_id is null) = (activist_id is null)) not valid;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'base_meeting_reports_identity_pair_chk') then
+    alter table public.base_meeting_reports add constraint base_meeting_reports_identity_pair_chk
+      check ((actor_user_id is null) = (activist_id is null)) not valid;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'expenses_identity_pair_chk') then
+    alter table public.expenses add constraint expenses_identity_pair_chk
+      check ((actor_user_id is null) = (activist_id is null)) not valid;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'feedback_reports_identity_pair_chk') then
+    alter table public.feedback_reports add constraint feedback_reports_identity_pair_chk
+      check ((reporter_user_id is null) = (reporter_id is null)) not valid;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'notifications_identity_pair_chk') then
+    alter table public.notifications add constraint notifications_identity_pair_chk
+      check ((recipient_user_id is null) = (recipient_id is null)) not valid;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'notification_reads_identity_pair_chk') then
+    alter table public.notification_reads add constraint notification_reads_identity_pair_chk
+      check ((recipient_user_id is null) = (recipient_id is null)) not valid;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'meeting_reminders_identity_pair_chk') then
+    alter table public.meeting_reminders add constraint meeting_reminders_identity_pair_chk check (
+      recipient_user_id is not null and (
+        (type = 'coordinator' and coordinator_id is not null and activist_id is null)
+        or (type <> 'coordinator' and activist_id is not null and coordinator_id is null)
+      )
+    ) not valid;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'push_subscriptions_identity_pair_chk') then
+    alter table public.push_subscriptions add constraint push_subscriptions_identity_pair_chk
+      check ((user_id is null) = (activist_id is null)) not valid;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'fcm_tokens_identity_pair_chk') then
+    alter table public.fcm_tokens add constraint fcm_tokens_identity_pair_chk
+      check ((user_id is null) = (activist_id is null)) not valid;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'tours_guide_identity_pair_chk') then
+    alter table public.tours add constraint tours_guide_identity_pair_chk
+      check ((guide_user_id is null) = (guide_activist_id is null)) not valid;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'tours_host_identity_pair_chk') then
+    alter table public.tours add constraint tours_host_identity_pair_chk
+      check ((host_user_id is null) = (host_activist_id is null)) not valid;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'tours_assignment_identity_pair_chk') then
+    alter table public.tours add constraint tours_assignment_identity_pair_chk
+      check (cardinality(assigned_user_ids) = cardinality(assigned_activists)) not valid;
+  end if;
+end $$;
+
+alter table public.contacts validate constraint contacts_identity_pair_chk;
+alter table public.interactions validate constraint interactions_identity_pair_chk;
+alter table public.base_meeting_reports validate constraint base_meeting_reports_identity_pair_chk;
+alter table public.expenses validate constraint expenses_identity_pair_chk;
+alter table public.feedback_reports validate constraint feedback_reports_identity_pair_chk;
+alter table public.notifications validate constraint notifications_identity_pair_chk;
+alter table public.notification_reads validate constraint notification_reads_identity_pair_chk;
+alter table public.meeting_reminders validate constraint meeting_reminders_identity_pair_chk;
+alter table public.push_subscriptions validate constraint push_subscriptions_identity_pair_chk;
+alter table public.fcm_tokens validate constraint fcm_tokens_identity_pair_chk;
+alter table public.tours validate constraint tours_guide_identity_pair_chk;
+alter table public.tours validate constraint tours_host_identity_pair_chk;
+alter table public.tours validate constraint tours_assignment_identity_pair_chk;
+
+drop trigger if exists sync_contacts_identity on public.contacts;
+create trigger sync_contacts_identity before insert or update on public.contacts for each row
+  execute function app_private.sync_identity_pair('assigned_user_id', 'activist_id');
+drop trigger if exists sync_interactions_identity on public.interactions;
+create trigger sync_interactions_identity before insert or update on public.interactions for each row
+  execute function app_private.sync_identity_pair('actor_user_id', 'activist_id');
+drop trigger if exists sync_base_meeting_reports_identity on public.base_meeting_reports;
+create trigger sync_base_meeting_reports_identity before insert or update on public.base_meeting_reports for each row
+  execute function app_private.sync_identity_pair('actor_user_id', 'activist_id');
+drop trigger if exists sync_expenses_identity on public.expenses;
+create trigger sync_expenses_identity before insert or update on public.expenses for each row
+  execute function app_private.sync_identity_pair('actor_user_id', 'activist_id');
+drop trigger if exists sync_feedback_reports_identity on public.feedback_reports;
+create trigger sync_feedback_reports_identity before insert or update on public.feedback_reports for each row
+  execute function app_private.sync_identity_pair('reporter_user_id', 'reporter_id');
+drop trigger if exists sync_notifications_identity on public.notifications;
+create trigger sync_notifications_identity before insert or update on public.notifications for each row
+  execute function app_private.sync_identity_pair('recipient_user_id', 'recipient_id');
+drop trigger if exists sync_notification_reads_identity on public.notification_reads;
+create trigger sync_notification_reads_identity before insert or update on public.notification_reads for each row
+  execute function app_private.sync_identity_pair('recipient_user_id', 'recipient_id');
+drop trigger if exists sync_meeting_reminders_identity on public.meeting_reminders;
+create trigger sync_meeting_reminders_identity before insert or update on public.meeting_reminders for each row
+  execute function app_private.sync_meeting_reminder_identity();
+drop trigger if exists sync_push_subscriptions_identity on public.push_subscriptions;
+create trigger sync_push_subscriptions_identity before insert or update on public.push_subscriptions for each row
+  execute function app_private.sync_identity_pair('user_id', 'activist_id');
+drop trigger if exists sync_fcm_tokens_identity on public.fcm_tokens;
+create trigger sync_fcm_tokens_identity before insert or update on public.fcm_tokens for each row
+  execute function app_private.sync_identity_pair('user_id', 'activist_id');
+drop trigger if exists sync_tours_guide_identity on public.tours;
+create trigger sync_tours_guide_identity before insert or update on public.tours for each row
+  execute function app_private.sync_identity_pair('guide_user_id', 'guide_activist_id');
+drop trigger if exists sync_tours_host_identity on public.tours;
+create trigger sync_tours_host_identity before insert or update on public.tours for each row
+  execute function app_private.sync_identity_pair('host_user_id', 'host_activist_id');
+drop trigger if exists sync_tours_identity on public.tours;
+create trigger sync_tours_identity before insert or update on public.tours for each row
+  execute function app_private.sync_identity_array_pair('assigned_user_ids', 'assigned_activists');
+
 create index if not exists contacts_assigned_user_idx on public.contacts(project_id, assigned_user_id);
 create index if not exists interactions_actor_user_idx on public.interactions(project_id, actor_user_id);
 create index if not exists base_meeting_reports_actor_user_idx on public.base_meeting_reports(project_id, actor_user_id);

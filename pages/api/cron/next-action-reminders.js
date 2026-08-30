@@ -30,7 +30,7 @@ export default async function handler(req, res) {
 
   const { data: contacts, error } = await supabase
     .from('contacts')
-    .select('id, name, activist_id, next_action, next_action_date')
+    .select('id, name, assigned_user_id, next_action, next_action_date')
     .eq('is_active', true)
     .not('next_action', 'is', null)
     .not('next_action_date', 'is', null)
@@ -43,7 +43,7 @@ export default async function handler(req, res) {
   let processed = 0;
 
   for (const c of contacts) {
-    const targetId = String(c.activist_id);
+    const targetUserId = c.assigned_user_id;
     const clientId = `next_action__${c.id}__${c.next_action_date}`;
     const title = '📌 תזכורת: פעולה הבאה';
     const body = `${c.next_action} — ${c.name}`;
@@ -54,7 +54,7 @@ export default async function handler(req, res) {
     const { data: inserted, error: insErr } = await supabase
       .from('notifications')
       .upsert(
-        { recipient_id: targetId, type: 'next_action', title, body, url, priority: 'normal', client_id: clientId },
+        { recipient_user_id: targetUserId, type: 'next_action', title, body, url, priority: 'normal', client_id: clientId },
         { onConflict: 'client_id', ignoreDuplicates: true }
       )
       .select('id');
@@ -65,11 +65,11 @@ export default async function handler(req, res) {
     processed++;
 
     // web-push לכל מכשירי הפעיל (מנוי מת נמחק נקודתית בתוך ה-helper)
-    const web = await sendWebPushToActivist(supabase, targetId, { title, body, url });
+    const web = await sendWebPushToActivist(supabase, targetUserId, { title, body, url });
     sent += web.sent;
 
     // FCM (אפליקציית Capacitor) — no-op אם לא מוגדר
-    const fcm = await sendFcmToActivist(supabase, targetId, { title, body, url });
+    const fcm = await sendFcmToActivist(supabase, targetUserId, { title, body, url });
     sent += fcm.sent || 0;
   }
 

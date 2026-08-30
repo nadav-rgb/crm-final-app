@@ -48,6 +48,35 @@ do $$ begin
     then raise exception 'security backfill refused: bonus_cancellations actor mapping missing'; end if;
 end $$;
 
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'meeting_houses_assignment_identity_pair_chk') then
+    alter table public.meeting_houses add constraint meeting_houses_assignment_identity_pair_chk
+      check (cardinality(assigned_user_ids) = cardinality(assigned_activists)) not valid;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'bonus_cancellations_beneficiary_identity_pair_chk') then
+    alter table public.bonus_cancellations add constraint bonus_cancellations_beneficiary_identity_pair_chk
+      check ((beneficiary_user_id is null) = (activist_id is null)) not valid;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'bonus_cancellations_actor_identity_pair_chk') then
+    alter table public.bonus_cancellations add constraint bonus_cancellations_actor_identity_pair_chk
+      check ((cancelled_by_user_id is null) = (cancelled_by is null)) not valid;
+  end if;
+end $$;
+
+alter table public.meeting_houses validate constraint meeting_houses_assignment_identity_pair_chk;
+alter table public.bonus_cancellations validate constraint bonus_cancellations_beneficiary_identity_pair_chk;
+alter table public.bonus_cancellations validate constraint bonus_cancellations_actor_identity_pair_chk;
+
+drop trigger if exists sync_meeting_houses_identity on public.meeting_houses;
+create trigger sync_meeting_houses_identity before insert or update on public.meeting_houses for each row
+  execute function app_private.sync_identity_array_pair('assigned_user_ids', 'assigned_activists');
+drop trigger if exists sync_bonus_cancellations_identity on public.bonus_cancellations;
+create trigger sync_bonus_cancellations_identity before insert or update on public.bonus_cancellations for each row
+  execute function app_private.sync_identity_pair('beneficiary_user_id', 'activist_id');
+drop trigger if exists sync_bonus_cancellations_actor_identity on public.bonus_cancellations;
+create trigger sync_bonus_cancellations_actor_identity before insert or update on public.bonus_cancellations for each row
+  execute function app_private.sync_identity_pair('cancelled_by_user_id', 'cancelled_by');
+
 create or replace function public.app_user_active()
 returns boolean language sql stable security definer set search_path = pg_catalog, public as $$
   select exists (

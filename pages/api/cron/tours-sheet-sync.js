@@ -7,7 +7,7 @@
 //
 // שני בלמים מכוונים:
 //   1. שורה שהמשפחה המארחת שלה לא מזוהה כפעיל — לא נוצרת, אלא מדווחת.
-//      host_activist_id הוא שדה חובה, וסיור בלי מארח הוא סיור שבור.
+//      host_user_id הוא שדה חובה, וסיור בלי מארח הוא סיור שבור.
 //   2. תקרה של MAX_CREATES יצירות בריצה — גיליון שנשבר לא יפתח מאות סיורים
 //      ולא יפוצץ אנשים אמיתיים ב-Push.
 //
@@ -31,14 +31,14 @@ const FIELD_LABELS = {
 };
 
 // ייצוג הסיור מה-CRM בשפת הגיליון — כדי שההשוואה תהיה תפוח מול תפוח
-function crmToSheetValues(tour, codeName) {
+function crmToSheetValues(tour, userName) {
   return {
     tourNumber: String(tour.tour_number || '').trim(),
     date:       isoToSheetDate(tour.date),
     time:       String(tour.start_time || '').trim(),
     settlement: String(tour.settlement || '').trim(),
-    guide:      tour.guide_activist_id ? codeName(tour.guide_activist_id) : String(tour.guide_name || '').trim(),
-    host:       tour.host_activist_id ? codeName(tour.host_activist_id) : '',
+    guide:      tour.guide_user_id ? userName(tour.guide_user_id) : String(tour.guide_name || '').trim(),
+    host:       tour.host_user_id ? userName(tour.host_user_id) : '',
     status:     STATUS_TO_SHEET[tour.status] || 'מתוכנן',
     notes:      String(tour.notes || '').trim(),
   };
@@ -70,26 +70,26 @@ export default async function handler(req, res) {
 
   const { data: tours, error: toursErr } = await admin
     .from('tours')
-    .select('id,tour_number,settlement,date,start_time,guide_name,guide_activist_id,host_activist_id,assigned_activists,status,notes,project_id')
+    .select('id,tour_number,settlement,date,start_time,guide_name,guide_user_id,host_user_id,assigned_user_ids,status,notes,project_id')
     .eq('project_id', PROJECT_ID);
   if (toursErr) return res.status(503).json({ error: { code: 'DATA_UNAVAILABLE', message: 'Data service is unavailable' } });
 
   const { data: profiles } = await admin
-    .from('profiles').select('activist_code, name').not('activist_code', 'is', null);
+    .from('profiles').select('id,name').not('id', 'is', null);
 
-  const nameByCode = {};
-  const codesByName = {};
+  const nameByUserId = {};
+  const usersByName = {};
   (profiles || []).forEach(p => {
-    nameByCode[Number(p.activist_code)] = p.name;
-    (codesByName[normalizeName(p.name)] ??= []).push(Number(p.activist_code));
+    nameByUserId[p.id] = p.name;
+    (usersByName[normalizeName(p.name)] ??= []).push({ userId: p.id });
   });
-  const codeName = code => (code == null ? '' : (nameByCode[Number(code)] || `פעיל ${code}`));
-  // התאמת שם → קוד. שם שמופיע פעמיים נחשב לא-חד-משמעי ולא מוכרע בניחוש.
+  const userName = userId => (userId == null ? '' : (nameByUserId[userId] || 'פעיל'));
+  // התאמת שם → UUID. שם שמופיע פעמיים נחשב לא-חד-משמעי ולא מוכרע בניחוש.
   function resolve(name) {
-    const hits = codesByName[normalizeName(name)];
+    const hits = usersByName[normalizeName(name)];
     if (!hits) return { ok: false, reason: 'לא נמצא' };
     if (hits.length > 1) return { ok: false, reason: 'יותר מפעיל אחד בשם הזה' };
-    return { ok: true, code: hits[0] };
+    return { ok: true, ...hits[0] };
   }
 
   const crmByNumber = new Map();
@@ -129,10 +129,10 @@ export default async function handler(req, res) {
       settlement: row.settlement,
       date: iso,
       start_time: row.time || '',
-      guide_name: guide.ok ? codeName(guide.code) : row.guide,
-      guide_activist_id: guide.ok ? guide.code : null,
-      host_activist_id: host.code,
-      assigned_activists: [],
+      guide_name: guide.ok ? userName(guide.userId) : row.guide,
+      guide_user_id: guide.ok ? guide.userId : null,
+      host_user_id: host.userId,
+      assigned_user_ids: [],
       status: STATUS_FROM_SHEET[row.status] || 'upcoming',
       notes: row.notes || '',
       project_id: PROJECT_ID,
@@ -146,11 +146,11 @@ export default async function handler(req, res) {
 
     // התראה רק למי שיש לו תפקיד בסיור. הרכזים מקבלים דוח מסכם אחד בסוף, לא הודעה לכל סיור.
     const roleTargets = [];
-    roleTargets.push({ code: host.code, role: 'המשפחה המארחת' });
-    if (guide.ok && guide.code !== host.code) roleTargets.push({ code: guide.code, role: 'המדריך' });
+    roleTargets.push({ userId: host.userId, role: 'המשפחה המארחת' });
+    if (guide.ok && guide.userId !== host.userId) roleTargets.push({ userId: guide.userId, role: 'המדריך' });
 
     for (const t of roleTargets) {
-      await notifyRecipients(admin, [{ activist_code: t.code, name: codeName(t.code) }], {
+      await notifyRecipients(admin, [{ user_id: t.userId, name: userName(t.userId) }], {
         title: 'שובצת לסיור',
         body: `נקבעת בתור ${t.role} בסיור ${row.tourNumber} ב${row.settlement} בתאריך ${formatDateHe(iso)}.`,
         url: `/tours?tour=${newTour.id}`,
@@ -165,7 +165,7 @@ export default async function handler(req, res) {
   let writeFailed = false;
   try {
       for (const tour of crmByNumber.values()) {
-        const values = crmToSheetValues(tour, codeName);
+        const values = crmToSheetValues(tour, userName);
         const row = sheetByNumber.get(values.tourNumber);
 
         if (!row) {
@@ -212,7 +212,7 @@ export default async function handler(req, res) {
   const today = new Date().toISOString().slice(0, 10);
   const notified = await notifyRecipients(
     admin,
-    managers.map(m => ({ activist_code: Number(m.activist_code), name: m.name })),
+    managers,
     {
       title: 'סנכרון סיורים מול הגיליון',
       body: lines.join('. '),

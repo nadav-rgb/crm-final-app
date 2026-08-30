@@ -164,6 +164,23 @@ drop trigger if exists enforce_push_subscriptions_immutable_authority on public.
 drop trigger if exists enforce_fcm_tokens_immutable_authority on public.fcm_tokens;
 drop trigger if exists enforce_feedback_reports_immutable_authority on public.feedback_reports;
 
+drop trigger if exists sync_contacts_identity on public.contacts;
+drop trigger if exists sync_interactions_identity on public.interactions;
+drop trigger if exists sync_base_meeting_reports_identity on public.base_meeting_reports;
+drop trigger if exists sync_expenses_identity on public.expenses;
+drop trigger if exists sync_feedback_reports_identity on public.feedback_reports;
+drop trigger if exists sync_notifications_identity on public.notifications;
+drop trigger if exists sync_notification_reads_identity on public.notification_reads;
+drop trigger if exists sync_meeting_reminders_identity on public.meeting_reminders;
+drop trigger if exists sync_push_subscriptions_identity on public.push_subscriptions;
+drop trigger if exists sync_fcm_tokens_identity on public.fcm_tokens;
+drop trigger if exists sync_tours_guide_identity on public.tours;
+drop trigger if exists sync_tours_host_identity on public.tours;
+drop trigger if exists sync_tours_identity on public.tours;
+drop trigger if exists sync_meeting_houses_identity on public.meeting_houses;
+drop trigger if exists sync_bonus_cancellations_actor_identity on public.bonus_cancellations;
+drop trigger if exists sync_bonus_cancellations_identity on public.bonus_cancellations;
+
 drop function if exists public.app_security_posture();
 drop function if exists public.app_notification_recipients(integer);
 drop function if exists public.app_current_role();
@@ -175,6 +192,28 @@ drop function if exists public.app_is_ceo();
 drop function if exists public.app_user_active();
 drop function if exists app_private.audit_row_change();
 drop function if exists app_private.enforce_immutable_columns();
+drop function if exists app_private.sync_meeting_reminder_identity();
+drop function if exists app_private.sync_identity_array_pair();
+drop function if exists app_private.sync_identity_pair();
+
+alter table public.contacts drop constraint if exists contacts_identity_pair_chk;
+alter table public.interactions drop constraint if exists interactions_identity_pair_chk;
+alter table public.base_meeting_reports drop constraint if exists base_meeting_reports_identity_pair_chk;
+alter table public.expenses drop constraint if exists expenses_identity_pair_chk;
+alter table public.feedback_reports drop constraint if exists feedback_reports_identity_pair_chk;
+alter table public.notifications drop constraint if exists notifications_identity_pair_chk;
+alter table public.notification_reads drop constraint if exists notification_reads_identity_pair_chk;
+alter table public.meeting_reminders drop constraint if exists meeting_reminders_identity_pair_chk;
+alter table public.push_subscriptions drop constraint if exists push_subscriptions_identity_pair_chk;
+alter table public.fcm_tokens drop constraint if exists fcm_tokens_identity_pair_chk;
+alter table public.tours
+  drop constraint if exists tours_assignment_identity_pair_chk,
+  drop constraint if exists tours_host_identity_pair_chk,
+  drop constraint if exists tours_guide_identity_pair_chk;
+alter table public.meeting_houses drop constraint if exists meeting_houses_assignment_identity_pair_chk;
+alter table public.bonus_cancellations
+  drop constraint if exists bonus_cancellations_actor_identity_pair_chk,
+  drop constraint if exists bonus_cancellations_beneficiary_identity_pair_chk;
 
 alter table public.meeting_houses drop column if exists assigned_user_ids;
 alter table public.meeting_reminders drop column if exists project_id;

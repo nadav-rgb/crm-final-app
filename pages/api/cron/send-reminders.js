@@ -50,7 +50,7 @@ export default async function handler(req, res) {
 
   const { data: reminders, error } = await supabase
     .from('meeting_reminders')
-    .select('*')
+    .select('id,type,recipient_user_id,remind_at,sent')
     .eq('sent', false)
     .lte('remind_at', new Date().toISOString());
 
@@ -60,9 +60,7 @@ export default async function handler(req, res) {
   let sent = 0;
 
   for (const reminder of reminders) {
-    const targetId = reminder.type === 'coordinator'
-      ? reminder.coordinator_id
-      : reminder.activist_id;
+    const targetUserId = reminder.recipient_user_id;
 
     const msg = MESSAGES[reminder.type];
     const payload = { ...msg, url: '/base-meetings' };
@@ -70,7 +68,7 @@ export default async function handler(req, res) {
     // שורת פעמון בנוסף ל-Push: Push שנדחה/נמחק מהמסך לא משאיר שום זכר באפליקציה,
     // ואז תזכורת שהוחמצה נעלמת. client_id דטרמיניסטי — הרצה חוזרת לא מכפילה.
     const { error: bellErr } = await supabase.from('notifications').upsert({
-      recipient_id: String(targetId),
+      recipient_user_id: targetUserId,
       client_id: `reminder__${reminder.id}`,
       type: reminder.type === 'coordinator' ? 'missing_report' : 'base_report_reminder',
       title: msg.title,
@@ -80,11 +78,11 @@ export default async function handler(req, res) {
     }, { onConflict: 'client_id' });
     if (bellErr) console.error('send-reminders bell upsert failed:', bellErr.message);
 
-    const web = await sendWebPushToActivist(supabase, targetId, payload);
+    const web = await sendWebPushToActivist(supabase, targetUserId, payload);
     sent += web.sent;
 
     // FCM נייטיב לאפליקציה (no-op אם לא מוגדר FCM_SERVICE_ACCOUNT)
-    const fcm = await sendFcmToActivist(supabase, targetId, payload);
+    const fcm = await sendFcmToActivist(supabase, targetUserId, payload);
     sent += fcm.sent || 0;
 
     await supabase
