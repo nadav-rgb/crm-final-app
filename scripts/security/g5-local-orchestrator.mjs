@@ -18,8 +18,10 @@ import {
 } from './provision-test-fixtures.mjs';
 import {
   assertSafeTestTarget,
+  inspectLocalContainerCandidates,
   inspectLocalStackIdentity,
   RLS_PROTECTED_TABLES,
+  SENSITIVE_TABLES,
   verifyAnonymousIsolation,
 } from './verify-rls-live.mjs';
 
@@ -245,6 +247,14 @@ async function probeTcpPort(host, port) {
   });
 }
 
+export function deriveLocalStackPorts(apiPort) {
+  const api = Number(apiPort);
+  if (!Number.isSafeInteger(api) || api < 1024 || api > 65532) {
+    throw new Error('local stack ports refused invalid API base port');
+  }
+  return Object.freeze({ api, db: api + 1, studio: api + 2, inbucket: api + 3 });
+}
+
 function shutdownDockerLines(result, boundary) {
   if (!result || result.status !== 0 || typeof result.stdout !== 'string') {
     throw new Error(`local stack shutdown verification failed at ${boundary}`);
@@ -258,16 +268,17 @@ export async function verifyLocalStackStopped({
   runDocker,
   probePort = probeTcpPort,
 }) {
+  let stackPorts;
+  try { stackPorts = deriveLocalStackPorts(apiPort); } catch {
+    throw new Error('local stack shutdown verification refused invalid port boundary');
+  }
   if (!/^mekarvim-security-g5-[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/.test(projectId ?? '')
-    || !Number.isSafeInteger(Number(apiPort))
     || typeof runDocker !== 'function'
     || typeof probePort !== 'function') {
     throw new Error('local stack shutdown verification refused invalid boundary');
   }
   const label = `com.supabase.cli.project=${projectId}`;
-  const containers = shutdownDockerLines(runDocker([
-    'ps', '--all', '--filter', `label=${label}`, '--format', '{{.ID}}',
-  ]), 'container inventory');
+  const containers = inspectLocalContainerCandidates({ projectId, runDocker, includeStopped: true });
   if (containers.length) throw new Error('local stack shutdown verification found exact-project container');
 
   const labelledVolumes = shutdownDockerLines(runDocker([
@@ -283,7 +294,7 @@ export async function verifyLocalStackStopped({
     throw new Error('local stack shutdown verification found exact-project volume');
   }
 
-  const ports = [Number(apiPort), Number(apiPort) + 1, Number(apiPort) + 2, Number(apiPort) + 3];
+  const ports = Object.values(stackPorts);
   const listeners = (await Promise.all(ports.flatMap((port) => [
     probePort('127.0.0.1', port),
     probePort('::1', port),
@@ -308,7 +319,10 @@ export async function verifyPostCleanupSecurity({
     throw new Error('post-cleanup security proof refused invalid local boundary');
   }
   const anonymous = await anonymousProbe({ targetUrl: parsedTarget.origin, publishableKey });
-  if (!Array.isArray(anonymous) || anonymous.length < 18
+  const anonymousTables = new Set(anonymous?.map?.((row) => row?.table));
+  if (!Array.isArray(anonymous) || anonymous.length !== SENSITIVE_TABLES.length
+    || anonymousTables.size !== SENSITIVE_TABLES.length
+    || SENSITIVE_TABLES.some((table) => !anonymousTables.has(table))
     || anonymous.some((row) => row?.blocked !== true || row?.leaked !== false)) {
     throw new Error('post-cleanup anonymous isolation proof failed');
   }
@@ -352,10 +366,11 @@ export function createLocalStackController({
     || !path.isAbsolute(supabaseExecutable ?? '')) {
     throw new Error('local stack controller refused unexpected project boundary');
   }
-  const expectedPort = Number(apiPort);
-  if (!Number.isSafeInteger(expectedPort) || expectedPort < 1024 || expectedPort > 65535) {
+  let stackPorts;
+  try { stackPorts = deriveLocalStackPorts(apiPort); } catch {
     throw new Error('local stack controller refused invalid API port');
   }
+  const expectedPort = stackPorts.api;
 
   function command(args, action) {
     const result = runCommand(supabaseExecutable, args, {
@@ -382,10 +397,10 @@ export function createLocalStackController({
     }
     config = config
       .replace(/^project_id\s*=\s*"[^"]+"/m, `project_id = "${projectId}"`)
-      .replace(/(\[api\][\s\S]*?\nport\s*=\s*)\d+/m, `$1${expectedPort}`)
-      .replace(/(\[db\][\s\S]*?\nport\s*=\s*)\d+/m, `$1${expectedPort + 1}`)
-      .replace(/(\[studio\][\s\S]*?\nport\s*=\s*)\d+/m, `$1${expectedPort + 2}`)
-      .replace(/(\[inbucket\][\s\S]*?\nport\s*=\s*)\d+/m, `$1${expectedPort + 3}`);
+      .replace(/(\[api\][\s\S]*?\nport\s*=\s*)\d+/m, `$1${stackPorts.api}`)
+      .replace(/(\[db\][\s\S]*?\nport\s*=\s*)\d+/m, `$1${stackPorts.db}`)
+      .replace(/(\[studio\][\s\S]*?\nport\s*=\s*)\d+/m, `$1${stackPorts.studio}`)
+      .replace(/(\[inbucket\][\s\S]*?\nport\s*=\s*)\d+/m, `$1${stackPorts.inbucket}`);
     await writeFile(configPath, config, { encoding: 'utf8', flag: 'w' });
   }
 
@@ -665,14 +680,17 @@ export function loadLocalG5Configuration({
   const dockerExecutable = env.SECURITY_TEST_DOCKER_CLI;
   const apiPort = Number(env.SECURITY_TEST_SUPABASE_API_PORT ?? 54321);
   const bffPort = Number(env.SECURITY_TEST_BFF_PORT ?? 43877);
+  let stackPorts;
+  try { stackPorts = deriveLocalStackPorts(apiPort); } catch {
+    throw new Error('G5 local entry refused invalid stack port configuration');
+  }
   if (env.SECURITY_TEST_EXECUTE_LOCAL_G5 !== 'true'
     || !path.isAbsolute(resolvedRepo)
     || !UUID.test(runId ?? '')
     || !path.isAbsolute(supabaseExecutable ?? '')
     || !path.isAbsolute(dockerExecutable ?? '')
-    || !Number.isSafeInteger(apiPort) || apiPort < 1024 || apiPort > 65535
     || !Number.isSafeInteger(bffPort) || bffPort < 1024 || bffPort > 65535
-    || apiPort === bffPort) {
+    || Object.values(stackPorts).includes(bffPort)) {
     throw new Error('G5 local entry refused incomplete executable configuration');
   }
   const suffix = runId.replaceAll('-', '').slice(0, 12);
@@ -685,6 +703,7 @@ export function loadLocalG5Configuration({
     repoRoot: resolvedRepo,
     projectId,
     apiPort,
+    stackPorts,
     bffPort,
     allowedRoot,
     projectDir: path.join(allowedRoot, projectId),
@@ -728,6 +747,112 @@ export async function cleanupRegisteredSecurityRun({ registry, database, authAdm
     counts[entry.key] = Object.freeze({ before, after });
   }
   return Object.freeze(counts);
+}
+
+const CLEANUP_RESIDUAL_GROUPS = Object.freeze([
+  Object.freeze({ source: 'auditEventIds', kind: 'audit-event', schema: 'app_private', table: 'audit_events' }),
+  Object.freeze({ source: 'rateBucketHashes', kind: 'rate-bucket', schema: 'app_private', table: 'rate_limit_buckets' }),
+  Object.freeze({ source: 'sessionHashes', kind: 'session', schema: 'app_private', table: 'auth_sessions' }),
+]);
+
+function sanitizeCleanupAggregateRows(rows, boundary) {
+  if (!Array.isArray(rows)) throw new Error(`G5 cleanup evidence refused invalid ${boundary} groups`);
+  const groups = new Set();
+  const sanitized = rows.map((row) => {
+    const keys = ['kind', 'schema', 'table', 'resources', 'before', 'after'];
+    const group = `${row?.kind}:${row?.schema}.${row?.table}`;
+    if (!row || Object.keys(row).length !== keys.length
+      || !Object.hasOwn(CLEANUP_ORDER, row.kind)
+      || !/^(?:public|auth|app_private)$/.test(row.schema ?? '')
+      || !/^[a-z][a-z0-9_]{0,62}$/.test(row.table ?? '')
+      || !Number.isSafeInteger(row.resources) || row.resources < 1
+      || !Number.isSafeInteger(row.before) || row.before < 0 || row.before > row.resources
+      || row.after !== 0 || groups.has(group)) {
+      throw new Error(`G5 cleanup evidence refused unsafe ${boundary} aggregate`);
+    }
+    groups.add(group);
+    return Object.freeze(Object.fromEntries(keys.map((key) => [key, row[key]])));
+  });
+  return Object.freeze(sanitized.sort((left, right) => (
+    `${left.kind}:${left.schema}.${left.table}`.localeCompare(`${right.kind}:${right.schema}.${right.table}`)
+  )));
+}
+
+function sanitizeCleanupEvidence(evidence) {
+  if (!evidence || Object.keys(evidence).length !== 3) {
+    throw new Error('G5 cleanup evidence refused incomplete aggregate proof');
+  }
+  const primary = sanitizeCleanupAggregateRows(evidence.primary, 'primary');
+  const derived = sanitizeCleanupAggregateRows(evidence.derived, 'derived');
+  if (!primary.length || !Array.isArray(evidence.residuals)
+    || evidence.residuals.length !== CLEANUP_RESIDUAL_GROUPS.length) {
+    throw new Error('G5 cleanup evidence refused incomplete zero-residual proof');
+  }
+  const residuals = evidence.residuals.map((row, index) => {
+    const expected = CLEANUP_RESIDUAL_GROUPS[index];
+    if (!row || Object.keys(row).length !== 4
+      || row.kind !== expected.kind || row.schema !== expected.schema || row.table !== expected.table
+      || row.count !== 0) {
+      throw new Error('G5 cleanup evidence refused non-zero residual proof');
+    }
+    return Object.freeze({ kind: row.kind, schema: row.schema, table: row.table, count: 0 });
+  });
+  return Object.freeze({ primary, derived, residuals: Object.freeze(residuals) });
+}
+
+function aggregateCleanupCounts(registry, counts, boundary) {
+  const entries = registry?.entries?.();
+  if (!Array.isArray(entries) || !counts || typeof counts !== 'object') {
+    throw new Error(`G5 cleanup evidence refused incomplete ${boundary} inputs`);
+  }
+  const expectedKeys = new Set(entries.map((entry) => entry.key));
+  if (Object.keys(counts).length !== expectedKeys.size
+    || Object.keys(counts).some((key) => !expectedKeys.has(key))) {
+    throw new Error(`G5 cleanup evidence refused mismatched ${boundary} counts`);
+  }
+  const grouped = new Map();
+  for (const entry of entries) {
+    const count = counts[entry.key];
+    if (!count || Object.keys(count).length !== 2
+      || !Number.isSafeInteger(count.before) || count.before < 0 || count.before > 1
+      || count.after !== 0) {
+      throw new Error(`G5 cleanup evidence refused invalid ${boundary} count`);
+    }
+    const key = `${entry.kind}:${entry.schema}.${entry.table}`;
+    const current = grouped.get(key) ?? {
+      kind: entry.kind, schema: entry.schema, table: entry.table,
+      resources: 0, before: 0, after: 0,
+    };
+    current.resources += 1;
+    current.before += count.before;
+    current.after += count.after;
+    grouped.set(key, current);
+  }
+  return [...grouped.values()];
+}
+
+export function summarizeCleanupEvidence({
+  primaryRegistry,
+  primaryCounts,
+  derivedRegistry,
+  derivedCounts,
+  leftovers,
+}) {
+  if (!leftovers || Object.keys(leftovers).length !== CLEANUP_RESIDUAL_GROUPS.length) {
+    throw new Error('G5 cleanup evidence refused incomplete private residual inventory');
+  }
+  const residuals = CLEANUP_RESIDUAL_GROUPS.map((group) => {
+    const values = leftovers[group.source];
+    if (!Array.isArray(values) || values.length !== 0) {
+      throw new Error('G5 cleanup evidence refused non-zero private residual inventory');
+    }
+    return { kind: group.kind, schema: group.schema, table: group.table, count: 0 };
+  });
+  return sanitizeCleanupEvidence({
+    primary: aggregateCleanupCounts(primaryRegistry, primaryCounts, 'primary'),
+    derived: aggregateCleanupCounts(derivedRegistry, derivedCounts, 'derived'),
+    residuals,
+  });
 }
 
 function exactIdentifier(value) {
@@ -1020,18 +1145,20 @@ export function sanitizeLifecycleEvidence(evidence) {
   ];
   if (!security || Object.keys(security).length !== securityKeys.length
     || securityKeys.some((key) => !Number.isSafeInteger(security[key]) || security[key] < 0)
-    || security.anonymousSurfaces < 18 || security.anonymousLeaks !== 0
+    || security.anonymousSurfaces !== SENSITIVE_TABLES.length || security.anonymousLeaks !== 0
     || security.postureTables !== RLS_PROTECTED_TABLES.length
     || security.rlsEnabledTables !== security.postureTables
     || security.rlsForcedTables !== security.postureTables) {
     throw new Error('G5 lifecycle evidence refused invalid post-cleanup security proof');
   }
+  const cleanup = sanitizeCleanupEvidence(evidence.cleanup);
   return Object.freeze({
     inventories: Object.freeze(inventories),
     checks: Object.freeze(checks),
     postCleanupSecurity: Object.freeze(Object.fromEntries(
       securityKeys.map((key) => [key, security[key]]),
     )),
+    cleanup,
   });
 }
 
@@ -1132,6 +1259,7 @@ export async function runG5LocalLifecycle({
       'post-cleanup', null, cleanupResult.postCleanupInventory,
     ));
     lifecycleEvidence.postCleanupSecurity = cleanupResult.postCleanupSecurity;
+    lifecycleEvidence.cleanup = cleanupResult.cleanupEvidence;
     return Object.freeze({
       completed: true,
       evidence,
@@ -1319,6 +1447,13 @@ export async function runConfiguredLocalG5({
         if (Object.values(leftovers).some((values) => values.length !== 0)) {
           throw new Error('G5 cleanup refused unregistered private leftovers');
         }
+        const cleanupEvidence = summarizeCleanupEvidence({
+          primaryRegistry: registry,
+          primaryCounts,
+          derivedRegistry,
+          derivedCounts,
+          leftovers,
+        });
         const postCleanupSecurity = await verifyPostCleanupSecurity({
           targetUrl: target.targetUrl,
           publishableKey: local.credentials.publishableKey,
@@ -1329,6 +1464,7 @@ export async function runConfiguredLocalG5({
           clean: true,
           primaryCounts,
           derivedCounts,
+          cleanupEvidence,
           postCleanupSecurity,
           postCleanupInventory,
         });

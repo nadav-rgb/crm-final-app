@@ -46,6 +46,7 @@ const OPTIONAL_CONTAINERS = Object.freeze({
   pooler: 'supabase_pooler_',
   'edge-runtime': 'supabase_edge_runtime_',
   mailpit: 'supabase_mailpit_',
+  inbucket: 'supabase_inbucket_',
 });
 
 function exactApiPort(value) {
@@ -87,6 +88,60 @@ function dockerResult(result, action) {
   return result.stdout.trim();
 }
 
+function dockerIds(result, action) {
+  const ids = dockerResult(result, action).split(/\r?\n/).filter(Boolean);
+  if (ids.some((id) => !/^[0-9a-f]{12,64}$/i.test(id))) {
+    throw new Error(`local stack container inspection failed at ${action}`);
+  }
+  return ids;
+}
+
+export function inspectLocalContainerCandidates({ projectId, runDocker, includeStopped = false }) {
+  if (!PROJECT_ID.test(projectId ?? '') || typeof runDocker !== 'function'
+    || typeof includeStopped !== 'boolean') {
+    throw new Error('local stack container inspection refused invalid boundary');
+  }
+  const command = includeStopped ? ['ps', '--all'] : ['ps'];
+  const queries = [
+    [...command, '--filter', `label=com.supabase.cli.project=${projectId}`, '--format', '{{.ID}}'],
+    [...command, '--filter', `name=${projectId}`, '--format', '{{.ID}}'],
+  ];
+  const ids = [...new Set(queries.flatMap((args, index) => dockerIds(
+    runDocker(args), index === 0 ? 'project-label listing' : 'project-name listing',
+  )))];
+  if (!ids.length) return Object.freeze([]);
+
+  let inspected;
+  try {
+    inspected = JSON.parse(dockerResult(runDocker(['inspect', ...ids]), 'candidate inspection'));
+  } catch {
+    throw new Error('local stack container inspection returned invalid output');
+  }
+  if (!Array.isArray(inspected) || inspected.length !== ids.length) {
+    throw new Error('local stack container inspection returned incomplete output');
+  }
+  const seen = new Set();
+  const candidates = inspected.map((item) => {
+    const id = String(item?.Id ?? '');
+    const matchingIds = ids.filter((candidateId) => id.startsWith(candidateId));
+    if (!/^[0-9a-f]{12,64}$/i.test(id) || matchingIds.length !== 1 || seen.has(matchingIds[0])) {
+      throw new Error('local stack container inspection returned mismatched identity');
+    }
+    seen.add(matchingIds[0]);
+    const bindings = item?.NetworkSettings?.Ports?.['8000/tcp'];
+    return Object.freeze({
+      id: matchingIds[0],
+      name: String(item?.Name ?? '').replace(/^\//, ''),
+      projectId: item?.Config?.Labels?.['com.supabase.cli.project'] ?? null,
+      apiBindings: Object.freeze(Array.isArray(bindings) ? bindings.map((binding) => Object.freeze({
+        hostIp: binding?.HostIp ?? null,
+        hostPort: binding?.HostPort ?? null,
+      })) : []),
+    });
+  });
+  return Object.freeze(candidates);
+}
+
 function containerRole(name, projectId) {
   return Object.entries({ ...REQUIRED_CONTAINERS, ...OPTIONAL_CONTAINERS })
     .find(([, prefix]) => name === `${prefix}${projectId}`)?.[0] ?? null;
@@ -101,38 +156,25 @@ export function inspectLocalStackIdentity({
     throw new Error('local stack identity refused: unexpected project id');
   }
   const expectedPort = exactApiPort(apiPort);
-  const ids = dockerResult(runDocker([
-    'ps',
-    '--filter', `label=com.supabase.cli.project=${projectId}`,
-    '--format', '{{.ID}}',
-  ]), 'container listing').split(/\r?\n/).filter(Boolean);
-  if (ids.length < Object.keys(REQUIRED_CONTAINERS).length
-    || ids.some((id) => !/^[0-9a-f]{12,64}$/i.test(id))) {
+  const inspected = inspectLocalContainerCandidates({ projectId, runDocker });
+  if (inspected.length < Object.keys(REQUIRED_CONTAINERS).length) {
     throw new Error('local stack identity refused: required containers are missing');
-  }
-
-  const inspected = JSON.parse(dockerResult(
-    runDocker(['inspect', ...ids]),
-    'container inspection',
-  ));
-  if (!Array.isArray(inspected) || inspected.length !== ids.length) {
-    throw new Error('local stack identity refused: incomplete Docker inspection');
   }
 
   const containers = [];
   for (const item of inspected) {
-    const name = String(item?.Name ?? '').replace(/^\//, '');
+    const name = item.name;
     const role = containerRole(name, projectId);
-    const labelledProject = item?.Config?.Labels?.['com.supabase.cli.project'];
+    const labelledProject = item.projectId;
     if (!role || labelledProject !== projectId) {
       throw new Error('local stack identity refused: unexpected container label or name');
     }
     const container = { name, projectId: labelledProject, role };
     if (role === 'api') {
-      const bindings = item?.NetworkSettings?.Ports?.['8000/tcp'];
+      const bindings = item.apiBindings;
       if (!Array.isArray(bindings) || bindings.length < 1
-        || bindings.some((binding) => !['127.0.0.1', '::1', '[::1]'].includes(binding?.HostIp))
-        || !bindings.some((binding) => Number(binding.HostPort) === expectedPort)) {
+        || bindings.some((binding) => !['127.0.0.1', '::1', '[::1]'].includes(binding?.hostIp))
+        || !bindings.some((binding) => Number(binding.hostPort) === expectedPort)) {
         throw new Error('local stack identity refused: API port is not exact loopback');
       }
       container.hostApiPort = expectedPort;

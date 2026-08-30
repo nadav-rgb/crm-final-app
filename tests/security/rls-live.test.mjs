@@ -30,6 +30,33 @@ function verifiedStackIdentity(overrides = {}) {
   };
 }
 
+function dockerInventory(containers, calls = []) {
+  return (args) => {
+    calls.push([...args]);
+    if (args[0] === 'ps') {
+      const labelFilter = args.find((entry) => entry.startsWith('label='));
+      const nameFilter = args.find((entry) => entry.startsWith('name='));
+      const matches = containers.filter((item) => {
+        if (labelFilter) {
+          return item.Config.Labels?.['com.supabase.cli.project'] === labelFilter.split('=').slice(2).join('=');
+        }
+        if (nameFilter) return item.Name.includes(nameFilter.slice('name='.length));
+        return false;
+      });
+      return { status: 0, stdout: matches.map((item) => item.Id).join('\n'), stderr: '' };
+    }
+    if (args[0] === 'inspect') {
+      const ids = new Set(args.slice(1));
+      return {
+        status: 0,
+        stdout: JSON.stringify(containers.filter((item) => ids.has(item.Id))),
+        stderr: '',
+      };
+    }
+    return { status: 1, stdout: '', stderr: 'unexpected command' };
+  };
+}
+
 function safeTarget(targetUrl = `http://127.0.0.1:${testApiPort}`) {
   return {
     targetUrl,
@@ -187,7 +214,7 @@ test('Docker inspection fails closed on missing, mixed-label or non-loopback con
   } : item)), /loopback|port|identity/i);
 });
 
-test('Docker inspection permits exact-project Studio and rejects deceptive or unlabeled extras', async () => {
+test('Docker inspection combines real label/name inventories and permits exact Studio/Inbucket only', async () => {
   const { inspectLocalStackIdentity } = await import('../../scripts/security/verify-rls-live.mjs');
   const required = [
     ['database', 'db'], ['api', 'kong'], ['auth', 'auth'], ['rest', 'rest'],
@@ -205,19 +232,27 @@ test('Docker inspection permits exact-project Studio and rejects deceptive or un
     Config: { Labels: { 'com.supabase.cli.project': testProjectId } },
     NetworkSettings: { Ports: {} },
   };
-  const inspect = (containers) => inspectLocalStackIdentity({
+  const inbucket = {
+    ...studio,
+    Id: '6'.repeat(12),
+    Name: `/supabase_inbucket_${testProjectId}`,
+  };
+  const inspect = (containers, calls = []) => inspectLocalStackIdentity({
     projectId: testProjectId,
     apiPort: testApiPort,
-    runDocker(args) {
-      return args[0] === 'ps'
-        ? { status: 0, stdout: containers.map((item) => item.Id).join('\n'), stderr: '' }
-        : { status: 0, stdout: JSON.stringify(containers), stderr: '' };
-    },
+    runDocker: dockerInventory(containers, calls),
   });
 
-  const identity = inspect([...required, studio]);
+  const calls = [];
+  const identity = inspect([...required, studio, inbucket], calls);
   assert.equal(identity.containers.find((entry) => entry.role === 'studio')?.name,
     `supabase_studio_${testProjectId}`);
+  assert.equal(identity.containers.find((entry) => entry.role === 'inbucket')?.name,
+    `supabase_inbucket_${testProjectId}`);
+  assert.equal(calls.filter((args) => args[0] === 'ps').length, 2);
+  assert.equal(calls.filter((args) => args[0] === 'ps').some((args) => args.includes('--all')), false);
+  assert.ok(calls.some((args) => args.includes(`label=com.supabase.cli.project=${testProjectId}`)));
+  assert.ok(calls.some((args) => args.includes(`name=${testProjectId}`)));
 
   for (const extra of [
     { ...studio, Name: `/prefix-supabase_studio_${testProjectId}` },
@@ -225,7 +260,7 @@ test('Docker inspection permits exact-project Studio and rejects deceptive or un
     { ...studio, Config: { Labels: {} } },
     {
       ...studio,
-      Name: '/supabase_studio_mekarvim-security-g5-wrong',
+      Name: `/supabase_studio_${testProjectId}-wrong-project-collision`,
       Config: { Labels: { 'com.supabase.cli.project': 'mekarvim-security-g5-wrong' } },
     },
   ]) {

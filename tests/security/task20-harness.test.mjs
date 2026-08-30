@@ -13,7 +13,10 @@ import {
   provisionLegacyDatabase,
   sanitizeEvidenceRows,
 } from '../../scripts/security/provision-test-fixtures.mjs';
-import { RLS_PROTECTED_TABLES } from '../../scripts/security/verify-rls-live.mjs';
+import {
+  RLS_PROTECTED_TABLES,
+  SENSITIVE_TABLES,
+} from '../../scripts/security/verify-rls-live.mjs';
 
 const schemaPath = new URL('./fixtures/legacy-security-schema.sql', import.meta.url);
 const localProjectId = 'mekarvim-security-g5-harness';
@@ -49,11 +52,28 @@ function inventoryCounts() {
 
 function postCleanupCounts() {
   return {
-    anonymousSurfaces: 19,
+    anonymousSurfaces: 18,
     anonymousLeaks: 0,
     postureTables: 17,
     rlsEnabledTables: 17,
     rlsForcedTables: 17,
+  };
+}
+
+function cleanupEvidence() {
+  return {
+    primary: [
+      { kind: 'auth-user', schema: 'auth', table: 'users', resources: 2, before: 2, after: 0 },
+      { kind: 'public-row', schema: 'public', table: 'contacts', resources: 1, before: 1, after: 0 },
+    ],
+    derived: [
+      { kind: 'audit-event', schema: 'app_private', table: 'audit_events', resources: 1, before: 1, after: 0 },
+    ],
+    residuals: [
+      { kind: 'audit-event', schema: 'app_private', table: 'audit_events', count: 0 },
+      { kind: 'rate-bucket', schema: 'app_private', table: 'rate_limit_buckets', count: 0 },
+      { kind: 'session', schema: 'app_private', table: 'auth_sessions', count: 0 },
+    ],
   };
 }
 
@@ -84,7 +104,12 @@ function completeLifecycleEvidence() {
       }))
     ))),
   ];
-  return { inventories, checks, postCleanupSecurity: postCleanupCounts() };
+  return {
+    inventories,
+    checks,
+    postCleanupSecurity: postCleanupCounts(),
+    cleanup: cleanupEvidence(),
+  };
 }
 
 test('test-only legacy schema fixture covers the repository-derived migration contract', async () => {
@@ -301,6 +326,57 @@ test('exact run registry cleans private derived rows before Auth users and prove
   assert.ok(deletionOrder.indexOf('auth-user') < deletionOrder.indexOf('project'));
 });
 
+test('cleanup evidence groups exact counts without retaining selectors, ids or hashes', async () => {
+  const module = await import('../../scripts/security/g5-local-orchestrator.mjs');
+  assert.equal(typeof module.summarizeCleanupEvidence, 'function');
+  const runId = createSecurityRunId();
+  const actorId = createSecurityRunId();
+  const primaryRegistry = module.createSecurityRunRegistry(runId);
+  primaryRegistry.register({
+    kind: 'auth-user', schema: 'auth', table: 'users', column: 'id', value: actorId,
+  });
+  primaryRegistry.register({
+    kind: 'session', schema: 'app_private', table: 'auth_sessions',
+    column: 'session_hash', value: 'sensitive-session-hash-a',
+  });
+  const primaryCounts = Object.fromEntries(primaryRegistry.entries().map((entry) => [
+    entry.key, { before: 1, after: 0 },
+  ]));
+  const derivedRegistry = module.createSecurityRunRegistry(runId);
+  derivedRegistry.register({
+    kind: 'audit-event', schema: 'app_private', table: 'audit_events', column: 'id', value: 71,
+  });
+  const derivedCounts = Object.fromEntries(derivedRegistry.entries().map((entry) => [
+    entry.key, { before: 1, after: 0 },
+  ]));
+
+  const evidence = module.summarizeCleanupEvidence({
+    primaryRegistry,
+    primaryCounts,
+    derivedRegistry,
+    derivedCounts,
+    leftovers: { sessionHashes: [], auditEventIds: [], rateBucketHashes: [] },
+  });
+  assert.deepEqual(evidence, {
+    primary: [
+      { kind: 'auth-user', schema: 'auth', table: 'users', resources: 1, before: 1, after: 0 },
+      { kind: 'session', schema: 'app_private', table: 'auth_sessions', resources: 1, before: 1, after: 0 },
+    ],
+    derived: [
+      { kind: 'audit-event', schema: 'app_private', table: 'audit_events', resources: 1, before: 1, after: 0 },
+    ],
+    residuals: [
+      { kind: 'audit-event', schema: 'app_private', table: 'audit_events', count: 0 },
+      { kind: 'rate-bucket', schema: 'app_private', table: 'rate_limit_buckets', count: 0 },
+      { kind: 'session', schema: 'app_private', table: 'auth_sessions', count: 0 },
+    ],
+  });
+  const serialized = JSON.stringify(evidence);
+  assert.equal(serialized.includes(actorId), false);
+  assert.equal(serialized.includes('sensitive-session-hash-a'), false);
+  assert.doesNotMatch(serialized, /selector|column|value|hash/i);
+});
+
 test('local lifecycle executes reset proof, migrations, rollback, live flows and cleanup in fail-closed order', async () => {
   const module = await import('../../scripts/security/g5-local-orchestrator.mjs');
   assert.equal(typeof module.runG5LocalLifecycle, 'function');
@@ -328,6 +404,7 @@ test('local lifecycle executes reset proof, migrations, rollback, live flows and
       trace.push('cleanup');
       return {
         clean: true,
+        cleanupEvidence: cleanupEvidence(),
         postCleanupInventory: { ...sanitizedInventory },
         postCleanupSecurity: postCleanupCounts(),
       };
@@ -360,6 +437,7 @@ test('local lifecycle executes reset proof, migrations, rollback, live flows and
     'actual', 'checkId', 'expected', 'migrationId', 'stage',
   ]);
   assert.deepEqual(result.lifecycleEvidence.postCleanupSecurity, postCleanupCounts());
+  assert.deepEqual(result.lifecycleEvidence.cleanup, cleanupEvidence());
   assert.doesNotMatch(JSON.stringify(result.lifecycleEvidence), /select|password|token|row content/i);
 });
 
@@ -377,6 +455,10 @@ test('lifecycle evidence fails closed on omitted stages or non-passing migration
       index === 0 ? { ...entry, actual: 'fail' } : entry
     )),
   }), /lifecycle|check|pass/i);
+  assert.throws(() => module.sanitizeLifecycleEvidence({
+    ...complete,
+    postCleanupSecurity: { ...complete.postCleanupSecurity, anonymousSurfaces: 19 },
+  }), /security|anonymous|surface/i);
 });
 
 test('local lifecycle performs exact abort cleanup after actor creation on migration failure', async () => {
@@ -643,6 +725,7 @@ test('local stack controller captures keys in memory and binds start/status/stop
   const calls = [];
   const dockerCalls = [];
   const shutdownProbes = [];
+  let stackRunning = false;
   const inspections = [
     ['db', 'database'], ['kong', 'api'], ['auth', 'auth'], ['rest', 'rest'],
   ].map(([component, role], index) => ({
@@ -663,6 +746,8 @@ test('local stack controller captures keys in memory and binds start/status/stop
     async prepareProject() { calls.push('prepare'); },
     runCommand(_executable, args) {
       calls.push(args.join(' '));
+      if (args[0] === 'start') stackRunning = true;
+      if (args[0] === 'stop') stackRunning = false;
       if (args[0] === 'status') return {
         status: 0,
         stdout: JSON.stringify({
@@ -677,13 +762,13 @@ test('local stack controller captures keys in memory and binds start/status/stop
     },
     runDocker(args) {
       dockerCalls.push(args.join(' '));
-      if (args[0] === 'ps' && args.includes('--all')) {
-        return { status: 0, stdout: '', stderr: '' };
-      }
+      if (args[0] === 'ps') return {
+        status: 0,
+        stdout: stackRunning ? inspections.map((item) => item.Id).join('\n') : '',
+        stderr: '',
+      };
       if (args[0] === 'volume') return { status: 0, stdout: '', stderr: '' };
-      return args[0] === 'ps'
-        ? { status: 0, stdout: inspections.map((item) => item.Id).join('\n'), stderr: '' }
-        : { status: 0, stdout: JSON.stringify(inspections), stderr: '' };
+      return { status: 0, stdout: JSON.stringify(inspections), stderr: '' };
     },
     async probePort(host, port) {
       shutdownProbes.push(`${host}:${port}`);
@@ -704,8 +789,14 @@ test('local stack controller captures keys in memory and binds start/status/stop
     `stop --workdir ${resolvedProjectDir} --no-backup`,
   ]);
   assert.equal(dockerCalls.some((command) => command.startsWith('ps --all --filter label=')), true);
+  assert.equal(dockerCalls.some((command) => command.startsWith('ps --all --filter name=')), true);
   assert.equal(dockerCalls.filter((command) => command.startsWith('volume ls')).length, 2);
-  assert.equal(shutdownProbes.length, 8);
+  assert.deepEqual(new Set(shutdownProbes), new Set([
+    `127.0.0.1:${localApiPort}`, `::1:${localApiPort}`,
+    `127.0.0.1:${localApiPort + 1}`, `::1:${localApiPort + 1}`,
+    `127.0.0.1:${localApiPort + 2}`, `::1:${localApiPort + 2}`,
+    `127.0.0.1:${localApiPort + 3}`, `::1:${localApiPort + 3}`,
+  ]));
 });
 
 test('stack shutdown proof rejects exact-project containers, volumes and configured listeners', async () => {
@@ -749,6 +840,42 @@ test('stack shutdown proof rejects exact-project containers, volumes and configu
     runDocker: cleanDocker,
     async probePort(_host, port) { return port === localApiPort + 2; },
   }), /listener/i);
+
+  const hiddenContainer = {
+    Id: 'f'.repeat(12),
+    Name: `/supabase_studio_${localProjectId}`,
+    Config: { Labels: {} },
+    NetworkSettings: { Ports: {} },
+  };
+  const calls = [];
+  await assert.rejects(() => module.verifyLocalStackStopped({
+    projectId: localProjectId,
+    apiPort: localApiPort,
+    runDocker(args) {
+      calls.push([...args]);
+      if (args[0] === 'ps') {
+        const isLabelQuery = args.includes(`label=com.supabase.cli.project=${localProjectId}`);
+        return {
+          status: 0,
+          stdout: isLabelQuery ? '' : hiddenContainer.Id,
+          stderr: '',
+        };
+      }
+      if (args[0] === 'inspect') {
+        return { status: 0, stdout: JSON.stringify([hiddenContainer]), stderr: '' };
+      }
+      return { status: 0, stdout: '', stderr: '' };
+    },
+    async probePort() { return false; },
+  }), /container|identity|name/i);
+  assert.ok(calls.some((args) => args[0] === 'ps' && args.includes(`name=${localProjectId}`)));
+  assert.ok(calls.some((args) => args[0] === 'inspect' && args.includes(hiddenContainer.Id)));
+  await assert.rejects(() => module.verifyLocalStackStopped({
+    projectId: localProjectId,
+    apiPort: 65533,
+    runDocker: cleanDocker,
+    async probePort() { return false; },
+  }), /port|boundary/i);
 });
 
 test('private derived-resource inventory returns exact identifiers for registry delta tracking', async () => {
@@ -777,9 +904,7 @@ test('private derived-resource inventory returns exact identifiers for registry 
 test('post-cleanup proof reruns anonymous isolation and forced-RLS posture with sanitized counts', async () => {
   const module = await import('../../scripts/security/g5-local-orchestrator.mjs');
   assert.equal(typeof module.verifyPostCleanupSecurity, 'function');
-  const anonymousRows = Array.from({ length: 19 }, (_, index) => ({
-    table: `synthetic_${index}`, blocked: true, leaked: false,
-  }));
+  const anonymousRows = SENSITIVE_TABLES.map((table) => ({ table, blocked: true, leaked: false }));
   const postureRows = RLS_PROTECTED_TABLES.map((tableName) => ({
     table_name: tableName, rls_enabled: true, rls_forced: true,
   }));
@@ -795,7 +920,7 @@ test('post-cleanup proof reruns anonymous isolation and forced-RLS posture with 
     serviceClient,
     async anonymousProbe() { return anonymousRows; },
   }), {
-    anonymousSurfaces: 19,
+    anonymousSurfaces: 18,
     anonymousLeaks: 0,
     postureTables: 17,
     rlsEnabledTables: 17,
@@ -818,6 +943,16 @@ test('post-cleanup proof reruns anonymous isolation and forced-RLS posture with 
     },
     async anonymousProbe() { return anonymousRows; },
   }), /posture|RLS/i);
+  await assert.rejects(() => module.verifyPostCleanupSecurity({
+    targetUrl: `http://127.0.0.1:${localApiPort}`,
+    publishableKey: 'synthetic-local-publishable-key',
+    serviceClient,
+    async anonymousProbe() {
+      return anonymousRows.map((row, index) => (
+        index === anonymousRows.length - 1 ? { ...anonymousRows[0] } : row
+      ));
+    },
+  }), /anonymous|surface|isolation/i);
 });
 
 test('local BFF controller uses an exact loopback origin and keeps server credentials process-local', async () => {
@@ -997,6 +1132,43 @@ test('configured G5 entry refuses caller verdicts before constructing local infr
       SECURITY_TEST_POSTGRES_ASSERTIONS: '{"searchPathHijack":"pass"}',
     },
   }), /caller verdict|self-attested/i);
+});
+
+test('configured G5 ports keep every derived listener valid and separate from the BFF', async () => {
+  const module = await import('../../scripts/security/g5-local-orchestrator.mjs');
+  const baseEnv = {
+    SECURITY_TEST_EXECUTE_LOCAL_G5: 'true',
+    SECURITY_TEST_SUPABASE_CLI: 'C:/synthetic/bin/supabase.exe',
+    SECURITY_TEST_DOCKER_CLI: 'C:/Program Files/Docker/docker.exe',
+  };
+  const config = module.loadLocalG5Configuration({
+    repoRoot: 'C:/synthetic/repository',
+    runId: createSecurityRunId(),
+    env: { ...baseEnv, SECURITY_TEST_SUPABASE_API_PORT: '65532', SECURITY_TEST_BFF_PORT: '43877' },
+  });
+  assert.deepEqual(config.stackPorts, {
+    api: 65532,
+    db: 65533,
+    studio: 65534,
+    inbucket: 65535,
+  });
+
+  assert.throws(() => module.loadLocalG5Configuration({
+    repoRoot: 'C:/synthetic/repository',
+    runId: createSecurityRunId(),
+    env: { ...baseEnv, SECURITY_TEST_SUPABASE_API_PORT: '65533' },
+  }), /port|configuration/i);
+  for (const bffPort of [54321, 54322, 54323, 54324]) {
+    assert.throws(() => module.loadLocalG5Configuration({
+      repoRoot: 'C:/synthetic/repository',
+      runId: createSecurityRunId(),
+      env: {
+        ...baseEnv,
+        SECURITY_TEST_SUPABASE_API_PORT: '54321',
+        SECURITY_TEST_BFF_PORT: String(bffPort),
+      },
+    }), /port|configuration/i);
+  }
 });
 
 test('configured G5 entry owns stack start, lifecycle, sanitized evidence write and exact stop', async () => {
