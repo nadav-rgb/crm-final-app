@@ -410,7 +410,7 @@ export function computeDeterministicFinanceExpected({ runId, actorIds }) {
     }));
   const cancelled = new Set(fixture.bonus_cancellations.map((row) => row.bonus_key));
   const activists = fixture.profiles.filter((profile) => profile.role === 'activist'
-    && !['disabled', 'staleSecurityVersion'].some((alias) => actorIds[alias] === profile.id));
+    && actorIds.disabled !== profile.id);
 
   const rows = activists.map((profile) => {
     const actorMitzvot = mitzvot.filter((bonus) => Number(bonus.activist_id) === Number(profile.activist_code)

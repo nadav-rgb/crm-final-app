@@ -148,6 +148,10 @@ test('unauthorized direct JWT cannot read the private audit store', live, async 
 
 test('live PostgreSQL assertions prove search-path and atomic-audit behavior', live, async () => {
   const { resources, target } = loadFixture();
+  const financeExpected = computeDeterministicFinanceExpected({
+    runId: resources.securityRunId,
+    actorIds: resources.actorIds,
+  });
   const dockerExecutable = process.env.SECURITY_TEST_DOCKER_CLI;
   assert.ok(dockerExecutable, 'absolute local Docker CLI path missing');
   const database = createLocalPostgresAdapter({
@@ -159,7 +163,7 @@ test('live PostgreSQL assertions prove search-path and atomic-audit behavior', l
     database,
     actorId: resources.actorIds.ceo,
     projectId: resources.projectA,
-    expectedRows: 2,
+    expectedRows: financeExpected.byActor.ceoAal2ProjectA.length,
     period: resources.period,
   });
   assert.deepEqual(assertions, {

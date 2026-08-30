@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import {
   assertSafeTestTarget,
   loadVerifiedLocalTarget,
+  RLS_PROTECTED_TABLES,
   verifyAnonymousIsolation,
 } from '../../scripts/security/verify-rls-live.mjs';
 
@@ -186,6 +187,52 @@ test('Docker inspection fails closed on missing, mixed-label or non-loopback con
   } : item)), /loopback|port|identity/i);
 });
 
+test('Docker inspection permits exact-project Studio and rejects deceptive or unlabeled extras', async () => {
+  const { inspectLocalStackIdentity } = await import('../../scripts/security/verify-rls-live.mjs');
+  const required = [
+    ['database', 'db'], ['api', 'kong'], ['auth', 'auth'], ['rest', 'rest'],
+  ].map(([role, component], index) => ({
+    Id: String(index + 1).repeat(12),
+    Name: `/supabase_${component}_${testProjectId}`,
+    Config: { Labels: { 'com.supabase.cli.project': testProjectId } },
+    NetworkSettings: role === 'api' ? {
+      Ports: { '8000/tcp': [{ HostIp: '127.0.0.1', HostPort: String(testApiPort) }] },
+    } : { Ports: {} },
+  }));
+  const studio = {
+    Id: '5'.repeat(12),
+    Name: `/supabase_studio_${testProjectId}`,
+    Config: { Labels: { 'com.supabase.cli.project': testProjectId } },
+    NetworkSettings: { Ports: {} },
+  };
+  const inspect = (containers) => inspectLocalStackIdentity({
+    projectId: testProjectId,
+    apiPort: testApiPort,
+    runDocker(args) {
+      return args[0] === 'ps'
+        ? { status: 0, stdout: containers.map((item) => item.Id).join('\n'), stderr: '' }
+        : { status: 0, stdout: JSON.stringify(containers), stderr: '' };
+    },
+  });
+
+  const identity = inspect([...required, studio]);
+  assert.equal(identity.containers.find((entry) => entry.role === 'studio')?.name,
+    `supabase_studio_${testProjectId}`);
+
+  for (const extra of [
+    { ...studio, Name: `/prefix-supabase_studio_${testProjectId}` },
+    { ...studio, Name: `/supabase_studio_${testProjectId}-suffix` },
+    { ...studio, Config: { Labels: {} } },
+    {
+      ...studio,
+      Name: '/supabase_studio_mekarvim-security-g5-wrong',
+      Config: { Labels: { 'com.supabase.cli.project': 'mekarvim-security-g5-wrong' } },
+    },
+  ]) {
+    assert.throws(() => inspect([...required, extra]), /identity|label|name|project/i);
+  }
+});
+
 test('live target loader measures Docker identity instead of accepting a caller verdict', async () => {
   const { loadVerifiedLocalTarget } = await import('../../scripts/security/verify-rls-live.mjs');
   assert.equal(typeof loadVerifiedLocalTarget, 'function');
@@ -330,7 +377,7 @@ test('service-only posture inventory proves forced RLS without exposing row data
   });
   const { data, error } = await service.rpc('app_security_posture');
   assert.ifError(error);
-  assert.ok(data.length >= 18);
+  assert.deepEqual(new Set(data.map((row) => row.table_name)), new Set(RLS_PROTECTED_TABLES));
   for (const row of data) {
     assert.equal(row.rls_enabled, true, `${row.table_name} does not enable RLS`);
     assert.equal(row.rls_forced, true, `${row.table_name} does not force RLS`);

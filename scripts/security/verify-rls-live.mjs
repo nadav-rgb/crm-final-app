@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 
-export const SENSITIVE_TABLES = Object.freeze([
+export const RLS_PROTECTED_TABLES = Object.freeze([
   'projects',
   'project_memberships',
   'profiles',
@@ -20,6 +20,10 @@ export const SENSITIVE_TABLES = Object.freeze([
   'push_subscriptions',
   'fcm_tokens',
   'feedback_reports',
+]);
+
+export const SENSITIVE_TABLES = Object.freeze([
+  ...RLS_PROTECTED_TABLES,
   'activist_directory',
 ]);
 
@@ -30,6 +34,18 @@ const REQUIRED_CONTAINERS = Object.freeze({
   api: 'supabase_kong_',
   auth: 'supabase_auth_',
   rest: 'supabase_rest_',
+});
+const OPTIONAL_CONTAINERS = Object.freeze({
+  studio: 'supabase_studio_',
+  meta: 'supabase_meta_',
+  storage: 'supabase_storage_',
+  imgproxy: 'supabase_imgproxy_',
+  realtime: 'supabase_realtime_',
+  analytics: 'supabase_analytics_',
+  vector: 'supabase_vector_',
+  pooler: 'supabase_pooler_',
+  'edge-runtime': 'supabase_edge_runtime_',
+  mailpit: 'supabase_mailpit_',
 });
 
 function exactApiPort(value) {
@@ -72,7 +88,7 @@ function dockerResult(result, action) {
 }
 
 function containerRole(name, projectId) {
-  return Object.entries(REQUIRED_CONTAINERS)
+  return Object.entries({ ...REQUIRED_CONTAINERS, ...OPTIONAL_CONTAINERS })
     .find(([, prefix]) => name === `${prefix}${projectId}`)?.[0] ?? null;
 }
 
@@ -133,8 +149,12 @@ export function inspectLocalStackIdentity({
     verified: true,
     projectId,
     apiPort: expectedPort,
-    containers: Object.freeze(Object.keys(REQUIRED_CONTAINERS)
-      .map((role) => containers.find((container) => container.role === role))),
+    containers: Object.freeze([
+      ...Object.keys(REQUIRED_CONTAINERS)
+        .map((role) => containers.find((container) => container.role === role)),
+      ...containers.filter((container) => Object.hasOwn(OPTIONAL_CONTAINERS, container.role))
+        .sort((left, right) => left.role.localeCompare(right.role)),
+    ]),
   });
   assertExactStackIdentity(identity, projectId, expectedPort);
   return identity;
