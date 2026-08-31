@@ -69,6 +69,10 @@ async function atSafeCheckpoint(name, action) {
   }
 }
 
+function failSafeCheckpoint(name) {
+  throw new Error(`G5_SAFE_CHECKPOINT:${name}`);
+}
+
 test('direct JWT cannot cross reminder or tour workflow boundaries', live, async (t) => {
   const { clients, resources } = loadFixture();
   await expectNoRows(clients.activistA.from('meeting_reminders')
@@ -182,15 +186,29 @@ test('direct JWT finance filters only narrow scope and projection keys are exact
     activistA: 'finance-allow-activist',
   };
   for (const actor of Object.keys(expectedByActor)) {
-    await atSafeCheckpoint(checkpointByActor[actor], async () => {
-      const data = await expectAllowed(clients[actor].rpc('app_finance_summary', {
+    const checkpoint = checkpointByActor[actor];
+    let response;
+    try {
+      response = await clients[actor].rpc('app_finance_summary', {
         p_period: resources.period,
         p_project_id: resources.projectA,
         p_user_id: actor === 'activistA' ? resources.activistA : null,
-      }));
+      });
+    } catch {
+      failSafeCheckpoint(`${checkpoint}-rpc`);
+    }
+    if (response?.error) failSafeCheckpoint(`${checkpoint}-rpc`);
+    const data = response?.data;
+    try {
       assertFinanceProjection(data);
+    } catch {
+      failSafeCheckpoint(`${checkpoint}-projection`);
+    }
+    try {
       assert.deepEqual(data, expectedByActor[actor]);
-    });
+    } catch {
+      failSafeCheckpoint(`${checkpoint}-parity`);
+    }
   }
   observeG5CaseInTest(t, 'SEC-040', 'pass');
 });

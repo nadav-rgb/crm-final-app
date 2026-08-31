@@ -75,10 +75,18 @@ const SAFE_LIVE_CHECKPOINTS = Object.freeze([
   'finance-deny-head-aal1',
   'finance-deny-ceo-aal1',
   'finance-deny-coordinator',
-  'finance-allow-ceo-aal2',
-  'finance-allow-head-aal2',
-  'finance-allow-finance',
-  'finance-allow-activist',
+  'finance-allow-ceo-aal2-rpc',
+  'finance-allow-ceo-aal2-projection',
+  'finance-allow-ceo-aal2-parity',
+  'finance-allow-head-aal2-rpc',
+  'finance-allow-head-aal2-projection',
+  'finance-allow-head-aal2-parity',
+  'finance-allow-finance-rpc',
+  'finance-allow-finance-projection',
+  'finance-allow-finance-parity',
+  'finance-allow-activist-rpc',
+  'finance-allow-activist-projection',
+  'finance-allow-activist-parity',
 ]);
 const INVENTORY_KEYS = Object.freeze([
   'tables', 'columns', 'constraints', 'rlsEnabled', 'rlsForced',
@@ -864,8 +872,9 @@ export function runLocalLiveTests({
       return match && G5_REQUIRED_LIVE_TESTS.includes(match[1]) ? [match[1]] : [];
     }));
     const failedIndex = G5_REQUIRED_LIVE_TESTS.findIndex((name) => failedNames.has(name));
-    const checkpoint = SAFE_LIVE_CHECKPOINTS.find((name) =>
-      String(result?.stdout ?? '').includes(`G5_SAFE_CHECKPOINT:${name}`));
+    const checkpointNames = new Set([...String(result?.stdout ?? '')
+      .matchAll(/G5_SAFE_CHECKPOINT:([a-z0-9-]+)/g)].map((match) => match[1]));
+    const checkpoint = SAFE_LIVE_CHECKPOINTS.find((name) => checkpointNames.has(name));
     throw new Error(failedIndex >= 0
       ? `live security suite failed [case ${failedIndex + 1}${checkpoint ? ` checkpoint ${checkpoint}` : ''}]`
       : 'live security suite failed');
