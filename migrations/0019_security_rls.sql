@@ -1060,6 +1060,7 @@ begin
   where n.nspname = 'public' and c.relkind in ('r', 'p') and c.relname = any(v_expected_tables)
   group by c.relname, c.relrowsecurity, c.relforcerowsecurity
   order by c.relname;
+end
 $$;
 revoke all on function public.app_security_posture() from public, anon, authenticated;
 grant execute on function public.app_security_posture() to service_role;

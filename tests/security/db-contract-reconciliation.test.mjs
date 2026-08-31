@@ -42,6 +42,12 @@ test('0019 removes broad reminder mutation and report-field update authority', a
   assert.doesNotMatch(sql, /grant\s+update\s*\([^)]*(?:report|reported_by|reported_at)[^)]*\)\s+on\s+public\.tours/i);
 });
 
+test('0019 security-posture PL/pgSQL body closes before its dollar delimiter', async () => {
+  const sql = await read('migrations/0019_security_rls.sql');
+  const posture = functionDefinition(sql, 'app_security_posture');
+  assert.match(posture, /\bend\s+\$\$;\s*$/i);
+});
+
 test('0021 exposes only a row-derived reminder-cancel boundary', async () => {
   const [sql, route] = await Promise.all([
     read('migrations/0021_meetings_security.sql'),
