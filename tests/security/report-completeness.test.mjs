@@ -134,12 +134,13 @@ test('report keeps deterministic evidence distinct from unperformed live proof',
   const report = await readReport();
   for (const statement of [
     'No migration has been applied.',
-    'No Supabase environment was contacted.',
+    'No remote Supabase environment was contacted.',
+    'Only read-only local target identity and schema inventory were queried.',
     'Production is untouched.',
     '17 protected tables plus one classified view',
     'Static contract evidence is not live database proof.',
     `The measured harness manifest contains ${G5_CASE_MANIFEST.length} exact unique SEC IDs`,
-    'Database-backed evidence: none in this worktree because G5 did not run.',
+    'Database-backed G5 evidence: none because G5 did not run.',
   ]) assert.match(report, new RegExp(escapeRegex(statement)));
   for (const commit of [
     '72b9196f22812e5dc2452efe33f1fbbf23f3dd4c',

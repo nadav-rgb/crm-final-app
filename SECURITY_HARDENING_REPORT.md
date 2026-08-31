@@ -1,14 +1,15 @@
 # CRM Mekarvim Security Hardening Evidence Report
 
-Evidence date: 2026-08-31 (Asia/Jerusalem)
+Evidence date: 2026-09-01 (Asia/Jerusalem)
 
 Branch: `security/hardening-p0`
 
-Deterministic source/test cutoff before this report update: `543232aba80d58f945d54825a7b51e6ca89ac816`
+Deterministic source/test cutoff before this report update: `e389485f090a3a714077fd04f1b0612ab3db60de`
 
 This report is an engineering evidence record, not an authorization to use real sensitive data,
 merge, deploy, or apply a database migration. Static contract evidence is not live database proof.
-Database-backed evidence: none in this worktree because G5 did not run.
+Database-backed G5 evidence: none because G5 did not run. Only read-only local target identity and
+schema inventory were queried.
 
 ## Executive Summary
 
@@ -28,16 +29,22 @@ Supabase authority and permissive database paths. The autonomous night mission b
 `543232aba80d58f945d54825a7b51e6ca89ac816`. Fresh local audit commands are recorded below; their
 registry results are time-bound rather than a claim about deployed software.
 
-G4 has an accepted independent review. G5 remains blocked at the controlled-live boundary because
-the local Docker engine was unavailable and no alternative target was proven isolated. As a
-result, migrations 0018 through 0024, direct-JWT/PostgREST isolation, provider-backed MFA, and live
-cleanup/posture evidence have not been exercised.
+G4 has an accepted independent review. Docker Engine became available on 2026-09-01, but G5 remains
+blocked at the controlled-live boundary because the supplied `mekusharim` stack failed target
+identity. Its Supabase labels point to a CHABAD App worktree, its database contains 32 unrelated
+public tables and existing rows, only three of the 17 required CRM surfaces are present, and the
+four published ports bind all host interfaces rather than loopback only. The prepared G5 runner
+correctly refuses this project id and would otherwise drop `public` and `app_private` during its
+disposable reset. No destructive SQL was sent. Migrations 0018 through 0024,
+direct-JWT/PostgREST isolation, provider-backed MFA, and live cleanup/posture evidence therefore
+remain unexercised.
 
 The measured harness manifest contains 48 exact unique SEC IDs. It binds a future G5 run to exact
 test observations and rejects missing, duplicate, unbound, or non-passing rows; this is static
 harness verification, not a live observation.
 
-No migration has been applied. No Supabase environment was contacted. Production is untouched.
+No migration has been applied. No remote Supabase environment was contacted.
+Only read-only local target identity and schema inventory were queried. Production is untouched.
 
 ## Findings
 
@@ -266,7 +273,7 @@ closed loopback provider URL; it did not contact Supabase.
 | `node --test tests/security/android-hardening.test.mjs` | PASS (exit 0) | 6 total; 6 pass; 0 skip; 0 fail |
 | `$taskAndroidSdk=Join-Path $env:LOCALAPPDATA 'Android\Sdk'; if (-not (Test-Path -LiteralPath $taskAndroidSdk)) { throw 'Android SDK unavailable' }; $env:ANDROID_HOME=$taskAndroidSdk; $env:ANDROID_SDK_ROOT=$taskAndroidSdk; android\gradlew.bat -p android testDebugUnitTest assembleDebug` | PASS (exit 0) | Process-only SDK environment; BUILD SUCCESSFUL in 11s; 169 actionable tasks (82 executed, 87 up-to-date); Gradle deprecation warning only |
 | `$taskAndroidSdk=Join-Path $env:LOCALAPPDATA 'Android\Sdk'; if (Test-Path -LiteralPath 'android\keystore.properties') { throw 'keystore.properties unexpectedly exists' }; $env:ANDROID_HOME=$taskAndroidSdk; $env:ANDROID_SDK_ROOT=$taskAndroidSdk; android\gradlew.bat -p android assembleRelease` | EXPECTED FAIL (exit 1) | Release signing configuration missing: android/keystore.properties; assertion PASS; failure occurred at the intended signing guard |
-| `node scripts/security/g5-local-orchestrator.mjs` | BLOCKED (NOT RUN) | 19 live cases remained explicit skips; Docker API pipe `dockerDesktopLinuxEngine` was absent and the daemon was unavailable; no isolated target; no migration or live case ran |
+| `node scripts/security/g5-local-orchestrator.mjs` | BLOCKED (NOT RUN) | 19 live cases remained explicit skips; Docker was healthy but `mekusharim` failed project/config, CRM schema, and loopback-only identity; no migration or live case ran |
 | `node scripts/verify-month-report.cjs <year> <month>` | NOT RUN | Inspection only: `.env.local`; privileged Supabase; person-level output; no approved isolated source |
 | `node scripts/verify-payroll-xlsx.cjs <year> <month>` | NOT RUN | Inspection only: `.env.local`; privileged Supabase; person/payroll output; no approved isolated source |
 | `git diff --check` | PASS (exit 0) | 0 whitespace errors; checked before each final report commit |
@@ -373,33 +380,38 @@ UNVERIFIED.
 
 ## External Blockers
 
-1. The Docker daemon remains down. The exact blocker is the zero-byte, non-directory runtime
-   reparse/socket artifact
-   `C:\Users\nadav\AppData\Local\Docker\run\dockerInference`. Windows returned error 1920 for both
-   authorized narrow literal-entry mechanisms: `fsutil reparsepoint delete` and an in-memory Win32
-   `CreateFileW` delete-on-close attempt using `FILE_FLAG_OPEN_REPARSE_POINT`. Neither mechanism
-   opened or removed the entry, and no neighboring artifact was modified.
-2. No compatible installed local container runtime, standalone PostgreSQL/Supabase stack, or
-   independent full-stack WSL distribution exists. No configured or provable dedicated TEST
-   Supabase target exists. The cached pinned Supabase CLI payload is not a substitute for its
-   unavailable container engine. No migration or live G5 case ran.
-3. The required next action is separately authorized elevated/offline repair limited to the exact
-   `dockerInference` entry (potentially after a host reboot), or separately authorized provisioning
-   of a compatible isolated runtime. Never use a broad reset, recursive delete, prune, Docker data
-   directory removal, volume removal, or WSL removal as a substitute.
-4. After an isolated runtime is proven, capture the required pre-migration snapshot/backup, then
-   execute the guarded G5 orchestrator in
-   the sole approved order `0018` through `0024`, stopping on any failed verification.
-5. Complete all 19 currently skipped live cases, including direct-JWT/PostgREST RLS, cross-tenant,
+1. Docker Engine is running, so the former `dockerInference` runtime blocker is resolved. The
+   current blocker is target identity, not Docker availability.
+2. The supplied containers use project label `mekusharim`, but their config/workdir provenance is
+   `CHABAD App/chabad-app/.superpowers/worktrees/founder-acceptance-design-v1`, not this CRM
+   worktree. The read-only database inventory contained 32 unrelated public tables, existing rows,
+   47 policies and 39 public functions. Fourteen of the 17 required CRM tables were absent and
+   `app_private` did not exist.
+3. Host ports 54321 through 54324 were published on `0.0.0.0` and `[::]`; the prepared identity
+   guard requires exact loopback bindings. The separate `shabbat-hosting` stack on 55321 through
+   55324 was not stopped, modified, entered, migrated, or cleaned; container metadata was inspected
+   only to prove its exclusion and unchanged identity.
+4. The prepared runner accepts only a unique `mekarvim-security-g5-*` disposable project. Its
+   `resetToLegacy()` drops `public` and `app_private` with `CASCADE`; attaching it to the supplied
+   stack would destroy unrelated application schema/data and violate the reviewed safety boundary.
+   The independent read-only review returned NO-GO for mutation.
+5. The required next action is to provide the correct disposable CRM G5 stack with reviewed config,
+   exact loopback-only bindings and the expected legacy schema, or explicitly authorize the
+   prepared runner to create its own unique isolated project and port set. Do not repurpose the
+   current CHABAD App database and do not weaken the target guard.
+6. After an isolated target is proven, capture the required pre-migration snapshot/backup, then
+   execute the guarded G5 orchestrator in the sole approved order `0018` through `0024`, stopping on
+   any failed verification.
+7. Complete all 19 currently skipped live cases, including direct-JWT/PostgREST RLS, cross-tenant,
    IDOR/BOLA, audit, finance parity, cleanup, and post-cleanup posture evidence.
-6. Enable and validate Supabase TOTP/AAL2, password recovery, redirect, refresh, revocation, disabled
+8. Enable and validate Supabase TOTP/AAL2, password recovery, redirect, refresh, revocation, disabled
    user, and stale-security-version behavior in the isolated target.
-7. Verify staging headers/HSTS and configured Anthropic, private Sheets, private-or-disabled GitHub,
+9. Verify staging headers/HSTS and configured Anthropic, private Sheets, private-or-disabled GitHub,
    push, scheduler, Firebase restrictions, and mobile-device behavior without using Production.
-8. Confirm provider credential rotation/restriction status in the relevant consoles. Values must not
-   be copied into reports or Git.
-9. After all controlled evidence is green, obtain independent security review and explicit owner
-   authorization before any Production migration, deployment, or real-data use.
+10. Confirm provider credential rotation/restriction status in the relevant consoles. Values must not
+    be copied into reports or Git.
+11. After all controlled evidence is green, obtain independent security review and explicit owner
+    authorization before any Production migration, deployment, or real-data use.
 
 ## Rollback
 
