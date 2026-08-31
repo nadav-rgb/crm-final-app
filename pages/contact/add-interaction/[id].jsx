@@ -30,7 +30,10 @@ const EMPTY = {
   notes: '', description: '', ai_summary: '',
   // ברירת מחדל: שבוע מהיום. מתעדכנת אוטומטית כשמשנים את תאריך הקשר (setDate).
   next_action: '', next_action_date: addDaysIso(TODAY, 7),
-  multi: false, participant_count: '', // מפגש רב משתתפים — קומפוננטה נפרדת
+  // אופי הדיווח — שלושה מצבים בלעדיים, ר' setReportKind. 'single' = קשר עם לקוח בודד
+  // (ברירת המחדל, מקביל ל-multi:false הישן), 'multi' = מפגש רב משתתפים, 'brief' = קשר קצרצר.
+  reportKind: 'single', participant_count: '', // מפגש רב משתתפים — קומפוננטה נפרדת
+  contact_method: '', // אמצעי קשר — למצב 'brief' בלבד (dropdown יחיד, ר' CONFIG.contactMethods)
   participant_clients: [], participant_external: [], // שמות משתתפים — רב משתתפים (עדכונים אימיוטביליים בלבד!)
 };
 
@@ -106,7 +109,7 @@ export default function AddInteractionPage() {
   const previousActivistMonthly = paidBefore(draft, myMonthly, contacts, paymentConfig, interactions);
   const previousContactMonthly  = previousActivistMonthly.filter(i => i.contact_id === contactId);
   const isShabbat = form.type === 'אירוח שבת';
-  // "רב משתתפים" עבר לקומפוננטה נפרדת (toggleMulti) — לא מוצג עוד כאיכות רגילה כדי למנוע כפילות.
+  // "רב משתתפים" עבר לקומפוננטה נפרדת (setReportKind) — לא מוצג עוד כאיכות רגילה כדי למנוע כפילות.
   const qualityOptions = CONFIG.interactionQuality;
   const QUALITY_LABELS = { [CONFIG.interactionQualityMulti]: 'מפגש רב משתתפים' };
   // בחירת משתתפים מהלקוחות של הפעיל — בלי הלקוח שעליו מדווחים, ממוין עברית
@@ -123,9 +126,20 @@ export default function AddInteractionPage() {
   // עצמו עלול להיות רב-פעילי (רכז/כספים/ראש-תחום/מנכ"ל — ראה scopeQueryToUser
   // ב-CrmStore.jsx), ולכן buildContactContext מסנן גם activist_id, לא רק contact_id.
   const contactContext = buildContactContext(contact, contactId, currentUser?.id, interactions);
-  const payableCheck = (isAchdut && form.type && (form.quality || isShabbat) && form.long_enough)
+  // "איכות"/"משך" לצורך התצוגה-המקדימה וזיהוי-כפילות — קשר קצרצר לא משתמש ב-form.quality/
+  // duration (אלה נשארים ריקים/לא-רלוונטיים במצב הזה, ר' setReportKind): האיכות האמיתית
+  // היא הבחירה מ-dropdown אמצעי-הקשר (contact_method), והמשך קבוע 5 לפי הגדרת המשימה.
+  const effectiveQuality  = form.reportKind === 'brief' ? form.contact_method : form.quality;
+  const effectiveDuration = form.reportKind === 'brief' ? 5 : duration;
+  // קצרצר לא תלוי בבחירת type/quality/long_enough הרגילים — הוא תמיד payable:false
+  // בזכות הבדיקה המפורשת ב-calcInteractionPayment, גם כש-contact_method עוד ריק
+  // (לא נבחר) — הבדיקה שם קודמת לכל שימוש ב-quality, ולכן לא זורקת שגיאה.
+  const payableCheckReady = form.reportKind === 'brief'
+    ? isAchdut
+    : isAchdut && form.type && (form.quality || isShabbat) && form.long_enough;
+  const payableCheck = payableCheckReady
     ? calcInteractionPayment(
-        { type: form.type, quality: form.quality, duration_minutes: duration, date: form.date },
+        { type: form.type, quality: effectiveQuality, duration_minutes: effectiveDuration, date: form.date },
         previousContactMonthly,
         contact.high_potential,
         previousActivistMonthly,
@@ -142,7 +156,10 @@ export default function AddInteractionPage() {
     Number(i.contact_id) === contactId &&
     i.date === form.date &&
     i.type === form.type &&
-    (i.quality || '') === (form.quality || '') &&
+    // effectiveQuality ולא form.quality: במצב 'brief' האיכות האמיתית היא contact_method
+    // (form.quality נשאר ריק במצב הזה, ר' setReportKind) — בלעדי זה שני קשרי-קצרצר
+    // זהים לא היו מזוהים ככפילות.
+    (i.quality || '') === (effectiveQuality || '') &&
     (i.description || '').trim() === form.description.trim() &&
     form.description.trim() !== ''
   );
@@ -189,19 +206,24 @@ export default function AddInteractionPage() {
     }
   }
 
-  // מפגש רב משתתפים — קומפוננטה נפרדת. מאחורי הקלעים זהו קשר פרונטלי באיכות "רב משתתפים"
-  // (מלגה קבועה 300 ₪ עם תקרה חודשית — ראה lib/paymentCalc.js), כדי לשמר את מנוע התשלום.
-  function toggleMulti(on) {
+  // אופי הדיווח — שלושה מצבים בלעדיים: 'single' (קשר עם לקוח בודד) / 'multi' (מפגש רב
+  // משתתפים) / 'brief' (קשר קצרצר). מאחורי הקלעים 'multi' הוא קשר פרונטלי באיכות "רב
+  // משתתפים" (מלגה קבועה 300 ₪ עם תקרה חודשית) ו-'brief' הוא type='קצרצר' (לעולם לא
+  // מזכה — ראה lib/paymentCalc.js), כדי לשמר את מנוע התשלום בלי מסלול נפרד לכל מצב.
+  // החליף את toggleMulti(on) הבוליאני — אותה לוגיקת איפוס בדיוק, מורחבת למצב השלישי.
+  function setReportKind(kind) {
     setForm(prev => {
-      if (prev.multi === on) return prev; // לחיצה חוזרת על המצב הפעיל — לא מוחקים שורות שהוזנו
+      if (prev.reportKind === kind) return prev; // לחיצה חוזרת על המצב הפעיל — לא מוחקים שורות שהוזנו
       return {
         ...prev,
-        multi:   on,
-        type:    on ? 'פרונטלי' : '',
-        quality: on ? CONFIG.interactionQualityMulti : '',
+        reportKind: kind,
+        type:    kind === 'multi' ? 'פרונטלי' : kind === 'brief' ? 'קצרצר' : '',
+        quality: kind === 'multi' ? CONFIG.interactionQualityMulti : '',
+        // אמצעי-קשר רלוונטי רק במצב 'brief' — בחירה מפורשת מחדש בכל כניסה, כמו quality.
+        contact_method: '',
         // שורה ריקה ראשונה כבר פתוחה — שהפעיל יראה מיד את הרשימה, בלי לנחש
-        participant_clients:  on ? [''] : [],
-        participant_external: on ? [''] : [],
+        participant_clients:  kind === 'multi' ? [''] : [],
+        participant_external: kind === 'multi' ? [''] : [],
         // אם עברו לכאן משבת — מאפסים ערכים אוטומטיים של שבת (משך + מונה לקוחות)
         long_enough:       prev.type === 'אירוח שבת' ? null : prev.long_enough,
         participant_count: prev.type === 'אירוח שבת' ? ''   : prev.participant_count,
@@ -228,8 +250,12 @@ export default function AddInteractionPage() {
 
   function validate() {
     const e = {};
-    if (form.multi) {
+    if (form.reportKind === 'multi') {
       if (!form.participant_count || Number(form.participant_count) < 2) e.participant_count = 'נא לציין מספר משתתפים (2 ומעלה)';
+    } else if (form.reportKind === 'brief') {
+      // קצרצר — רק אמצעי הקשר נדרש. type/quality/long_enough מוגדרים אוטומטית
+      // (ר' setReportKind/handleSubmit) ולא רלוונטיים לוולידציה של המצב הזה.
+      if (!form.contact_method)                 e.contact_method = 'נא לבחור אמצעי קשר';
     } else {
       if (!form.type)                            e.type         = 'נא לבחור סוג קשר';
       if (!form.quality && !isShabbat)           e.quality      = 'נא לבחור איכות קשר';
@@ -239,7 +265,8 @@ export default function AddInteractionPage() {
     if (!form.description?.trim())               e.description  = `${descriptionLabel} הוא שדה חובה`;
     if (!form.date)                              e.date         = 'נא לבחור תאריך';
     if (form.date > TODAY)                       e.date         = 'תאריך לא יכול להיות בעתיד';
-    if (isAchdut && !form.long_enough)           e.long_enough  = 'נא לציין משך הקשר';
+    if (isAchdut && form.reportKind !== 'brief' && !form.long_enough)
+                                                 e.long_enough  = 'נא לציין משך הקשר';
     if (!form.next_action?.trim())               e.next_action  = 'נא לתאר את הפעולה הבאה';
     if (!form.next_action_date)                  e.next_action_date = 'נא לבחור תאריך יעד';
     // הגבול היחיד: תאריך היעד לא מקדים את הקשר עצמו. תאריך שכבר עבר מותר בכוונה —
@@ -292,7 +319,7 @@ export default function AddInteractionPage() {
         .filter(v => v !== '')
         .map(v => { const c = contacts.find(x => String(x.id) === String(v)); return { id: c?.id ?? Number(v), name: c?.name ?? '' }; });
       const participantExternal = form.participant_external.map(s => s.trim()).filter(Boolean);
-      const participantsData = form.multi
+      const participantsData = form.reportKind === 'multi'
         ? { count: Number(form.participant_count) || null, clients: participantClients, external: participantExternal }
         : isShabbat
           ? { count: Number(form.participant_count) || null, clients: [], external: [] }
@@ -303,7 +330,7 @@ export default function AddInteractionPage() {
       // והפעיל רואה מפגש שהוא עצמו לא מופיע בו.
       const participantNames = [contact.name, ...participantClients.map(p => p.name), ...participantExternal].filter(Boolean);
       const baseNotes = form.notes.trim();
-      const notesFinal = form.multi
+      const notesFinal = form.reportKind === 'multi'
         ? `👥 מפגש רב משתתפים · ${form.participant_count} משתתפים${participantNames.length ? ` · משתתפים: ${participantNames.join(', ')}` : ''}${baseNotes ? `\n${baseNotes}` : ''}`
         : isShabbat
           ? `🍷 אירוח שבת · ${form.participant_count} לקוחות${baseNotes ? `\n${baseNotes}` : ''}`
@@ -313,9 +340,12 @@ export default function AddInteractionPage() {
         id:               Date.now(),
         contact_id:       contactId,
         activist_id:      currentUser.id,
+        // קצרצר: type/quality/duration_minutes קבועים (לא נלקחים מהטופס הרגיל) — ר'
+        // תוכנית המשימה. effectiveQuality/effectiveDuration כבר פותרים את זה לפי reportKind
+        // (מוגדרים למעלה, ליד payableCheck) — form.type עצמו כבר 'קצרצר' דרך setReportKind.
         type:             form.type,
-        quality:          form.quality,
-        duration_minutes: duration,
+        quality:          effectiveQuality,
+        duration_minutes: effectiveDuration,
         outcome:          form.outcome,
         date:             form.date,
         time:             new Date().toTimeString().slice(0, 5),
@@ -341,7 +371,7 @@ export default function AddInteractionPage() {
 
       // מפגש רב-משתתפים — שורת קשר נגזרת לכל לקוח נוסף שהשתתף, כדי שגם אצלו הקשר ייספר
       // ולא יידרדר ל"על סף ניתוק". התשלום לא מושפע: המפגש מזכה פעם אחת בלבד (paymentCalc).
-      if (form.multi && participantClients.length > 0) {
+      if (form.reportKind === 'multi' && participantClients.length > 0) {
         const { error: partError } = await addParticipantInteractions(interactionPayload, participantClients.map(p => p.id));
         // כשל כאן לא מבטל את המפגש עצמו — הוא כבר נשמר ומשולם. אבל בלי חיווי,
         // המשתתף שלא נרשם ממשיך להידרדר ל"על סף ניתוק" בלי שאף אחד ידע.
@@ -353,7 +383,9 @@ export default function AddInteractionPage() {
       // סיכום AI אוטומטי — מיועד לרכז בלבד (הפעיל לא רואה אותו). fire-and-forget:
       // לא חוסם את השמירה, וכשל AI מאבד רק את הסיכום — הקשר כבר נשמר.
       summarizeInteractionText(interactionPayload.description, {
-        contactName: contact.name, type: form.type, quality: form.quality,
+        // effectiveQuality ולא form.quality: במצב 'brief' זה נשאר ריק (ר' setReportKind) —
+        // בלעדי זה סיכום ה-AI היה מקבל "קצרצר " בלי אמצעי הקשר בפועל.
+        contactName: contact.name, type: form.type, quality: effectiveQuality,
       }).then(async summary => {
         if (!summary) return;
         // await + בדיקת שגיאה לפני ההתראה: השרת קורא את ai_summary מה-DB, אז אם השמירה
@@ -494,25 +526,25 @@ export default function AddInteractionPage() {
       {toastEl}
       <div style={{ maxWidth: 560 }}>
 
-        {/* אופי הדיווח — קשר עם לקוח בודד או מפגש רב משתתפים (קומפוננטה נפרדת) */}
+        {/* אופי הדיווח — קשר עם לקוח בודד / מפגש רב משתתפים (קומפוננטה נפרדת) / קשר קצרצר */}
         <div style={card}>
           <label className="form-label">אופי הדיווח</label>
           <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
-            {[{ v: false, l: '👤 קשר עם לקוח' }, { v: true, l: '👥 מפגש רב משתתפים' }].map(({ v, l }) => (
-              <button key={String(v)} type="button" onClick={() => toggleMulti(v)}
+            {[{ v: 'single', l: '👤 קשר עם לקוח' }, { v: 'multi', l: '👥 מפגש רב משתתפים' }, { v: 'brief', l: '⚡ קשר קצרצר' }].map(({ v, l }) => (
+              <button key={v} type="button" onClick={() => setReportKind(v)}
                 style={{
                   flex: 1, padding: '10px', borderRadius: 12, cursor: 'pointer',
-                  border: `1.5px solid ${form.multi === v ? '#6c5ce7' : '#e8e8e8'}`,
-                  background: form.multi === v ? '#f0effe' : '#fafafa',
-                  color: form.multi === v ? '#6c5ce7' : '#555',
-                  fontWeight: form.multi === v ? 700 : 400,
+                  border: `1.5px solid ${form.reportKind === v ? '#6c5ce7' : '#e8e8e8'}`,
+                  background: form.reportKind === v ? '#f0effe' : '#fafafa',
+                  color: form.reportKind === v ? '#6c5ce7' : '#555',
+                  fontWeight: form.reportKind === v ? 700 : 400,
                   fontFamily: 'Rubik,sans-serif', fontSize: 13, transition: 'all 0.18s',
                 }}>
                 {l}
               </button>
             ))}
           </div>
-          {form.multi && (
+          {form.reportKind === 'multi' && (
             <div style={{ marginTop: 14 }}>
               <div style={{ fontSize: 12.5, color: '#6c5ce7', fontWeight: 700, marginBottom: 10 }}>
                 פרונטלי · רב משתתפים · מלגה קבועה 300 ₪ (תקרה חודשית)
@@ -562,10 +594,28 @@ export default function AddInteractionPage() {
               </div>
             </div>
           )}
+          {/* קשר קצרצר — dropdown יחיד (אמצעי קשר) בלבד. סוג-קשר/איכות/משך מוסתרים
+              לגמרי במצב הזה (מוגדרים אוטומטית: type='קצרצר', duration_minutes=5,
+              ר' setReportKind + handleSubmit) — לעולם לא מזכה בתשלום. */}
+          {form.reportKind === 'brief' && (
+            <div style={{ marginTop: 14 }}>
+              <div style={{ fontSize: 12.5, color: '#6c5ce7', fontWeight: 700, marginBottom: 10 }}>
+                קשר קצרצר · אינו מזכה בתשלום
+              </div>
+              <label className="form-label">אמצעי קשר <span style={{ color: '#e24b4a' }}>*</span></label>
+              <select className={`form-input ${errors.contact_method ? 'form-error' : ''}`}
+                value={form.contact_method} onChange={e => set('contact_method', e.target.value)}
+                style={{ width: '100%', fontFamily: 'inherit' }}>
+                <option value="">בחר אמצעי קשר…</option>
+                {CONFIG.contactMethods.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+              {errors.contact_method && <span className="error-msg">{errors.contact_method}</span>}
+            </div>
+          )}
         </div>
 
-        {/* סוג קשר — לקשר עם לקוח בודד בלבד */}
-        {!form.multi && (
+        {/* סוג קשר — לקשר עם לקוח בודד בלבד (לא במפגש רב-משתתפים ולא בקשר קצרצר) */}
+        {form.reportKind === 'single' && (
         <div style={card}>
           <label className="form-label">סוג קשר <span style={{ color: '#e24b4a' }}>*</span></label>
           <div className="chip-group">
@@ -581,8 +631,8 @@ export default function AddInteractionPage() {
         </div>
         )}
 
-        {/* איכות קשר — לא רלוונטי לאירוח שבת (תעריף קבוע) ולא למפגש רב משתתפים */}
-        {!form.multi && !isShabbat && (
+        {/* איכות קשר — לא רלוונטי לאירוח שבת (תעריף קבוע), למפגש רב משתתפים, או לקשר קצרצר */}
+        {form.reportKind === 'single' && !isShabbat && (
         <div style={card}>
           <label className="form-label">איכות הקשר <span style={{ color: '#e24b4a' }}>*</span></label>
           <div className="chip-group">
@@ -616,8 +666,9 @@ export default function AddInteractionPage() {
           </div>
         )}
 
-        {/* משך זמן — אחדות יהודית בלבד; לא בשבת (נקבע אוטומטית, כל שבת מעל המינימום) */}
-        {isAchdut && !isShabbat && (
+        {/* משך זמן — אחדות יהודית בלבד; לא בשבת (נקבע אוטומטית, כל שבת מעל המינימום)
+            ולא בקשר קצרצר (קבוע 5 דקות — לא שאלה בטופס, ר' setReportKind) */}
+        {isAchdut && !isShabbat && form.reportKind !== 'brief' && (
           <div style={card}>
             <label className="form-label">משך זמן הקשר <span style={{ color: '#e24b4a' }}>*</span></label>
             <div style={{ display: 'flex', gap: 10 }}>
