@@ -771,6 +771,32 @@ test('local PostgreSQL adapter reports only an approved migration path and SQLST
   assert.ok(capturedArgs.includes('--set=VERBOSITY=verbose'));
 });
 
+test('local PostgreSQL checks classify array failures without exposing database detail', async () => {
+  const module = await import('../../scripts/security/g5-local-orchestrator.mjs');
+  const database = module.createLocalPostgresAdapter({
+    repoRoot: 'C:/synthetic/repository',
+    target: localSafety(),
+    dockerExecutable: 'C:/Program Files/Docker/docker.exe',
+    async readFile() { return '-- unused'; },
+    runCommand() {
+      return {
+        status: 1,
+        stdout: '',
+        stderr: 'ERROR:  22023: multidimensional arrays must have array expressions with matching dimensions\nDETAIL: must-never-reach-safe-diagnostics',
+      };
+    },
+  });
+  await assert.rejects(() => database.queryCheck({
+    id: '0019-posture-callable',
+    sql: "select case when true then 'pass' else 'fail' end",
+    expected: 'pass',
+  }), (error) => {
+    assert.match(error.message, /22023[\s\S]*array-constructor-dimensions/i);
+    assert.doesNotMatch(error.message, /must-never-reach-safe-diagnostics/i);
+    return true;
+  });
+});
+
 test('PostgreSQL invariants are measured directly and fail closed without caller verdict JSON', async () => {
   const module = await import('../../scripts/security/g5-local-orchestrator.mjs');
   assert.equal(typeof module.runDirectPostgresAssertions, 'function');

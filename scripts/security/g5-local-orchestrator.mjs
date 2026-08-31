@@ -391,6 +391,32 @@ export async function verifyLocalStackStopped({
   return Object.freeze({ containers: 0, volumes: 0, listeners: 0 });
 }
 
+function safeDatabaseFailureReason(messageValue) {
+  const message = typeof messageValue === 'string' ? messageValue.toLowerCase() : '';
+  if (message === 'cannot extract elements from a scalar') return 'jsonb-scalar';
+  if (message === 'cannot extract elements from an object') return 'jsonb-object';
+  return [
+    ['json', 'jsonb'],
+    ['extract', 'jsonb'],
+    ['matching dimensions', 'array-constructor-dimensions'],
+    ['different dimensionality', 'array-aggregate-dimensionality'],
+    ['dimension', 'array-dimension'],
+    ['empty', 'array-empty'],
+    ['length', 'array-length'],
+    ['literal', 'array-literal'],
+    ['subscript', 'array-subscript'],
+    ['null', 'null'],
+    ['array', 'array'],
+    ['privilege', 'privilege'],
+    ['parameter', 'parameter'],
+    ['input syntax', 'input-syntax'],
+    ['acl', 'acl'],
+    ['role', 'role'],
+    ['grant', 'grant'],
+    ['policy', 'policy'],
+  ].find(([token]) => message.includes(token))?.[1] ?? 'UNKNOWN';
+}
+
 export async function verifyPostCleanupSecurity({
   targetUrl,
   publishableKey,
@@ -419,33 +445,7 @@ export async function verifyPostCleanupSecurity({
     const code = /^(?:[0-9A-Z]{5}|PGRST\d{3})$/.test(posture.error.code ?? '')
       ? posture.error.code
       : 'UNKNOWN';
-    const message = typeof posture.error.message === 'string'
-      ? posture.error.message.toLowerCase()
-      : '';
-    const reason = message === 'cannot extract elements from a scalar'
-      ? 'jsonb-scalar'
-      : message === 'cannot extract elements from an object'
-        ? 'jsonb-object'
-        : [
-          ['json', 'jsonb'],
-          ['extract', 'jsonb'],
-          ['matching dimensions', 'array-constructor-dimensions'],
-          ['different dimensionality', 'array-aggregate-dimensionality'],
-          ['dimension', 'array-dimension'],
-          ['empty', 'array-empty'],
-          ['length', 'array-length'],
-          ['literal', 'array-literal'],
-          ['subscript', 'array-subscript'],
-          ['null', 'null'],
-          ['array', 'array'],
-          ['privilege', 'privilege'],
-          ['parameter', 'parameter'],
-          ['input syntax', 'input-syntax'],
-          ['acl', 'acl'],
-          ['role', 'role'],
-          ['grant', 'grant'],
-          ['policy', 'policy'],
-        ].find(([token]) => message.includes(token))?.[1] ?? 'UNKNOWN';
+    const reason = safeDatabaseFailureReason(posture.error.message);
     throw new Error(`post-cleanup forced-RLS posture proof failed [${code} ${reason}]`);
   }
   const postureRows = Array.isArray(posture?.data) ? posture.data : [];
@@ -1117,6 +1117,8 @@ export function createLocalPostgresAdapter({
     if (!result || result.status !== 0 || typeof result.stdout !== 'string') {
       const safeStderr = String(result?.stderr ?? '');
       const sqlState = /ERROR:\s+([0-9A-Z]{5}):/.exec(safeStderr)?.[1] ?? 'UNKNOWN';
+      const databaseMessage = /ERROR:\s+[0-9A-Z]{5}:\s*([^\r\n]*)/.exec(safeStderr)?.[1] ?? '';
+      const sqlReason = safeDatabaseFailureReason(databaseMessage);
       const parsedLine = Number(/\bLINE\s+(\d+):/.exec(safeStderr)?.[1]);
       const sqlLine = Number.isSafeInteger(parsedLine) && parsedLine > 0 ? parsedLine : null;
       const contextMatch = /PL\/pgSQL function ([a-z][a-z0-9_]*) line (\d+) at/.exec(safeStderr);
@@ -1128,8 +1130,9 @@ export function createLocalPostgresAdapter({
       const sqlToken = /^(?:[A-Za-z_][A-Za-z0-9_]{0,31}|[(),])$/.test(parsedToken ?? '')
         ? parsedToken
         : null;
-      const error = new Error(`local PostgreSQL command failed [${sqlState}]`);
+      const error = new Error(`local PostgreSQL command failed [${sqlState} ${sqlReason}]`);
       error.sqlState = sqlState;
+      error.sqlReason = sqlReason;
       error.sqlLine = sqlLine;
       error.sqlContext = sqlContext;
       error.sqlToken = sqlToken;
