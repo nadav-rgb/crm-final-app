@@ -155,21 +155,25 @@ test('G5 resume preflight records the exact rejected target without a live overc
   for (const pattern of [
     /Docker Engine became available on 2026-09-01/,
     /service-container labels reported a CHABAD App worktree/,
-    /32 unrelated public tables/,
+    /C:\\Users\\nadav\\OneDrive\\Desktop\\Applications Development\\CHABAD App\\chabad-app\\\.superpowers\\worktrees\\founder-acceptance-design-v1/,
+    /database container did not carry that workdir label/,
+    /config read at the labelled path declared\s+`project_id = "mekusharim"`/,
+    /32\s+unrelated public tables/,
     /catalog row estimate across those tables was 293/,
     /only three of the 17\s+required CRM surfaces are present/i,
     /four published ports bind all host interfaces rather\s+than loopback only/,
     /No destructive SQL was sent/,
     /`resetToLegacy\(\)` drops `public` and `app_private` with `CASCADE`/,
-    /`shabbat-hosting`[\s\S]*container metadata was inspected\s+only/,
+    /Exactly four `shabbat-hosting` container metadata records[\s\S]*fingerprinted before and after/,
+    /No exec, database query, network request, stop, restart, mutation, migration, cleanup,\s+or volume action targeted that stack/,
     /330 total; 311 pass; 19 explicit live skips; 0 fail/,
   ]) assert.match(report, pattern);
 
   for (const forbidden of [
     /The Docker daemon remains down/,
     /Docker API pipe `dockerDesktopLinuxEngine` was absent/,
-    /G5 LIVE PASS/,
-    /G6 PASS/,
+    /G5(?:\s+LIVE)?\s+(?:PASS|PASSED|SUCCEEDED)/i,
+    /G6(?:\s+LIVE(?:\s+verification)?)?\s+(?:PASS|PASSED|SUCCEEDED)/i,
   ]) assert.doesNotMatch(report, forbidden);
 });
 

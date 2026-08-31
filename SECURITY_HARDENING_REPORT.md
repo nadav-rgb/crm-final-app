@@ -384,16 +384,16 @@ UNVERIFIED.
 1. Docker Engine is running, so the former `dockerInference` runtime blocker is resolved. The
    current blocker is target identity, not Docker availability.
 2. The supplied containers use project label `mekusharim`. Most service-container labels reported
-   `CHABAD App/chabad-app/.superpowers/worktrees/founder-acceptance-design-v1`, not this CRM
-   worktree; the database container did not carry that workdir label, so provenance was established
-   from the surrounding exact-project services and the config at their labelled path. The read-only
-   database inventory contained 32 unrelated public tables, 47 policies and 39 public functions;
-   the catalog row estimate across those tables was 293. Fourteen of the 17 required CRM tables
-   were absent and `app_private` did not exist.
+   the exact workdir `C:\Users\nadav\OneDrive\Desktop\Applications Development\CHABAD App\chabad-app\.superpowers\worktrees\founder-acceptance-design-v1`, not this CRM worktree. The
+   database container did not carry that workdir label. The config read at the labelled path declared
+   `project_id = "mekusharim"`. The read-only database inventory contained 32 unrelated public
+   tables, 47 policies and 39 public functions; the catalog row estimate across those tables was
+   293. Fourteen of the 17 required CRM surfaces were absent and `app_private` did not exist.
 3. Host ports 54321 through 54324 were published on `0.0.0.0` and `[::]`; the prepared identity
-   guard requires exact loopback bindings. The separate `shabbat-hosting` stack on 55321 through
-   55324 was not stopped, modified, entered, migrated, or cleaned; container metadata was inspected
-   only to prove its exclusion and unchanged identity.
+   guard requires exact loopback bindings. Exactly four `shabbat-hosting` container metadata records
+   on ports 55321 through 55324 were fingerprinted before and after to prove exclusion and unchanged
+   identity. No exec, database query, network request, stop, restart, mutation, migration, cleanup,
+   or volume action targeted that stack.
 4. The prepared runner accepts only a unique `mekarvim-security-g5-*` disposable project. Its
    `resetToLegacy()` drops `public` and `app_private` with `CASCADE`; attaching it to the supplied
    stack would destroy unrelated application schema/data and violate the reviewed safety boundary.
