@@ -1402,13 +1402,34 @@ test('post-cleanup proof reruns anonymous isolation and forced-RLS posture with 
     serviceClient: {
       async rpc() {
         return {
-          data: postureRows.map(({ policy_count, ...row }) => row),
+          data: postureRows.map((row) => {
+            if (row.table_name !== 'contacts') return row;
+            const { policy_count: _policyCount, ...withoutPolicyCount } = row;
+            return withoutPolicyCount;
+          }),
           error: null,
         };
       },
     },
     async anonymousProbe() { return anonymousRows; },
-  }), /posture|policy/i);
+  }), /contacts[\s\S]*policy[\s\S]*UNKNOWN[\s\S]*expected[\s\S]*4/i);
+  await assert.rejects(() => module.verifyPostCleanupSecurity({
+    targetUrl: `http://127.0.0.1:${localApiPort}`,
+    publishableKey: 'synthetic-local-publishable-key',
+    serviceClient: {
+      async rpc() {
+        return {
+          data: null,
+          error: { code: '42501', message: 'must-never-reach-safe-diagnostics' },
+        };
+      },
+    },
+    async anonymousProbe() { return anonymousRows; },
+  }), (error) => {
+    assert.match(error.message, /posture[\s\S]*42501/i);
+    assert.doesNotMatch(error.message, /must-never-reach-safe-diagnostics/i);
+    return true;
+  });
   await assert.rejects(() => module.verifyPostCleanupSecurity({
     targetUrl: `http://127.0.0.1:${localApiPort}`,
     publishableKey: 'synthetic-local-publishable-key',

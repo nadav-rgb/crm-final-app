@@ -415,16 +415,34 @@ export async function verifyPostCleanupSecurity({
     throw new Error('post-cleanup anonymous isolation proof failed');
   }
   const posture = await serviceClient.rpc('app_security_posture');
+  if (posture?.error) {
+    const code = /^(?:[0-9A-Z]{5}|PGRST\d{3})$/.test(posture.error.code ?? '')
+      ? posture.error.code
+      : 'UNKNOWN';
+    throw new Error(`post-cleanup forced-RLS posture proof failed [${code}]`);
+  }
   const postureRows = Array.isArray(posture?.data) ? posture.data : [];
   const postureTables = new Set(postureRows.map((row) => row?.table_name));
-  if (posture?.error || !Array.isArray(posture?.data)
+  if (!Array.isArray(posture?.data)
     || postureRows.length !== RLS_PROTECTED_TABLES.length
     || postureTables.size !== RLS_PROTECTED_TABLES.length
-    || RLS_PROTECTED_TABLES.some((table) => !postureTables.has(table))
-    || postureRows.some((row) => row?.rls_enabled !== true
-      || row?.rls_forced !== true
-      || row?.policy_count !== RLS_EXPECTED_POLICY_COUNTS[row?.table_name])) {
-    throw new Error('post-cleanup forced-RLS posture proof failed');
+    || RLS_PROTECTED_TABLES.some((table) => !postureTables.has(table))) {
+    const missing = RLS_PROTECTED_TABLES.find((table) => !postureTables.has(table)) ?? 'UNKNOWN';
+    throw new Error(
+      `post-cleanup forced-RLS posture proof failed [rows ${postureRows.length}; missing ${missing}]`,
+    );
+  }
+  const postureMismatch = postureRows.find((row) => row?.rls_enabled !== true
+    || row?.rls_forced !== true
+    || row?.policy_count !== RLS_EXPECTED_POLICY_COUNTS[row?.table_name]);
+  if (postureMismatch) {
+    const table = RLS_PROTECTED_TABLES.includes(postureMismatch.table_name)
+      ? postureMismatch.table_name
+      : 'UNKNOWN';
+    const policyCount = Number.isSafeInteger(postureMismatch.policy_count)
+      ? postureMismatch.policy_count
+      : 'UNKNOWN';
+    throw new Error(`post-cleanup forced-RLS posture proof failed [${table}; enabled ${postureMismatch.rls_enabled === true}; forced ${postureMismatch.rls_forced === true}; policy ${policyCount}; expected ${RLS_EXPECTED_POLICY_COUNTS[table] ?? 'UNKNOWN'}]`);
   }
   return Object.freeze({
     anonymousSurfaces: anonymous.length,
