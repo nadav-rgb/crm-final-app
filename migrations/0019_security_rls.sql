@@ -472,7 +472,7 @@ create policy meeting_houses_delete on public.meeting_houses for delete to authe
 );
 
 create policy meeting_reminders_select on public.meeting_reminders for select to authenticated using (
-  (recipient_user_id = auth.uid() and public.app_user_active())
+  (recipient_user_id = auth.uid() and public.app_has_active_membership(project_id))
   or public.app_is_ceo() or public.app_has_project_role(project_id, array['head','coord'])
 );
 create policy meeting_reminders_insert on public.meeting_reminders for insert to authenticated with check (
@@ -483,7 +483,7 @@ create policy meeting_reminders_insert on public.meeting_reminders for insert to
 
 create policy tours_select on public.tours for select to authenticated using (
   public.app_is_ceo() or public.app_has_project_role(project_id, array['head','coord'])
-  or (public.app_user_active() and (
+  or (public.app_has_active_membership(project_id) and (
     guide_user_id = auth.uid() or host_user_id = auth.uid() or auth.uid() = any(assigned_user_ids)
   ))
 );
@@ -519,7 +519,7 @@ create policy expenses_delete on public.expenses for delete to authenticated usi
 );
 
 create policy bonus_cancellations_select on public.bonus_cancellations for select to authenticated using (
-  (beneficiary_user_id = auth.uid() and public.app_user_active()) or public.app_is_ceo()
+  (beneficiary_user_id = auth.uid() and public.app_has_active_membership(project_id)) or public.app_is_ceo()
   or public.app_has_project_role(project_id, array['head','coord','finance'])
 );
 create policy bonus_cancellations_insert on public.bonus_cancellations for insert to authenticated with check (
@@ -583,7 +583,7 @@ create policy fcm_tokens_delete on public.fcm_tokens for delete to authenticated
 );
 
 create policy feedback_reports_select on public.feedback_reports for select to authenticated using (
-  (reporter_user_id = auth.uid() and public.app_user_active()) or public.app_is_ceo()
+  (reporter_user_id = auth.uid() and public.app_has_active_membership(project_id)) or public.app_is_ceo()
   or public.app_has_project_role(project_id, array['head','coord'])
 );
 create policy feedback_reports_insert on public.feedback_reports for insert to authenticated with check (

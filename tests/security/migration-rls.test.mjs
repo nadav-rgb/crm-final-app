@@ -118,6 +118,25 @@ test('self-service policies require active authorization and limit mutable colum
   }
 });
 
+test('resource ownership never survives removal from the resource project', async () => {
+  const sql = await readFile(migrationPath, 'utf8');
+  const ownerPolicies = [
+    ['meeting_reminders_select', /recipient_user_id\s*=\s*auth\.uid\(\)/i],
+    ['tours_select', /guide_user_id\s*=\s*auth\.uid\(\)/i],
+    ['bonus_cancellations_select', /beneficiary_user_id\s*=\s*auth\.uid\(\)/i],
+    ['feedback_reports_select', /reporter_user_id\s*=\s*auth\.uid\(\)/i],
+  ];
+  for (const [policyName, ownerPredicate] of ownerPolicies) {
+    const definition = policyDefinition(sql, policyName);
+    assert.match(definition, ownerPredicate, `${policyName} must retain its exact owner predicate`);
+    assert.match(
+      definition,
+      /app_has_active_membership\(project_id\)/i,
+      `${policyName} must require current membership in the row project`,
+    );
+  }
+});
+
 test('C1 direct grants cannot transfer authority or bypass protected workflows', async () => {
   const sql = await readFile(migrationPath, 'utf8');
   const rpcSql = await readFile('migrations/0020_security_rpcs.sql', 'utf8');
