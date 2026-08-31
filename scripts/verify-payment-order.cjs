@@ -54,10 +54,14 @@ const JULY = { year: 2026, month: 6 }; // month 0-indexed
     rows.push(mk(2, 'ידידותי', k + 1, 200 + k));
   }
   const r = calcMonthlyPayment(7, rows, contacts, [], [], DEFAULTS, new Set(), JULY);
-  // 6 מזכים מול כל לקוח (תקרת הלקוח), 12 סה"כ — מתחת לתקרה החודשית של 15.
-  // בתוספת בונוס-לימוד-6 על ששת התורניים מול לקוח 1.
+  // 6 תורניים מזכים מול לקוח 1 (תקרת הלקוח), אבל רק 2 ידידותיים מזכים מול לקוח 2 —
+  // לא 6: מכסת FRIENDLY_FRONTAL_MONTHLY_CAP (2, מ-2026-08-31) חלה בלי תלות ב-contactContext
+  // (היא נבדקת מול prevContactMonthly הקיים, לא מידע חדש), ולכן חוסמת אותם לפני שמגיעים
+  // בכלל לתקרת-הלקוח הכללית (6). 8 סה"כ מזכים — עדיין מתחת לתקרה החודשית של 15,
+  // כך שהבדיקה עצמה (קשר שנדחה על תקרת-לקוח לא אוכל מהתקרה החודשית) עדיין תקפה.
+  // בתוספת בונוס-לימוד-6 על ששת התורניים מול לקוח 1 (לקוח 2 לא צובר בונוס-לימוד: זה ידידותי, לא תורני).
   check('שתי תקרות: מפגש שנדחה על תקרת-הלקוח לא אוכל מהתקרה החודשית',
-    r.total, 6 * 300 + 6 * 250 + DEFAULTS.LEARNING_BONUS[6]);
+    r.total, 6 * 300 + 2 * 250 + DEFAULTS.LEARNING_BONUS[6]);
   check('שתי תקרות: אף מפגש לא נדחה בגלל התקרה החודשית',
     r.unpaid.filter(u => /חודשית/.test(u.reason)).length, 0);
 }
@@ -347,6 +351,61 @@ const JULY = { year: 2026, month: 6 }; // month 0-indexed
     [], false, [], DEFAULTS);
   check('טלפוני-ידידותי (0 ₪): payable=true, amount=0, לא "סוג לא מזוהה"',
     [zeroRateResult.payable, zeroRateResult.amount, zeroRateResult.reason], [true, 0, '']);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// זכאות קשר ידידותי — חלון 3 חודשים + ניתוק אחרי מעבר לתורני (2026-08-31).
+// ────────────────────────────────────────────────────────────────────────────
+{
+  const { calcInteractionPayment: calc, isoYearMonth, monthsBetween } = require('../lib/paymentCalc.js');
+
+  check('isoYearMonth מפרק תאריך ISO', isoYearMonth('2026-08-15'), { year: 2026, month: 7 });
+  check('monthsBetween: אותו חודש = 0', monthsBetween('2026-08-01', '2026-08-28'), 0);
+  check('monthsBetween: חודש הבא = 1', monthsBetween('2026-08-15', '2026-09-01'), 1);
+  check('monthsBetween: חוצה שנה', monthsBetween('2026-11-15', '2027-02-01'), 3);
+
+  const mkFriendly = (date) => ({ type: 'פרונטלי', quality: 'ידידותי', duration_minutes: 60, date });
+  const ctx = (joinedAt, history = []) => ({ joinedAt, allInteractionsWithContact: history });
+
+  // חודשים 0,1,2 מזכים (חלון 3 חודשים), חודש 3 לא.
+  check('חודש 1 (אותו חודש כמו joined_at) מזכה',
+    calc(mkFriendly('2026-08-15'), [], false, [], DEFAULTS, ctx('2026-08-01')).payable, true);
+  check('חודש 3 (עדיין בתוך החלון) מזכה',
+    calc(mkFriendly('2026-10-15'), [], false, [], DEFAULTS, ctx('2026-08-01')).payable, true);
+  check('חודש 4 (מחוץ לחלון) לא מזכה',
+    calc(mkFriendly('2026-11-15'), [], false, [], DEFAULTS, ctx('2026-08-01')).payable, false);
+  check('חודש 4: הסיבה מזכירה את חלון הזכאות',
+    /חלון הזכאות/.test(calc(mkFriendly('2026-11-15'), [], false, [], DEFAULTS, ctx('2026-08-01')).reason), true);
+
+  // אין joinedAt ואין היסטוריה קודמת — זה הקשר הראשון, עוגן = תאריך הקשר עצמו, מזכה.
+  check('אין joined_at ואין היסטוריה — הקשר הראשון עצמו מזכה',
+    calc(mkFriendly('2026-08-15'), [], false, [], DEFAULTS, ctx(null, [])).payable, true);
+
+  // אין joinedAt אבל יש היסטוריה — עוגן = הקשר המוקדם ביותר בהיסטוריה.
+  const history = [{ date: '2026-06-01', quality: 'ידידותי' }, { date: '2026-07-01', quality: 'ידידותי' }];
+  check('בלי joined_at, עם היסטוריה — עוגן = הקשר המוקדם ביותר (יוני), חודש 4 (אוקטובר) לא מזכה',
+    calc(mkFriendly('2026-10-15'), [], false, [], DEFAULTS, ctx(null, history)).payable, false);
+
+  // מעבר לתורני מנתק זכאות ידידותי, גם בתוך חלון 3 החודשים.
+  const toraniHistory = [{ date: '2026-08-10', quality: 'תורני' }];
+  check('קשר ידידותי אחרי קשר תורני (גם בתוך החלון) לא מזכה',
+    calc(mkFriendly('2026-08-20'), [], false, [], DEFAULTS, ctx('2026-08-01', toraniHistory)).payable, false);
+  check('קשר ידידותי *לפני* הקשר התורני הראשון כן מזכה',
+    calc(mkFriendly('2026-08-05'), [], false, [], DEFAULTS, ctx('2026-08-01', toraniHistory)).payable, true);
+
+  // בלי contactContext — התנהגות ישנה, בלי הגבלה (תאימות לאחור).
+  check('בלי contactContext (null) — קשר ידידותי בחודש 5 עדיין מזכה (תאימות לאחור)',
+    calc(mkFriendly('2027-01-15'), [], false, [], DEFAULTS, null).payable, true);
+
+  // מכסת 2/חודש/לקוח לפרונטלי-ידידותי — בנוסף לתקרת 6/חודש הכללית. joinedAt='2026-08-01'
+  // (לא '2026-01-01'): כל שלוש הבדיקות כאן מתרחשות באוגוסט 2026, אז העוגן חייב להשאיר
+  // אותן *בתוך* חלון 3 החודשים (ראה בדיקות החלון למעלה) — אחרת חלון-הזכאות עצמו כבר
+  // פוסל את הקשר לפני שמגיעים בכלל לבדיקת המכסה, וזה מפסיק לבודד את כלל המכסה.
+  const twoFriendlyThisMonth = [mkFriendly('2026-08-01'), mkFriendly('2026-08-05')];
+  check('קשר ידידותי-פרונטלי שלישי באותו חודש עם אותו לקוח — לא מזכה',
+    calc(mkFriendly('2026-08-20'), twoFriendlyThisMonth, false, twoFriendlyThisMonth, DEFAULTS, ctx('2026-08-01')).payable, false);
+  check('קשר ידידותי-פרונטלי שני באותו חודש — עדיין מזכה',
+    calc(mkFriendly('2026-08-20'), [mkFriendly('2026-08-01')], false, [mkFriendly('2026-08-01')], DEFAULTS, ctx('2026-08-01')).payable, true);
 }
 
 console.log(failures === 0 ? '\nכל הבדיקות עברו.' : `\n${failures} בדיקות נכשלו.`);
