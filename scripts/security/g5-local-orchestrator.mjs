@@ -1071,10 +1071,15 @@ export function createLocalPostgresAdapter({
       const sqlContext = contextMatch && Number.isSafeInteger(contextLine) && contextLine > 0
         ? `${contextMatch[1]}:${contextLine}`
         : null;
+      const parsedToken = /syntax error at or near "([^"\r\n]{1,32})"/.exec(safeStderr)?.[1];
+      const sqlToken = /^(?:[A-Za-z_][A-Za-z0-9_]{0,31}|[(),])$/.test(parsedToken ?? '')
+        ? parsedToken
+        : null;
       const error = new Error(`local PostgreSQL command failed [${sqlState}]`);
       error.sqlState = sqlState;
       error.sqlLine = sqlLine;
       error.sqlContext = sqlContext;
+      error.sqlToken = sqlToken;
       throw error;
     }
     return result.stdout.trim();
@@ -1120,7 +1125,10 @@ notify pgrst, 'reload schema';`);
         const sqlContext = /^[a-z][a-z0-9_]*:[1-9][0-9]*$/.test(cause?.sqlContext ?? '')
           ? ` context ${cause.sqlContext}`
           : '';
-        throw new Error(`local PostgreSQL migration failed at ${file} [${sqlState}${sqlLine}${sqlContext}]`);
+        const sqlToken = /^(?:[A-Za-z_][A-Za-z0-9_]{0,31}|[(),])$/.test(cause?.sqlToken ?? '')
+          ? ` token ${cause.sqlToken}`
+          : '';
+        throw new Error(`local PostgreSQL migration failed at ${file} [${sqlState}${sqlLine}${sqlContext}${sqlToken}]`);
       }
     },
     async inventory() {
