@@ -56,7 +56,7 @@ test('request context derives identity and memberships from session services, ne
   const request = fakeReq({ method: 'POST', body: {
     userId: 'attacker', role: 'ceo', projectId: 999,
   } });
-  request.headers['x-request-id'] = 'req_context';
+  request.headers['x-request-id'] = 'caller-chosen-non-uuid';
   const session = {
     userId: activistA.userId, accessToken: 'server-user-jwt', aal: 1,
     authState: 'active', securityVersion: 2,
@@ -79,7 +79,7 @@ test('request context derives identity and memberships from session services, ne
   assert.equal(context.globalRole, null);
   assert.equal(context.memberships[0].projectId, activistA.projectId);
   assert.equal(context.db, db);
-  assert.equal(context.requestId, 'req_context');
+  assert.match(context.requestId, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
   assert.doesNotMatch(JSON.stringify(context), /attacker|999/);
 });
 
@@ -144,6 +144,20 @@ test('audit metadata is allowlisted and append never sends raw sensitive fields'
   assert.doesNotMatch(JSON.stringify(calls), /password|token|0500000000|private|raw upstream|"authorization"|Bearer\s/i);
 });
 
+test('audit append rejects a non-UUID correlation before invoking the database', async () => {
+  let calls = 0;
+  await assert.rejects(() => appendAudit({
+    actorUserId: activistA.userId,
+    action: 'authorization.denied',
+    resourceType: 'contact',
+    result: 'denied',
+    correlationId: 'caller-chosen-non-uuid',
+  }, {
+    rpc: async () => { calls += 1; return 'audit-id'; },
+  }), hasCode('AUDIT_INVALID'));
+  assert.equal(calls, 0);
+});
+
 test('secure handler executes fail-closed guards in the required order', async () => {
   const order = [];
   const handler = secureHandler({
@@ -174,6 +188,7 @@ test('secure handler stops before parsing on origin, session, AAL or CSRF denial
   ];
   for (const item of cases) {
     let parsed = false;
+    const audits = [];
     const handler = secureHandler({
       method: 'POST', schema: z.object({}).strict(), minimumAal: 2,
       appOrigin: 'https://crm.example.test',
@@ -184,11 +199,51 @@ test('secure handler stops before parsing on origin, session, AAL or CSRF denial
       verifyCsrf: () => { if (item.csrfError) throw item.csrfError; },
       consumeRate: async () => ({ allowed: true }),
       parseBody: async () => { parsed = true; return {}; },
-      appendAudit: async () => {},
-    }, async () => ({ ok: true }));
+    }, async () => ({ ok: true }), { appendAudit: async (event) => audits.push(event) });
     const res = fakeRes();
     await handler(item.req, res);
     assert.equal(res.payload.error.code, item.expected, item.name);
     assert.equal(parsed, false, item.name);
+    if (['MFA_REQUIRED', 'CSRF_DENIED'].includes(item.expected)) assert.equal(audits.length, 1, item.name);
   }
+});
+
+test('default denial audit reaches the database RPC with one UUID correlation id', async () => {
+  const rpcCalls = [];
+  const handler = secureHandler({
+    method: 'POST', schema: z.object({}).strict(), minimumAal: 2,
+    appOrigin: 'https://crm.example.test',
+    resolveContext: async () => ({ ...makeContext(headAal1), session: { idHash: 'session-hash-value' } }),
+    verifyCsrf: () => {},
+    parseBody: async () => ({}),
+  }, async () => ({ ok: true }), {
+    appendAudit: (event) => appendAudit(event, {
+      rpc: async (name, params) => { rpcCalls.push({ name, params }); return 'audit-id'; },
+    }),
+  });
+  const req = fakeReq({
+    method: 'POST',
+    headers: { origin: 'https://crm.example.test', 'x-request-id': 'not-a-uuid' },
+  });
+  const res = fakeRes();
+  await handler(req, res);
+  assert.equal(res.statusCode, 403);
+  assert.equal(rpcCalls.length, 1);
+  assert.equal(rpcCalls[0].name, 'app_audit_append');
+  assert.equal(rpcCalls[0].params.p_reason_code, 'MFA_REQUIRED');
+  assert.match(rpcCalls[0].params.p_correlation_id, /^[0-9a-f-]{36}$/i);
+  assert.equal(res.headers['x-request-id'], rpcCalls[0].params.p_correlation_id);
+});
+
+test('denial audit failure replaces the denial with a fail-closed 503', async () => {
+  const handler = secureHandler({
+    method: 'GET', minimumAal: 2,
+    resolveContext: async () => makeContext(headAal1),
+  }, async () => ({ ok: true }), {
+    appendAudit: async () => { throw new SecurityError(503, 'AUDIT_UNAVAILABLE', 'Security audit could not be recorded'); },
+  });
+  const res = fakeRes();
+  await handler(fakeReq({ method: 'GET' }), res);
+  assert.equal(res.statusCode, 503);
+  assert.equal(res.payload.error.code, 'AUDIT_UNAVAILABLE');
 });

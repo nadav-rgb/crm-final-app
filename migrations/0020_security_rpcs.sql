@@ -400,7 +400,7 @@ grant execute on function public.app_audit_append(uuid,text,integer,text,text,te
 
 create or replace function public.app_membership_change(
   p_actor_session_hash text, p_actor_user_id uuid, p_target_user_id uuid,
-  p_project_id integer, p_role text, p_status text
+  p_project_id integer, p_role text, p_status text, p_correlation_id uuid
 ) returns boolean
 language plpgsql security definer
 set search_path = pg_catalog, public, app_private
@@ -409,9 +409,12 @@ declare
   v_actor_is_ceo boolean := false;
   v_actor_is_head boolean := false;
 begin
-  if p_role not in ('head','coord','finance','activist','ceo')
+  if length(p_actor_session_hash) not between 20 and 200
+     or p_actor_user_id is null or p_target_user_id is null
+     or p_project_id is null or p_correlation_id is null
+     or p_role not in ('head','coord','finance','activist','ceo')
      or p_status not in ('active','suspended','revoked') then return false; end if;
-  select actor.global_role = 'ceo', exists (
+  select coalesce(actor.global_role = 'ceo', false), exists (
     select 1 from public.project_memberships pm
     where pm.user_id = p_actor_user_id and pm.project_id = p_project_id
       and pm.role = 'head' and pm.status = 'active'
@@ -428,9 +431,17 @@ begin
   if not v_actor_is_ceo and (
     p_target_user_id = p_actor_user_id or p_role not in ('activist','coord')
   ) then return false; end if;
+  perform 1 from public.projects where id = p_project_id;
+  if not found then return false; end if;
   perform 1 from public.profiles
   where id = p_target_user_id and disabled_at is null for update;
   if not found then return false; end if;
+  perform set_config('app.trusted_actor_session_hash', p_actor_session_hash, true);
+  perform set_config('app.trusted_project_id', p_project_id::text, true);
+  perform set_config('app.trusted_correlation_id', p_correlation_id::text, true);
+  perform set_config(
+    'app.trusted_effective_role', case when v_actor_is_ceo then 'ceo' else 'head' end, true
+  );
   if p_role = 'ceo' then
     if not v_actor_is_ceo then return false; end if;
     perform pg_advisory_xact_lock(832745, 1);
@@ -448,6 +459,18 @@ begin
     update app_private.auth_sessions
     set revoked_at = now(), revoke_reason = 'global_role_changed'
     where user_id = p_target_user_id and revoked_at is null;
+    insert into app_private.audit_events (
+      actor_user_id, effective_role, project_id, action, resource_type,
+      resource_id, result, correlation_id, session_ref, metadata
+    ) values (
+      p_actor_user_id, case when v_actor_is_ceo then 'ceo' else 'head' end,
+      p_project_id, 'membership.change', 'project_membership', p_target_user_id::text,
+      'success', p_correlation_id, left(p_actor_session_hash, 16),
+      jsonb_build_object(
+        'targetRole', p_role,
+        'changedFields', jsonb_build_array('global_role', 'security_version')
+      )
+    );
     return true;
   end if;
   if exists (
@@ -464,11 +487,23 @@ begin
   update app_private.auth_sessions
   set revoked_at = now(), revoke_reason = 'membership_changed'
   where user_id = p_target_user_id and revoked_at is null;
+  insert into app_private.audit_events (
+    actor_user_id, effective_role, project_id, action, resource_type,
+    resource_id, result, correlation_id, session_ref, metadata
+  ) values (
+    p_actor_user_id, case when v_actor_is_ceo then 'ceo' else 'head' end,
+    p_project_id, 'membership.change', 'project_membership', p_target_user_id::text,
+    'success', p_correlation_id, left(p_actor_session_hash, 16),
+    jsonb_build_object(
+      'targetRole', p_role,
+      'changedFields', jsonb_build_array('role', 'status', 'security_version')
+    )
+  );
   return true;
 end $$;
 
-revoke all on function public.app_membership_change(text,uuid,uuid,integer,text,text) from public, anon, authenticated;
-grant execute on function public.app_membership_change(text,uuid,uuid,integer,text,text) to service_role;
+revoke all on function public.app_membership_change(text,uuid,uuid,integer,text,text,uuid) from public, anon, authenticated;
+grant execute on function public.app_membership_change(text,uuid,uuid,integer,text,text,uuid) to service_role;
 
 -- Authority/workflow transitions use narrow user-JWT RPCs. Every row is locked,
 -- authorization and target membership are derived in the transaction, and the

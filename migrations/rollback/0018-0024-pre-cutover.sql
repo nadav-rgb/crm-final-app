@@ -100,7 +100,7 @@ drop function if exists public.app_soft_delete_contact(text);
 drop function if exists public.app_reassign_contact(text,uuid);
 drop function if exists public.app_user_security_invalidate(uuid,text);
 drop function if exists public.app_identity_resolve(text);
-drop function if exists public.app_membership_change(text,uuid,uuid,integer,text,text);
+drop function if exists public.app_membership_change(text,uuid,uuid,integer,text,text,uuid);
 drop function if exists public.app_audit_append(uuid,text,integer,text,text,text,text,text,uuid,text,jsonb);
 drop function if exists public.app_rate_limit_consume(text,integer,integer);
 drop function if exists public.app_session_refresh_tokens(text,text,text,text,text,integer,timestamptz,smallint,text,boolean,text);

@@ -1,15 +1,12 @@
-import { randomUUID } from 'node:crypto';
 import { assertSameOrigin, parseJson, sendJson } from '../../../lib/security/http.mjs';
 import { mapError, SecurityError } from '../../../lib/security/errors.mjs';
 import { getDefaultAuthRuntime, loadAuthSession } from '../../../lib/security/auth-service.mjs';
 import { verifyCsrf } from '../../../lib/security/csrf.mjs';
 import { clearSessionCookie, readSessionCookie, serializeSessionCookie } from '../../../lib/security/cookies.mjs';
+import { requestCorrelationId } from '../../../lib/security/correlation-id.mjs';
 
 export function requestId(req) {
-  const supplied = req.headers?.['x-request-id'];
-  return typeof supplied === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(supplied)
-    ? supplied
-    : randomUUID();
+  return requestCorrelationId(req);
 }
 
 export function clientKey(req) {

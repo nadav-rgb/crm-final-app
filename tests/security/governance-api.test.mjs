@@ -9,6 +9,7 @@ import {
   assertDirectoryAccess,
   changeMembershipCommand,
   changeMembership,
+  createGovernanceRpc,
   projectDirectoryDto,
   profileDirectoryDto,
 } from '../../lib/security/domains/governance.mjs';
@@ -138,12 +139,79 @@ test('successful mutation delegates a derived command and requires atomic succes
   }, { findMembership: async () => null, rpc: async () => false }), errorCode('MUTATION_REJECTED'));
 });
 
-test('governance RPC is service-only, AAL2-bound, revokes sessions and preserves last CEO', async () => {
+test('service-role governance sends the validated session actor and request UUID to the database RPC', async () => {
+  const calls = [];
+  const requestId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const rpc = createGovernanceRpc({
+    env: {
+      supabaseUrl: 'https://synthetic.supabase.co',
+      supabaseServiceRoleKey: 'synthetic-service-role-key',
+    },
+    createClientImpl: (url, key, options) => {
+      calls.push({ url, key, options });
+      return {
+        rpc: async (name, params) => {
+          calls.push({ name, params });
+          return { data: true, error: null };
+        },
+      };
+    },
+  });
+  const context = {
+    ...makeContext(headA),
+    requestId,
+    session: { idHash: 'peppered-session-hash' },
+  };
+  const command = {
+    targetUserId: target, projectId: PROJECT_A, role: 'coord', status: 'active',
+  };
+
+  assert.equal(await rpc(context, command), true);
+  assert.deepEqual(calls[1], {
+    name: 'app_membership_change',
+    params: {
+      p_actor_session_hash: 'peppered-session-hash',
+      p_actor_user_id: headA.userId,
+      p_target_user_id: target,
+      p_project_id: PROJECT_A,
+      p_role: 'coord',
+      p_status: 'active',
+      p_correlation_id: requestId,
+    },
+  });
+});
+
+test('governance RPC is service-only, AAL2-bound, atomically audited, revokes sessions and preserves last CEO', async () => {
   const sql = await readFile(new URL('../../migrations/0020_security_rpcs.sql', import.meta.url), 'utf8');
-  assert.match(sql, /app_membership_change[\s\S]*s\.aal = 2/);
-  assert.match(sql, /pg_advisory_xact_lock[\s\S]*count\(\*\)[\s\S]*global_role = 'ceo'/);
-  assert.match(sql, /security_version = security_version \+ 1/);
-  assert.match(sql, /revoke_reason = '(?:global_role|membership)_changed'/);
-  assert.match(sql, /revoke all on function public\.app_membership_change[^;]+from public, anon, authenticated/);
-  assert.match(sql, /grant execute on function public\.app_membership_change[^;]+to service_role/);
+  const rlsSql = await readFile(new URL('../../migrations/0019_security_rls.sql', import.meta.url), 'utf8');
+  const rollback = await readFile(new URL('../../migrations/rollback/0018-0024-pre-cutover.sql', import.meta.url), 'utf8');
+  const membershipRpc = sql.match(
+    /create or replace function public\.app_membership_change\([\s\S]*?end \$\$;/i,
+  )?.[0] ?? '';
+  const auditTrigger = rlsSql.match(
+    /create or replace function app_private\.audit_row_change\(\)[\s\S]*?end \$\$;/i,
+  )?.[0] ?? '';
+
+  assert.match(membershipRpc, /p_status text, p_correlation_id uuid/i);
+  assert.match(membershipRpc, /s\.aal = 2/);
+  assert.match(membershipRpc, /coalesce\(actor\.global_role = 'ceo', false\)/i,
+    'nullable global_role must not bypass the service-role authorization check');
+  const validatedSession = membershipRpc.search(/if not found or \(not v_actor_is_ceo and not v_actor_is_head\)/i);
+  const trustedAttribution = membershipRpc.search(/set_config\('app\.trusted_actor_session_hash'/i);
+  assert.ok(validatedSession >= 0 && trustedAttribution > validatedSession,
+    'transaction-local attribution must be established only after AAL2 session authorization');
+  assert.match(membershipRpc, /set_config\('app\.trusted_actor_session_hash', p_actor_session_hash, true\)/i);
+  assert.match(membershipRpc, /set_config\('app\.trusted_correlation_id', p_correlation_id::text, true\)/i);
+  assert.match(membershipRpc, /insert into app_private\.audit_events[\s\S]*p_actor_user_id[\s\S]*p_correlation_id/i);
+  assert.match(membershipRpc, /pg_advisory_xact_lock[\s\S]*count\(\*\)[\s\S]*global_role = 'ceo'/);
+  assert.match(membershipRpc, /security_version = security_version \+ 1/);
+  assert.match(membershipRpc, /revoke_reason = '(?:global_role|membership)_changed'/);
+  assert.match(sql, /revoke all on function public\.app_membership_change\(text,uuid,uuid,integer,text,text,uuid\) from public, anon, authenticated/i);
+  assert.match(sql, /grant execute on function public\.app_membership_change\(text,uuid,uuid,integer,text,text,uuid\) to service_role/i);
+  assert.match(rollback, /drop function if exists public\.app_membership_change\(text,uuid,uuid,integer,text,text,uuid\)/i);
+
+  assert.match(auditTrigger, /current_setting\('app\.trusted_actor_session_hash', true\)/i);
+  assert.match(auditTrigger, /from app_private\.auth_sessions[\s\S]*session_hash = v_trusted_session_hash/i);
+  assert.match(auditTrigger, /actor_user_id[\s\S]*v_actor_user_id/i);
+  assert.match(auditTrigger, /correlation_id[\s\S]*v_correlation_id/i);
 });

@@ -626,23 +626,67 @@ returns trigger language plpgsql security definer set search_path = pg_catalog, 
 declare
   v_row jsonb := case when tg_op = 'DELETE' then to_jsonb(old) else to_jsonb(new) end;
   v_project_id integer := nullif(v_row ->> 'project_id', '')::integer;
+  v_audit_project_id integer := v_project_id;
   v_changed_fields text[] := case when tg_op = 'UPDATE' then array(
     select key from jsonb_each(to_jsonb(new)) n(key, value)
     where to_jsonb(old) -> key is distinct from n.value order by key
   ) else '{}'::text[] end;
+  v_actor_user_id uuid := auth.uid();
   v_effective_role text;
+  v_correlation_id uuid;
+  v_trusted_session_hash text := nullif(current_setting('app.trusted_actor_session_hash', true), '');
+  v_trusted_project_id integer;
+  v_trusted_correlation_id text;
+  v_trusted_effective_role text;
 begin
-  v_effective_role := case when public.app_is_ceo() then 'ceo' else (
-    select pm.role from public.project_memberships pm
-    where pm.user_id = auth.uid() and pm.project_id = v_project_id and pm.status = 'active'
-    limit 1
-  ) end;
+  -- A service-role mutation may supply only the server-peppered session hash.
+  -- Re-resolve that private, active AAL2 session before honoring any companion
+  -- transaction-local attribution values; browser/JWT callers cannot forge it.
+  if v_trusted_session_hash is not null then
+    select s.user_id into v_actor_user_id
+    from app_private.auth_sessions s
+    join public.profiles actor on actor.id = s.user_id
+    where s.session_hash = v_trusted_session_hash
+      and s.aal = 2 and s.auth_state = 'active' and s.revoked_at is null
+      and s.idle_expires_at > now() and s.absolute_expires_at > now()
+      and actor.disabled_at is null;
+    if found then
+      select p.id into v_trusted_project_id
+      from public.projects p
+      where p.id::text = current_setting('app.trusted_project_id', true)
+      limit 1;
+      v_audit_project_id := coalesce(v_project_id, v_trusted_project_id);
+      v_trusted_correlation_id := current_setting('app.trusted_correlation_id', true);
+      if v_trusted_correlation_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' then
+        v_correlation_id := v_trusted_correlation_id::uuid;
+      end if;
+      v_trusted_effective_role := current_setting('app.trusted_effective_role', true);
+      if v_trusted_effective_role in ('ceo','head') then
+        v_effective_role := v_trusted_effective_role;
+      end if;
+    else
+      v_actor_user_id := auth.uid();
+    end if;
+  end if;
+  if v_effective_role is null then
+    v_effective_role := case when exists (
+      select 1 from public.profiles actor
+      where actor.id = v_actor_user_id and actor.global_role = 'ceo'
+        and actor.disabled_at is null
+    ) then 'ceo' else (
+      select pm.role from public.project_memberships pm
+      where pm.user_id = v_actor_user_id and pm.project_id = v_audit_project_id
+        and pm.status = 'active'
+      limit 1
+    ) end;
+  end if;
   insert into app_private.audit_events
-    (actor_user_id, effective_role, project_id, action, resource_type, resource_id, result, metadata)
+    (actor_user_id, effective_role, project_id, action, resource_type, resource_id,
+     result, correlation_id, metadata)
   values
-    (auth.uid(), v_effective_role, v_project_id, lower(tg_op), tg_table_name,
+    (v_actor_user_id, v_effective_role, v_audit_project_id, lower(tg_op), tg_table_name,
      coalesce(v_row ->> 'id', v_row ->> 'user_id', v_row ->> 'client_id'),
-     'success', jsonb_build_object('changedFields', v_changed_fields));
+     'success', v_correlation_id, jsonb_build_object('changedFields', v_changed_fields));
   return case when tg_op = 'DELETE' then old else new end;
 end $$;
 revoke all on function app_private.audit_row_change() from public, anon, authenticated;
