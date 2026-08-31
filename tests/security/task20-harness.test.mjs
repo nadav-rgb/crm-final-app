@@ -1745,6 +1745,30 @@ test('single live-suite runner derives sanitized evidence only from an actual ch
     directFixture: { tokens: {}, resources: {} },
     sessionFixture: { tokens: {}, credentials: {}, resources: {} },
     runCommand() {
+      return {
+        status: 1,
+        stdout: `not ok 7 - ${module.G5_REQUIRED_LIVE_TESTS[0]}\n# sensitive fixture detail`,
+        stderr: 'sensitive process detail',
+      };
+    },
+  }), (error) => {
+    assert.match(error.message, /live security suite failed \[case 1\]/);
+    assert.doesNotMatch(error.message, /sensitive|fixture|process/i);
+    return true;
+  });
+  assert.throws(() => module.runLocalLiveTests({
+    repoRoot: 'C:/synthetic/repository',
+    target,
+    dockerExecutable: 'C:/Program Files/Docker/docker.exe',
+    credentials: {
+      publishableKey: 'synthetic-local-publishable-key',
+      serviceRoleKey: 'synthetic-local-service-role-key',
+    },
+    bffOrigin: 'http://127.0.0.1:43877',
+    bffPort: 43877,
+    directFixture: { tokens: {}, resources: {} },
+    sessionFixture: { tokens: {}, credentials: {}, resources: {} },
+    runCommand() {
       const cases = module.G5_REQUIRED_LIVE_TESTS
         .map((name, index) => `ok ${index + 1} - ${name}`)
         .join('\n');

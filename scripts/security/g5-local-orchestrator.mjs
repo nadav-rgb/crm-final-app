@@ -847,7 +847,15 @@ export function runLocalLiveTests({
   });
   if (!result || result.status !== 0) {
     // Child output is intentionally not included: it shares process-memory fixtures.
-    throw new Error('live security suite failed');
+    // Only an exact allowlisted test name may be reduced to its stable manifest index.
+    const failedNames = new Set(String(result?.stdout ?? '').split(/\r?\n/).flatMap((line) => {
+      const match = /^not ok \d+ - (.+)$/.exec(line);
+      return match && G5_REQUIRED_LIVE_TESTS.includes(match[1]) ? [match[1]] : [];
+    }));
+    const failedIndex = G5_REQUIRED_LIVE_TESTS.findIndex((name) => failedNames.has(name));
+    throw new Error(failedIndex >= 0
+      ? `live security suite failed [case ${failedIndex + 1}]`
+      : 'live security suite failed');
   }
   const tapLines = result.stdout.split(/\r?\n/);
   const passedNames = new Set(tapLines.flatMap((line) => {
