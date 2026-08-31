@@ -308,11 +308,19 @@ export function preparePinnedLocalStackConfig({ config, projectId, apiPort }) {
     ['analytics.port', String(contract.stackPorts.analytics)],
     ['edge_runtime.enabled', 'true'],
     ['edge_runtime.inspector_port', String(contract.stackPorts.edgeInspector)],
+    ['auth.mfa.totp.enroll_enabled', 'true'],
+    ['auth.mfa.totp.verify_enabled', 'true'],
+  ]);
+  const intentionallyEnabledSettings = new Set([
+    'auth.mfa.totp.enroll_enabled',
+    'auth.mfa.totp.verify_enabled',
   ]);
   for (const [name, nextValue] of replacements) {
     const matches = entries.get(name);
     if (!Array.isArray(matches) || matches.length !== 1) configContractError();
-    if (name.endsWith('.enabled') && matches[0].value !== nextValue) configContractError();
+    if (name.endsWith('.enabled')
+      && !intentionallyEnabledSettings.has(name)
+      && matches[0].value !== nextValue) configContractError();
     const key = name.slice(name.lastIndexOf('.') + 1);
     lines[matches[0].index] = `${key} = ${nextValue}`;
   }

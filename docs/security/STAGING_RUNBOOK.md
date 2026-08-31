@@ -99,6 +99,15 @@ task-owned fail-closed shim before the run; it rewrites only the exact approved 
 The orchestrator prepends this shim only to its child Supabase CLI process. Direct identity and
 cleanup inspection continues to use the absolute real Docker executable.
 
+The disposable stack configuration must also contain this exact local-only provider override;
+the orchestrator validates the pinned entries before start and changes no other provider:
+
+```toml
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true
+```
+
 ```powershell
 $g5ShimRoot = Join-Path $env:LOCALAPPDATA 'Temp\mekarvim-security-g5-loopback-shim'
 New-Item -ItemType Directory -Path $g5ShimRoot | Out-Null

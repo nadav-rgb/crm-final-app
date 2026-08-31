@@ -61,6 +61,10 @@ port = 54327
 [edge_runtime]
 enabled = true
 inspector_port = 8083
+
+[auth.mfa.totp]
+enroll_enabled = false
+verify_enabled = false
 `;
 }
 
@@ -1039,6 +1043,7 @@ test('local stack preparation pins CLI 2.115.0 and validates every enabled and d
   assert.match(prepared.config, /\[edge_runtime\][\s\S]*inspector_port = 54342/);
   assert.match(prepared.config, /\[db\.pooler\][\s\S]*enabled = false[\s\S]*port = 54329/);
   assert.match(prepared.config, /\[local_smtp\][\s\S]*\nsmtp_port = 54325\npop3_port = 54326/);
+  assert.match(prepared.config, /\[auth\.mfa\.totp\][\s\S]*enroll_enabled = true[\s\S]*verify_enabled = true/);
   assert.doesNotMatch(prepared.config, /^# (?:smtp|pop3)_port\s*=/m);
 
   const customBase = module.preparePinnedLocalStackConfig({
@@ -1070,6 +1075,9 @@ test('local stack preparation pins CLI 2.115.0 and validates every enabled and d
     movedBlock,
     pinnedSupabaseConfig().replace('[analytics]\nenabled = true', '[analytics]\nenabled = true\nenabled = true'),
     pinnedSupabaseConfig().replace('[db.pooler]\nenabled = false', '[db.pooler]\nenabled = true'),
+    pinnedSupabaseConfig().replace('enroll_enabled = false\n', ''),
+    pinnedSupabaseConfig().replace('verify_enabled = false', 'verify_enabled = false\nverify_enabled = false'),
+    pinnedSupabaseConfig().replace('[auth.mfa.totp]', '[auth.mfa.webauthn]'),
   ]) {
     assert.throws(() => module.preparePinnedLocalStackConfig({
       config: invalid,
@@ -1857,6 +1865,7 @@ test('G5 runbook pins local-only reset, per-step verification, rollback and exac
   assert.match(runbook, /bun build scripts\/security\/g5-docker-loopback-shim\.mjs --compile/i);
   assert.match(runbook, /SECURITY_TEST_DOCKER_LOOPBACK_SHIM/);
   assert.match(runbook, /127\.0\.0\.1[\s\S]*Docker publish/i);
+  assert.match(runbook, /\[auth\.mfa\.totp\][\s\S]*enroll_enabled\s*=\s*true[\s\S]*verify_enabled\s*=\s*true/i);
 });
 
 test('documented G5 entrypoint fails closed instead of deadlocking when execution is disabled', async () => {
