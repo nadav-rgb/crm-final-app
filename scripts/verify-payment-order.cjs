@@ -2,7 +2,8 @@
 // שימוש: node scripts/verify-payment-order.cjs
 // אין framework בדיקות בפרויקט — זה סקריפט node עצמאי, בדפוס scripts/verify-*.cjs.
 // עובד על נתונים סינתטיים בלבד: לא נוגע ב-Supabase ולא דורש .env.local.
-const { calcMonthlyPayment, calcInteractionPayment, calcConsultantDashboard, deriveMitzvotBonuses, previewNewMitzvotBonusCount, previewNewMitzvotBonusChanges, comparePaymentOrder, paidBefore, DEFAULTS } = require('../lib/paymentCalc.js');
+const { calcMonthlyPayment, calcInteractionPayment, calcConsultantDashboard, deriveMitzvotBonuses, previewNewMitzvotBonusCount, previewNewMitzvotBonusChanges, comparePaymentOrder, paidBefore, getMonthlyTotalForActivist, DEFAULTS } = require('../lib/paymentCalc.js');
+const { payableInteractionsThisMonth } = require('../lib/activistStats.js');
 
 let failures = 0;
 function check(name, actual, expected) {
@@ -459,6 +460,87 @@ const JULY = { year: 2026, month: 6 }; // month 0-indexed
     previewDraftResult.payable, false);
   check('התצוגה המקדימה: אותה סיבה בדיוק כמו המנוע (חלון הזכאות)',
     previewDraftResult.reason, engineResult.unpaid[0]?.reason);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// ביקורת קוד על Task 3 — ממצא קריטי: contactContext ב-paidBefore סינן
+// allInteractionsWithContact לפי contact_id בלבד, בלי activist_id (שאר 4 מקומות
+// הבנייה כן סיננו לפי שניהם). זה נגיש בפועל, לא תיאורטי: lib/CrmStore.jsx מסנן
+// את interactions לפי תפקיד — רק role==='activist' מוגבל לפעיל בודד; רכז/כספים/
+// ראש-תחום/מנכ"ל רואים נתוני-רב-פעילים (מנכ"ל: הכל, ללא סינון). עמוד
+// add-interaction/[id].jsx חוסם לפי activist_id רק את role==='activist' שמנסה
+// לדווח עבור לקוח שאינו שלו — תפקידים אחרים עוברים לכל לקוח. כשתפקיד כזה פותח
+// את העמוד עבור לקוח עם היסטוריה מול כמה פעילים, contactContext שנבנה בתוך
+// paidBefore (מה-allInteractionsForContext שהעמוד מעביר — כל ה-interactions,
+// לא מסונן לפעיל) "דלף" קשר תורני של פעיל *אחר* לתוך בדיקת מעבר-לתורני של הפעיל
+// הנוכחי. בדיוק דפוס "תצוגה אחת רואה X, המנוע רואה Y" שכל המשימה הזו נועדה למנוע.
+// ────────────────────────────────────────────────────────────────────────────
+{
+  const contactsX = [{ id: 1, name: 'לקוח משותף', joined_at: '2026-01-01' }];
+  // קשר תורני של פעיל *אחר* (8) עם אותו לקוח — קיים ב-historySource (כי העמוד
+  // האמיתי מעביר את כל ה-interactions, לא מסונן-פעיל), אבל לא אמור להשפיע על
+  // ההערכה של פעיל 7.
+  const otherActivistTorani = { activist_id: 8, project_id: 1, id: 900, contact_id: 1, type: 'פרונטלי', quality: 'תורני', duration_minutes: 60, date: '2026-02-10' };
+  // הקשר הידידותי של פעיל 7 עצמו — בתוך חלון 3 החודשים מהצטרפות ינואר (חודש 2),
+  // ובלי קשר תורני *משלו* — אמור לזכות.
+  const myFriendly = { activist_id: 7, project_id: 1, id: 901, contact_id: 1, type: 'פרונטלי', quality: 'ידידותי', duration_minutes: 60, date: '2026-03-10' };
+  const draftX = { type: 'פרונטלי', quality: 'ידידותי', date: '2026-03-20', id: Number.MAX_SAFE_INTEGER };
+
+  // monthlyInteractions=[myFriendly] (רק מרץ, כמו שכל קורא אמיתי מסנן), אבל
+  // allInteractionsForContext כולל את שתי השורות — בדיוק כמו שעמוד add-interaction
+  // מעביר interactions מלא (רב-פעילי אצל רכז/כספים/ראש-תחום/מנכ"ל).
+  const resultX = paidBefore(draftX, [myFriendly], contactsX, DEFAULTS, [otherActivistTorani, myFriendly]);
+  check('paidBefore: קשר תורני של פעיל אחר עם אותו לקוח לא "דולף" ל-contactContext של הפעיל הנוכחי',
+    resultX.length, 1);
+  check('paidBefore: הקשר של פעיל 7 עצמו הוא זה שזוכה (לא נדחה בטעות בגלל תורני של פעיל 8)',
+    resultX[0]?.id, 901);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// ביקורת קוד על Task 3 — ממצא חשוב: אין כיסוי ישיר ל-getMonthlyTotalForActivist
+// ול-payableInteractionsThisMonth. שתיהן מחוברות נכון (contactContext עם
+// activist_id) לפי קריאה ידנית, אבל בלי בדיקה כאן רגרסיה עתידית (למשל מישהו
+// שמחזיר בטעות את הסינון ל-myMonthly/monthlyInteractions בלבד) לא הייתה נתפסת.
+// אותו תרחיש כמו הבדיקה של calcMonthlyPayment למעלה: קשר ידידותי בחודש 4
+// מהצטרפות (מחוץ לחלון) מול קשר ידידותי בחודש 1 (בתוך החלון).
+// ────────────────────────────────────────────────────────────────────────────
+{
+  const contactsG = [{ id: 1, name: 'לקוח ותיק', joined_at: '2026-01-01' }];
+  const oldFriendlyG = Array.from({ length: 2 }, (_, k) => ({
+    activist_id: 7, project_id: 1, id: 810 + k, contact_id: 1, type: 'פרונטלי',
+    quality: 'ידידותי', duration_minutes: 60, date: `2026-0${k + 1}-15`,
+  }));
+  const aprilRowG = { activist_id: 7, project_id: 1, contact_id: 1, id: 860, type: 'פרונטלי', quality: 'ידידותי', duration_minutes: 60, date: '2026-04-15' };
+  const allG = [...oldFriendlyG, aprilRowG];
+
+  const totalAprilG = getMonthlyTotalForActivist(7, allG, contactsG, DEFAULTS, { year: 2026, month: 3 }); // אפריל — חודש 4 מהצטרפות
+  check('getMonthlyTotalForActivist: קשר ידידותי בחודש 4 מהצטרפות (מחוץ לחלון) לא נספר בסכום', totalAprilG, 0);
+
+  const totalJanG = getMonthlyTotalForActivist(7, allG, contactsG, DEFAULTS, { year: 2026, month: 0 }); // ינואר — חודש 1 מהצטרפות
+  check('getMonthlyTotalForActivist: קשר ידידותי בחודש 1 מהצטרפות (בתוך החלון) כן נספר (250 ₪)', totalJanG, 250);
+}
+
+// payableInteractionsThisMonth (lib/activistStats.js) קוראת ל-monthStart() הפנימי
+// שלה בלי אפשרות להעביר "עכשיו" מבחוץ — לכן הבדיקה בונה תאריכים *יחסית* לתאריך
+// האמיתי של הרצת הבדיקה (new Date()), לא תאריך קבוע, כדי שתישאר תקפה בכל יום.
+{
+  const now = new Date();
+  const isoOf = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const thisMonthStart      = new Date(now.getFullYear(), now.getMonth(), 1);
+  const joinedFourMonthsAgo = new Date(thisMonthStart.getFullYear(), thisMonthStart.getMonth() - 4, 1);
+  const joinedThisMonth     = new Date(thisMonthStart.getFullYear(), thisMonthStart.getMonth(), 1);
+  const dayInThisMonth      = isoOf(new Date(thisMonthStart.getFullYear(), thisMonthStart.getMonth(), 5));
+
+  const contactsP = [
+    { id: 1, name: 'ותיק (מחוץ לחלון)', joined_at: isoOf(joinedFourMonthsAgo) },
+    { id: 2, name: 'חדש (בתוך החלון)',  joined_at: isoOf(joinedThisMonth) },
+  ];
+  const rowsP = [
+    { activist_id: 7, project_id: 1, id: 951, contact_id: 1, type: 'פרונטלי', quality: 'ידידותי', duration_minutes: 60, date: dayInThisMonth },
+    { activist_id: 7, project_id: 1, id: 952, contact_id: 2, type: 'פרונטלי', quality: 'ידידותי', duration_minutes: 60, date: dayInThisMonth },
+  ];
+  check('payableInteractionsThisMonth: רק הקשר בתוך חלון-3-החודשים נספר (הוותיק, חודש 4 מהצטרפות, לא)',
+    payableInteractionsThisMonth(7, rowsP, contactsP, 1, DEFAULTS), 1);
 }
 
 console.log(failures === 0 ? '\nכל הבדיקות עברו.' : `\n${failures} בדיקות נכשלו.`);

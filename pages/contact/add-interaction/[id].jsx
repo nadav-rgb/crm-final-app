@@ -5,7 +5,7 @@ import Link from 'next/link';
 import CONFIG from '../../../data/config';
 import { useCrm } from '../../../lib/CrmStore';
 import { useAuth } from '../../../lib/AuthStore';
-import { calcInteractionPayment, paidBefore, PAID_PROJECT_IDS } from '../../../lib/paymentCalc';
+import { calcInteractionPayment, paidBefore, buildContactContext, PAID_PROJECT_IDS } from '../../../lib/paymentCalc';
 import DesktopLayout from '../../../components/DesktopLayout';
 import { summarizeInteractionText } from '../../../lib/aiService';
 import { createPaymentInteractionNotifications, createDemoNotification } from '../../../lib/notificationDemo';
@@ -119,9 +119,10 @@ export default function AddInteractionPage() {
   const descriptionLabel       = DESCRIPTION_LABELS[form.type] ?? 'תיאור המפגש';
   const descriptionPlaceholder = DESCRIPTION_PLACEHOLDERS[form.type] ?? 'תאר את המפגש בפירוט — מי הלקוח, מה דובר, מה הפוטנציאל...';
   // contactContext לתצוגה המקדימה — כל קשרי הפעיל עם הלקוח הזה, לא רק החודש הנוכחי
-  // (myMonthly), כדי שחלון-3-חודשים ומעבר-לתורני יעבדו נכון גם לקוח ותיק.
-  const contactHistory = interactions.filter(i => i.contact_id === contactId && i.activist_id === currentUser?.id);
-  const contactContext = { joinedAt: contact.joined_at ?? null, allInteractionsWithContact: contactHistory };
+  // (myMonthly), כדי שחלון-3-חודשים ומעבר-לתורני יעבדו נכון גם לקוח ותיק. interactions
+  // עצמו עלול להיות רב-פעילי (רכז/כספים/ראש-תחום/מנכ"ל — ראה scopeQueryToUser
+  // ב-CrmStore.jsx), ולכן buildContactContext מסנן גם activist_id, לא רק contact_id.
+  const contactContext = buildContactContext(contact, contactId, currentUser?.id, interactions);
   const payableCheck = (isAchdut && form.type && (form.quality || isShabbat) && form.long_enough)
     ? calcInteractionPayment(
         { type: form.type, quality: form.quality, duration_minutes: duration, date: form.date },
