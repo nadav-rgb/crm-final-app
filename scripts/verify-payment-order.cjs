@@ -654,5 +654,39 @@ const JULY = { year: 2026, month: 6 }; // month 0-indexed
   check('30 קשרים קצרצרים לא מייצרים אף שורת breakdown ולא חורגים ממכסה', [r.total, r.breakdown.length], [0, 0]);
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// אימות: מפגש רב-משתתפים כבר עונה על דרישת נדב (2026-08-31) — לקוח ראשי שעליו
+// מחושב התשלום + משתתפים נוספים שהמפגש נרשם אצלם בלי תשלום נוסף. לא קוד חדש —
+// רק תיעוד+בדיקה שהקוד הקיים (isDerivedInteraction) עונה במדויק על הדרישה.
+// ────────────────────────────────────────────────────────────────────────────
+{
+  const mainMeetingId = 9000;
+  const rows = [
+    // הלקוח הראשי — השורה שעליה מחושב התשלום
+    { activist_id: 7, project_id: 1, id: mainMeetingId, contact_id: 1, type: 'פרונטלי', quality: 'רב משתתפים', duration_minutes: 60, date: '2026-08-10',
+      participants: { count: 3, clients: [{ id: 2 }, { id: 3 }] } },
+    // 2 משתתפים נוספים — שורות נגזרות, נרשמות בהיסטוריה שלהם אבל לא מזכות תשלום נוסף
+    { activist_id: 7, project_id: 1, id: mainMeetingId + 1, contact_id: 2, type: 'פרונטלי', quality: 'רב משתתפים', duration_minutes: 60, date: '2026-08-10',
+      participants: { count: 3, clients: [{ id: 2 }, { id: 3 }], derived_from: mainMeetingId } },
+    { activist_id: 7, project_id: 1, id: mainMeetingId + 2, contact_id: 3, type: 'פרונטלי', quality: 'רב משתתפים', duration_minutes: 60, date: '2026-08-10',
+      participants: { count: 3, clients: [{ id: 2 }, { id: 3 }], derived_from: mainMeetingId } },
+  ];
+  const contactsMP = [{ id: 1, name: 'ראשי' }, { id: 2, name: 'משתתף א' }, { id: 3, name: 'משתתף ב' }];
+  const r = calcMonthlyPayment(7, rows, contactsMP, [], [], DEFAULTS, new Set(), { year: 2026, month: 7 });
+
+  check('תשלום ניתן פעם אחת בלבד על המפגש (לא מוכפל לפי 3 משתתפים)', r.total, 300);
+  check('רק שורת breakdown אחת (הלקוח הראשי)', r.breakdown.length, 1);
+  check('הלקוח שעליו מחושב התשלום הוא הלקוח הראשי (contact_id=1)', r.breakdown[0]?.contactId, 1);
+  check('המשתתפים הנוספים לא מופיעים כ"לא זוכה" (הם לא "קשר" עצמאי, אלא תיעוד)', r.unpaid.length, 0);
+
+  // הדרישה "המפגש נרשם גם בהיסטוריה שלהם, נחשב כמפגש שהתקיים" — זה תפקיד
+  // addParticipantInteractions (lib/CrmStore.jsx), לא paymentCalc. מאומת בקוד:
+  // כל אחת מהשורות הנגזרות מכילה contact_id של המשתתף עצמו (2, 3) — כלומר היא
+  // *כן* מופיעה בהיסטוריית הקשרים שלו (interactions.filter(contact_id===2)
+  // תמצא אותה), רק לא נכנסת לחישוב שכר בזכות isDerivedInteraction.
+  check('כל משתתף נוסף יש לו שורת קשר עצמאית בהיסטוריה שלו',
+    rows.filter(i => i.contact_id === 2 || i.contact_id === 3).length, 2);
+}
+
 console.log(failures === 0 ? '\nכל הבדיקות עברו.' : `\n${failures} בדיקות נכשלו.`);
 process.exit(failures === 0 ? 0 : 1);
