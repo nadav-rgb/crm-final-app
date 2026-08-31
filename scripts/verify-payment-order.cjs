@@ -525,7 +525,10 @@ const JULY = { year: 2026, month: 6 }; // month 0-indexed
 // ────────────────────────────────────────────────────────────────────────────
 {
   const { deriveToraniBonuses } = require('../lib/paymentCalc.js');
-  const mkT = (activistId, contactId, date, id) => ({ activist_id: activistId, project_id: 1, contact_id: contactId, quality: 'תורני', type: 'פרונטלי', date, id });
+  // duration_minutes: 60 — חייב לעמוד ב-MIN_DURATION (ביקורת קוד, 2026-09-01: קשר תורני
+  // קצר מדי לא נספר לחודש המזכה, ראה deriveToraniBonuses). בלי זה כל הבדיקות בבלוק הזה
+  // היו נכשלות אחרי התיקון (duration_minutes היה undefined → 0 → מתחת לסף בכל מקרה).
+  const mkT = (activistId, contactId, date, id) => ({ activist_id: activistId, project_id: 1, contact_id: contactId, quality: 'תורני', type: 'פרונטלי', duration_minutes: 60, date, id });
   const contactsTB = [{ id: 1, name: 'לקוח א' }, { id: 2, name: 'לקוח ב' }];
 
   // 3 חודשים רצופים (יוני,יולי,אוגוסט) → בונוס מיוחס לאוגוסט.
@@ -571,6 +574,30 @@ const JULY = { year: 2026, month: 6 }; // month 0-indexed
   const bonuses4 = deriveToraniBonuses(twoActivists, contactsTB);
   check('שני פעילים שונים עם אותו לקוח = 2 בונוסים (נספרים בנפרד)', bonuses4.length, 2);
   check('כל בונוס מיוחס לפעיל הנכון', bonuses4.map(b => b.activist_id).sort((a, b) => a - b), [7, 9]);
+
+  // ביקורת קוד (2026-09-01) — קשר תורני קצר מ-MIN_DURATION (15 דקות) לא נספר לחודש המזכה,
+  // בדיוק כמו בכל שאר המנוע (calcInteractionPayment, בונוס-לימוד). בלי הבדיקה הזו, שלושה
+  // "מגעים" תורניים של 2 דקות — שאף אחד מהם לא מזכה אגורה בפני עצמו — עדיין היו מפעילים
+  // את מלוא בונוס 1,000 ₪. יולי כאן מכיל רק מגע קצר (5 דק') ולכן "לא קיים" לצורך הרצף —
+  // יוני ואוגוסט נשארים, אבל לא רצופים (פער של חודש), אז אין בונוס בכלל.
+  const shortMiddleMonth = [
+    mkT(7, 1, '2026-06-05', 90),
+    { ...mkT(7, 1, '2026-07-05', 91), duration_minutes: 5 }, // קצר מ-15 דקות — לא נספר
+    mkT(7, 1, '2026-08-05', 92),
+  ];
+  check('קשר תורני קצר מ-15 דקות לא נספר לחודש המזכה — הרצף נשבר, אין בונוס',
+    deriveToraniBonuses(shortMiddleMonth, contactsTB).length, 0);
+
+  // אותו רצף, אבל יולי מכיל *גם* מגע ארוך מספיק — אמור לחזור להיספר (עדיין 3 רצופים).
+  const shortPlusRealSameMonth = [
+    mkT(7, 1, '2026-06-05', 93),
+    { ...mkT(7, 1, '2026-07-03', 94), duration_minutes: 5 },  // קצר מדי — לא נספר בפני עצמו
+    mkT(7, 1, '2026-07-20', 95),                              // אבל מגע נוסף באותו חודש כן מזכה
+    mkT(7, 1, '2026-08-05', 96),
+  ];
+  const bonuses5 = deriveToraniBonuses(shortPlusRealSameMonth, contactsTB);
+  check('חודש עם גם מגע קצר וגם מגע תקין — עדיין נספר (מספיק מגע אחד תקין באותו חודש)',
+    bonuses5.length === 1 && bonuses5[0].month === '2026-7', true);
 }
 
 // ────────────────────────────────────────────────────────────────────────────
