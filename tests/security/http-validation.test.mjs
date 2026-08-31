@@ -130,15 +130,16 @@ test('foreign, wildcard and missing mutation origins are rejected', () => {
 });
 
 test('public errors and JSON responses never serialize causes or cache sensitive data', () => {
+  const requestId = '11111111-1111-4111-8111-111111111111';
   const error = new SecurityError(403, 'DENIED', 'Access denied', {
     cause: new Error('database credential detail'),
   });
-  const mapped = mapError(error, 'req_synthetic');
+  const mapped = mapError(error, requestId);
   assert.deepEqual(mapped, {
     status: 403,
     payload: {
       error: { code: 'DENIED', message: 'Access denied' },
-      requestId: 'req_synthetic',
+      requestId,
     },
   });
   assert.doesNotMatch(JSON.stringify(mapped), /credential|cause|stack/i);
@@ -149,11 +150,11 @@ test('public errors and JSON responses never serialize causes or cache sensitive
   assert.doesNotMatch(JSON.stringify(unknown), /private upstream response/i);
 
   const res = fakeRes();
-  sendJson(res, 401, mapped.payload, { requestId: 'req_synthetic' });
+  sendJson(res, 401, mapped.payload, { requestId });
   assert.equal(res.statusCode, 401);
   assert.equal(res.headers['cache-control'], 'no-store, private');
   assert.equal(res.headers['x-content-type-options'], 'nosniff');
-  assert.equal(res.headers['x-request-id'], 'req_synthetic');
+  assert.equal(res.headers['x-request-id'], requestId);
 });
 
 test('push subscription schema rejects recipient spoofing fields', () => {

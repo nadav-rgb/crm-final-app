@@ -1,35 +1,41 @@
 # CRM Mekarvim Security Hardening Evidence Report
 
-Evidence date: 2026-08-30 (Asia/Jerusalem)
+Evidence date: 2026-08-31 (Asia/Jerusalem)
 
 Branch: `security/hardening-p0`
 
-Deterministic evidence cutoff: `a2af2026de052fd696f948a8375dcec7cc5704f7`
+Deterministic source/test cutoff before this report update: `b2108b68a6331c80d9ad3358c8f8ba3a16582b8d`
 
 This report is an engineering evidence record, not an authorization to use real sensitive data,
 merge, deploy, or apply a database migration. Static contract evidence is not live database proof.
+Database-backed evidence: none in this worktree because G5 did not run.
 
 ## Executive Summary
 
-The hardening branch replaces the prototype browser trust model with a same-origin BFF, opaque
+The hardening branch contains source and deterministic-test changes for a same-origin BFF, opaque
 server-side sessions, server-derived authorization context, explicit field projections, and a
-deny-by-default PostgreSQL/RLS contract. Local deterministic evidence covers authentication and
-session state transitions, RBAC, tenant/resource checks, validation, CSRF, rate limiting, security
-headers, finance/report projections, integrations, dependency compatibility, secrets, and Android
-boundaries.
+deny-by-default PostgreSQL/RLS contract. Local deterministic evidence covers implementation-level
+authentication/session transitions, RBAC, tenant/resource checks, validation, CSRF, rate limiting,
+security headers, finance/report projections, integrations, dependency compatibility, secrets, and
+Android boundaries. It does not establish a database or provider runtime result.
 
 The original hardening baseline was commit
 `72b9196f22812e5dc2452efe33f1fbbf23f3dd4c`. At that baseline, the recorded dependency audit was
 3 Critical, 10 High, and 3 Moderate findings, and the application still relied on browser-held
 Supabase authority and permissive database paths. The autonomous night mission began from
-`6e3a950c52bc18f7e29730b0e6443762f75b81c1`. Its deterministic/local evidence cutoff is
-`a2af2026de052fd696f948a8375dcec7cc5704f7`; fresh Task-21 audits show no dependency finding at any
-severity.
+`6e3a950c52bc18f7e29730b0e6443762f75b81c1`. Its earlier deterministic/local checkpoint was
+`a2af2026de052fd696f948a8375dcec7cc5704f7`; the final-fix-wave source/test checkpoint is
+`b2108b68a6331c80d9ad3358c8f8ba3a16582b8d`. Fresh local audit commands are recorded below; their
+registry results are time-bound rather than a claim about deployed software.
 
 G4 has an accepted independent review. G5 remains blocked at the controlled-live boundary because
 the local Docker engine was unavailable and no alternative target was proven isolated. As a
 result, migrations 0018 through 0024, direct-JWT/PostgREST isolation, provider-backed MFA, and live
 cleanup/posture evidence have not been exercised.
+
+The measured harness manifest contains 48 exact unique SEC IDs. It binds a future G5 run to exact
+test observations and rejects missing, duplicate, unbound, or non-passing rows; this is static
+harness verification, not a live observation.
 
 No migration has been applied. No Supabase environment was contacted. Production is untouched.
 
@@ -41,20 +47,22 @@ No migration has been applied. No Supabase environment was contacted. Production
 | --- | ---: | ---: | ---: | ---: | ---: |
 | Original recorded baseline at `72b9196f22812e5dc2452efe33f1fbbf23f3dd4c` | 3 | 10 | 3 | 0 | 16 |
 | Night-mission starting state at `6e3a950c52bc18f7e29730b0e6443762f75b81c1` | 0 | 0 | 2 | 0 | 2 |
-| Fresh full audit at the Task-21 cutoff | 0 | 0 | 0 | 0 | 0 |
-| Fresh production-only audit at the Task-21 cutoff | 0 | 0 | 0 | 0 | 0 |
+| Fresh full audit at the final-fix-wave local cutoff | 0 | 0 | 0 | 0 | 0 |
+| Fresh production-only audit at the final-fix-wave local cutoff | 0 | 0 | 0 | 0 | 0 |
 
 ### Critical
 
-No open Critical code or dependency finding was observed in the fresh deterministic evidence.
-The baseline browser credential/directory exposure, service-role business shortcut, permissive RLS
-contract, and Critical dependency findings were remediated in the hardening branch.
+No open Critical code or dependency finding was observed by the fresh deterministic checks. The
+source changes address the baseline browser credential/directory exposure, service-role business
+shortcut, permissive RLS contract, and Critical dependency findings. Their behavior on an applied
+database and real provider remains unverified.
 
 ### High
 
-No open High code or dependency finding was observed locally. However, the absence of controlled
-live RLS, cross-tenant, IDOR/BOLA, and provider-MFA proof is a release-blocking assurance gap. It is
-tracked as an external blocker rather than converted into a false local pass.
+No open High dependency finding was observed locally. Deterministic tests exercise the corrected
+source contracts, but the absence of controlled live RLS, cross-tenant, IDOR/BOLA, and provider-MFA
+proof is a release-blocking assurance gap. It is tracked as an external blocker rather than
+converted into a false local pass.
 
 ### Moderate
 
@@ -85,7 +93,7 @@ security runtime behavior implicitly.
 - Migrations `0018` through `0024` define the forward schema/RLS/RPC contract, but remain unapplied.
 - Client-bundle, repository, history, dependency, HTTP, PDF/Excel, and Android checks are automated.
 
-### Exact overnight commits after the mission starting point
+### Exact remediation commits after the mission starting point
 
 | Commit | Change |
 | --- | --- |
@@ -98,8 +106,21 @@ security runtime behavior implicitly.
 | `d0338db44cea9078202595b71b0956ff49a4bf81` | Complete blocked G5 evidence boundaries |
 | `c379bb6e741570012c05c49b2ed03014108d8223` | Harden blocked G5 stack lifecycle handling |
 | `a2af2026de052fd696f948a8375dcec7cc5704f7` | Support the pinned Supabase SMTP template safely |
+| `bb507ec` | C1: remove direct authority/workflow mutation and add immutable source contracts |
+| `7eff62a` | I1: reconcile the CRM/BFF schema, DTO, and server-created-ID contract |
+| `74450ac` | I2/M3: maintain UUID/legacy pairs and use an exact reminder projection |
+| `920b336` | I3: route notifications through resource-derived events and generic push payloads |
+| `3e87f92` | I4: correct protected-session assurance and shared abuse-control source contracts |
+| `594983b` | I5: make required audit/correlation and governance attribution contracts fail closed |
+| `2050862` | I6: deny raw Coordinator expense access |
+| `a75c6ab` | I7: make tour-report notes/JSON validation strict |
+| `ec86c8f` | I8: replace broad directory access with scoped projections/validation |
+| `9407592` | I9: guard service-role operational scripts before environment or remote access |
+| `06530d7` | M2: canonicalize trusted rate-limit keys |
+| `7463d9e` | M1: make the static security-posture verifier fail closed |
+| `b2108b6` | I10: measure the exact G5 evidence manifest and direct-JWT matrix contract |
 
-The Task-21 report commit is intentionally reported in the Git handoff rather than embedded in its
+The report-update commit is intentionally reported in the Git handoff rather than embedded in its
 own content-addressed document.
 
 ## Authentication & Session
@@ -109,17 +130,18 @@ The BFF authenticates against Supabase Auth on the server. The browser receives 
 `Domain`. Provider access/refresh material is sealed at rest with versioned authenticated
 encryption and is never returned to browser code.
 
-Session loading validates revocation, idle and absolute expiry, disabled-user state,
+Session loading source code validates revocation, idle and absolute expiry, disabled-user state,
 `security_version`, authentication state, and AAL. Login, MFA completion, recovery/privilege
-transitions, and token refresh rotate security state as specified; logout revokes server state
-before clearing the cookie. CSRF tokens are bound to a session and rotate with it. Authentication,
-recovery, MFA, and refresh paths have shared fail-closed rate-limit contracts.
+transitions, and token refresh have deterministic source/test contracts for security-state rotation;
+logout revokes server state before clearing the cookie. CSRF tokens are bound to a session and
+rotate with it. Shared fail-closed rate-limit and refresh-claim/CAS behavior is tested locally in
+the implementation; provider-backed persistence and factor lifecycle have not been measured.
 
-Deterministic tests prove generic login failure behavior, cookie/session mechanics, ciphertext
-tamper rejection, fixation/replay rejection, expiry, revocation, disabled/stale-user rejection,
-CSRF mismatch, rate-limit boundaries, and AAL gates. They do not prove the Supabase provider's live
-TOTP enrollment/challenge behavior. CEO and Project Head AAL2 provider behavior is therefore
-unverified until a controlled isolated target is available.
+Deterministic tests prove the named implementation behavior: generic login failure, cookie/session
+mechanics, ciphertext tamper rejection, fixation/replay rejection, expiry, revocation,
+disabled/stale-user rejection, CSRF mismatch, rate-limit boundaries, and AAL gates. They do not
+prove the Supabase provider's live TOTP enrollment/challenge behavior. CEO and Project Head AAL2
+provider behavior is therefore unverified until a controlled isolated target is available.
 
 ## Authorization
 
@@ -135,34 +157,37 @@ Unknown or security-sensitive authority fields in a body are rejected rather tha
 | Activist | Active project memberships and assigned/owned resources | Assigned contacts and self-created operational records only |
 | Finance | Active project memberships | Aggregate payment/expense projection without contact or religious PII |
 
-Deterministic API/domain tests cover same-project cross-user access, cross-project IDs, direct URL
-changes, forged body authority, privilege escalation, notification recipients, finance narrowing,
-and field projection. Live cross-tenant, IDOR, RLS, and provider MFA behavior is UNVERIFIED.
+Deterministic API/domain tests cover source-level same-project cross-user access, cross-project IDs,
+direct URL changes, forged body authority, privilege escalation, notification recipients, finance
+narrowing, and field projection. Live cross-tenant, IDOR, RLS, and provider MFA behavior is UNVERIFIED.
 
 ## Database / RLS Matrix
 
 The static migration contract classifies 17 protected tables plus one classified view. Each table
 is declared with RLS enabled and forced, and the view is `security_invoker`. The status in every row
-below is static contract evidence only; no row is a claim about a running database.
+below means source/static-test evidence only; no row is a claim about a running database. The
+inventory, grant, policy, and immutable-column source assertions are exercised by
+`tests/security/rls-live.test.mjs`, `tests/security/g5-evidence.test.mjs`, and the migration-static
+tests selected by `npm run test:security`; they are not database-backed results.
 
 | Object | Evidence status | RLS | SELECT | INSERT | UPDATE | DELETE | Relevant RPC/control |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `projects` | Static PASS; live UNVERIFIED | Enable + force | CEO or active member scope | CEO | CEO | CEO | Server project allowlist; `app_is_ceo` |
 | `project_memberships` | Static PASS; live UNVERIFIED | Enable + force | Self, CEO, or scoped Head | No direct grant | No direct grant | No direct grant | Service-only `app_membership_change`; anti-self-escalation and session invalidation |
 | `profiles` | Static PASS; live UNVERIFIED | Enable + force | Self, CEO, or scoped directory projection | Provisioning only | Non-authority self fields/RPC-governed security state | Provisioning only | `app_user_security_invalidate`; field projection |
-| `contacts` | Static PASS; live UNVERIFIED | Enable + force | CEO; Head/Coordinator project; assigned Activist | Same authorized scope with derived tenant/owner | Same scope plus `WITH CHECK` | CEO | `check_contact_duplicate`; BFF field allowlists |
-| `interactions` | Static PASS; live UNVERIFIED | Enable + force | CEO; managers in project; actor on assigned contact | Actor/project/contact derived | Same actor/scope with immutable authority | CEO/Head or constrained actor workflow | Row audit trigger and user-scoped repository |
-| `base_meeting_reports` | Static PASS; live UNVERIFIED | Enable + force | Project managers or assigned actor | Derived project/actor | Scoped with immutable tenant/actor | CEO/Head scope | Row audit trigger and meeting command validation |
-| `meeting_houses` | Static PASS; live UNVERIFIED | Enable + force | Project/assignment scope | CEO/Head/Coordinator in project | Managers; assigned report fields only | CEO/Head project | Assignment/resource checks; row audit trigger |
+| `contacts` | Static PASS; live UNVERIFIED | Enable + force | CEO; Head/Coordinator project; assigned Activist | Same authorized scope with derived tenant/owner | Limited business columns; immutable authority trigger | CEO | `check_contact_duplicate`; BFF field allowlists |
+| `interactions` | Static PASS; live UNVERIFIED | Enable + force | CEO; managers in project; actor on assigned contact | Actor/project/contact derived | Limited business columns; immutable authority trigger | CEO/Head or constrained actor workflow | Row audit trigger and user-scoped repository |
+| `base_meeting_reports` | Static PASS; live UNVERIFIED | Enable + force | Project managers or assigned actor | Derived project/actor | Limited business columns; immutable authority trigger | CEO/Head scope | Row audit trigger and meeting command validation |
+| `meeting_houses` | Static PASS; live UNVERIFIED | Enable + force | Project/assignment scope | CEO/Head/Coordinator in project | Limited business columns; immutable authority trigger | CEO/Head project | Assignment/resource checks; row audit trigger |
 | `meeting_reminders` | Static PASS; live UNVERIFIED | Enable + force | Recipient or project managers | Authorized workflow with derived recipient | No broad direct grant | No broad direct grant | `app_cancel_meeting_reminders`; idempotency/cancellation controls |
-| `tours` | Static PASS; live UNVERIFIED | Enable + force | Managers in project or assigned Activist | CEO/Head/Coordinator project | Narrow non-report columns for managers | CEO/Head project | `app_submit_tour_report` derives reporter; cancellation controls |
+| `tours` | Static PASS; live UNVERIFIED | Enable + force | Managers in project or assigned Activist | CEO/Head/Coordinator project | Limited non-report columns; immutable authority/workflow trigger | CEO/Head project | `app_submit_tour_report` derives reporter; cancellation controls |
 | `expenses` | Static PASS; live UNVERIFIED | Enable + force | Self or CEO/Head/Finance project scope | Self with derived project/actor | Self-pending or authorized project workflow | Self-pending or CEO/Head policy | User-scoped repository and row audit trigger |
-| `bonus_cancellations` | Static PASS; live UNVERIFIED | Enable + force | Self or management/finance scope | Authorized approver only | No direct grant | CEO | Candidate/resource validation and row audit trigger |
+| `bonus_cancellations` | Static PASS; live UNVERIFIED | Enable + force | Self or management/finance scope | Authorized approver only | No direct grant | CEO-only direct delete | Candidate/resource validation and row audit trigger |
 | `payment_config` | Static PASS; live UNVERIFIED | Enable + force | Active authenticated projection | CEO | CEO | No direct grant | Explicit payment projection |
 | `notifications` | Static PASS; live UNVERIFIED | Enable + force | Recipient only | No direct grant | Recipient read-state column only | Recipient/expiry workflow | `app_enqueue_notification_event` derives project and recipients |
 | `notification_reads` | Static PASS; live UNVERIFIED | Enable + force | Recipient only | Recipient equals caller | Recipient equals caller | Recipient equals caller | Caller-derived ownership |
-| `push_subscriptions` | Static PASS; live UNVERIFIED | Enable + force | Owner only | Owner equals caller | Owner equals caller | Owner/service cleanup | Generic payload and internal-link allowlist |
-| `fcm_tokens` | Static PASS; live UNVERIFIED | Enable + force | Owner only | Owner equals caller | Owner equals caller | Owner/service cleanup | Server-derived recipient and provider wrapper |
+| `push_subscriptions` | Static PASS; live UNVERIFIED | Enable + force | Owner only | Owner equals caller | Limited payload column; immutable owner trigger | Owner/service cleanup | Generic payload and internal-link allowlist |
+| `fcm_tokens` | Static PASS; live UNVERIFIED | Enable + force | Owner only | Owner equals caller | Limited token/platform fields; immutable owner trigger | Owner/service cleanup | Server-derived recipient and provider wrapper |
 | `feedback_reports` | Static PASS; live UNVERIFIED | Enable + force | Creator, CEO, or scoped Head | Actor/project derived | Reviewer or constrained creator workflow | CEO | External forwarding disabled/fail closed; row audit trigger |
 | `activist_directory` | Static PASS; live UNVERIFIED | Security-invoker view over protected sources | Membership/finance-specific projection | Not applicable | Not applicable | Not applicable | No independent authority; source-table RLS applies |
 
@@ -183,22 +208,22 @@ reported.
 
 ## Test Evidence
 
-Fresh Task-21 Fix Round 1 verification was performed from reviewed commit
-`de5bfc872d47c9c0ce56e4866462315cbe60fcc2`. The full security suite contains 16 explicit live
-skips; they are skips, not passes. Commands below are literal sanitized reproductions of the
-commands used in this Windows worktree. Android SDK variables were set only in the Gradle process.
-The loopback launcher used synthetic settings and a closed loopback provider URL; it did not contact
-Supabase.
+Fresh final-fix-wave verification was performed from the reviewed source/test checkpoint
+`b2108b68a6331c80d9ad3358c8f8ba3a16582b8d` and the report/test correction in this change. The full
+security suite contains 19 explicit live skips; they are skips, not passes. Commands below are
+literal sanitized reproductions of the commands used in this Windows worktree. Android SDK
+variables were set only in the Gradle process. The loopback launcher used synthetic settings and a
+closed loopback provider URL; it did not contact Supabase.
 
 | Command | Status | Exact result |
 | --- | --- | --- |
-| `npm ci` | PASS (exit 0) | 277 packages installed; 278 audited; 0 vulnerabilities; deprecation and `allow-scripts` review warnings only |
+| `npm ci` | PASS (exit 0) | 310 packages installed; 311 audited; 0 vulnerabilities; deprecation warnings only |
 | `npm run test:baseline` | PASS (exit 0) | 51 total; 51 pass; 0 skip; 0 fail (27 interaction + 24 payment) |
 | `npm run verify:interaction-report` | PASS (exit 0) | 27 total; 27 pass; 0 skip; 0 fail |
 | `node scripts/verify-payment-order.cjs` | PASS (exit 0) | 24 total; 24 pass; 0 skip; 0 fail |
-| `npm run test:security` | PASS (exit 0) | 270 total; 254 pass; 16 explicit live skips; 0 fail; known module-type and synthetic-fixture LF-to-CRLF warnings only |
-| `node --test tests/security/finance-reports-feedback.test.mjs tests/security/jspdf-compatibility.test.mjs tests/security/exceljs-uuid-compatibility.test.mjs` | PASS (exit 0) | 31 total; 31 pass; 0 skip; 0 fail |
-| `npm run test:security -- tests/security/report-completeness.test.mjs` | PASS (exit 0) | 6 total; 6 pass; 0 skip; 0 fail; preceding RED was 6 total, 5 pass, 1 contract failure |
+| `npm run test:security` | PASS (exit 0) | 327 total; 308 pass; 19 explicit live skips; 0 fail; known module-type and synthetic-fixture LF-to-CRLF warnings only |
+| `node --test tests/security/finance-reports-feedback.test.mjs tests/security/jspdf-compatibility.test.mjs tests/security/exceljs-uuid-compatibility.test.mjs` | PASS (exit 0) | 32 total; 32 pass; 0 skip; 0 fail |
+| `npm run test:security -- tests/security/report-completeness.test.mjs` | PASS (exit 0) | 6 total; 6 pass; 0 skip; 0 fail; preceding I11 RED was 6 total, 3 pass, 3 report-contract failures |
 | `npm run build` | PASS (exit 0) | Next.js 16.3.3 Webpack production build; known `optimizeFonts`, middleware-convention, and `_app.getInitialProps` warnings only |
 | `node .superpowers/sdd/2026-08-27-security-hardening/start-g4-http.mjs` | PASS (owned process started) | Synthetic production server ready on `127.0.0.1:43877`; pre-start listener count 0 |
 | `$env:SECURITY_HTTP_BASE_URL='http://127.0.0.1:43877'; node scripts/security/verify-http.mjs` | PASS (exit 0) | exact 200/401/403/404/500; required headers; five unique nonces; no wildcard CORS; verifier PASS |
@@ -210,17 +235,18 @@ Supabase.
 | `npm audit --json` | PASS (exit 0) | 0 Critical; 0 High; 0 Moderate; 0 Low; 0 total; 310 dependencies in metadata |
 | `npm audit --omit=dev --json` | PASS (exit 0) | 0 Critical; 0 High; 0 Moderate; 0 Low; 0 total; 310 dependencies in metadata |
 | `node --test tests/security/android-hardening.test.mjs` | PASS (exit 0) | 6 total; 6 pass; 0 skip; 0 fail |
-| `$env:ANDROID_HOME=Join-Path $env:LOCALAPPDATA 'Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; if (-not (Test-Path -LiteralPath $env:ANDROID_HOME -PathType Container)) { throw 'installed Android SDK not found' }; android\gradlew.bat -p android testDebugUnitTest assembleDebug` | PASS (exit 0) | Process-only SDK environment; BUILD SUCCESSFUL; 169 actionable tasks (82 executed, 87 up-to-date); safe flatDir, SDK XML, API, and Gradle deprecation warnings |
+| `$env:ANDROID_HOME=Join-Path $env:LOCALAPPDATA 'Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; if (-not (Test-Path -LiteralPath $env:ANDROID_HOME -PathType Container)) { throw 'installed Android SDK not found' }; android\gradlew.bat -p android testDebugUnitTest assembleDebug` | PASS (exit 0) | Process-only SDK environment; BUILD SUCCESSFUL; 169 actionable tasks (169 up-to-date); safe flatDir, SDK XML, API, and Gradle deprecation warnings |
 | `$env:ANDROID_HOME=Join-Path $env:LOCALAPPDATA 'Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; if (Test-Path -LiteralPath 'android\keystore.properties') { throw 'unexpected release signing configuration present' }; android\gradlew.bat -p android assembleRelease` | EXPECTED FAIL (exit 1) | Release signing configuration missing: android/keystore.properties; assertion PASS; failure occurred at the intended signing guard |
-| `node scripts/security/g5-local-orchestrator.mjs` | BLOCKED (NOT RUN) | 16 live cases remained explicit skips; Docker daemon down after Windows error 1920; no isolated target; no migration or live case ran |
+| `node scripts/security/g5-local-orchestrator.mjs` | BLOCKED (NOT RUN) | 19 live cases remained explicit skips; Docker daemon down after Windows error 1920; no isolated target; no migration or live case ran |
 | `node scripts/verify-month-report.cjs <year> <month>` | NOT RUN | Inspection only: `.env.local`; privileged Supabase; person-level output; no approved isolated source |
 | `node scripts/verify-payroll-xlsx.cjs <year> <month>` | NOT RUN | Inspection only: `.env.local`; privileged Supabase; person/payroll output; no approved isolated source |
-| `git diff --check` | PASS (exit 0) | 0 whitespace errors; LF-to-CRLF working-copy warnings for both Task-21 files |
-| `git status --short --branch` | PASS (exit 0) | `## security/hardening-p0`; ` M SECURITY_HARDENING_REPORT.md`; ` M tests/security/report-completeness.test.mjs`; exactly two tracked Task-21 files modified |
+| `git diff --check` | PASS (exit 0) | 0 whitespace errors; checked before each final report commit |
+| `git status --short --branch` | PASS (exit 0) | `## security/hardening-p0`; tracked tree clean after the final-report commit |
 
-The accepted Task-20 blocked-boundary review independently recorded 264 total security tests,
-248 passes, 16 explicit live skips, and no failures before the five Task-21 report tests were added.
-The G5 harness remains guarded and was not invoked against any database in this task.
+The earlier accepted Task-20 blocked-boundary review independently recorded 264 total security
+tests, 248 passes, 16 explicit live skips, and no failures. It predates the I10 manifest expansion.
+The G5 harness now names 19 future live tests in a 48-case measured manifest and remains guarded;
+it was not invoked against any database in this task.
 
 ## Negative / Adversarial Tests
 
@@ -242,8 +268,8 @@ resource names are synthetic classes only.
 | Notification recipient or URL spoof | Authenticated actor / notification event | Schema + domain + RPC contract | 400/403/denied | PASS deterministic |
 | Finance scope/filter forgery | Finance/Coordinator class / aggregate report | Capability + caller-derived RPC arguments | Denied or narrowed | PASS deterministic |
 | Audit read by ordinary user | Authenticated actor / audit storage | Private schema + grants | Denied | Static PASS; live UNVERIFIED |
-| Direct PostgREST bypass | Authenticated role classes / classified surfaces | User JWT + PostgreSQL RLS | Denied outside exact scope | UNVERIFIED live |
-| RLS ownership transfer | Authenticated actor / tenant-owner columns | `WITH CHECK` | Denied | UNVERIFIED live; static contract only |
+| Direct PostgREST bypass | Authenticated role classes / classified surfaces | User JWT + PostgreSQL RLS | Denied outside exact scope | UNVERIFIED live; measured harness contract only |
+| RLS ownership transfer | Authenticated actor / tenant-owner columns | Column grants + immutable trigger/RPC | Denied | UNVERIFIED live; source/static contract only |
 | Unsafe external configuration | Server integration / missing or public target | Integration guard | Disabled/fail closed | PASS deterministic |
 | Secret leakage to client | Browser bundle / server-only categories | Bundle scanner | No finding | PASS local build scan |
 
@@ -285,10 +311,10 @@ the repository and remains an owner action.
 | Anthropic | Opt-in server projection, redaction, size/rate/timeout controls, fail closed without configuration | Consent/DPA/configuration and provider behavior UNVERIFIED |
 | Google Sheets | Private service-account adapter and exact sheet/range allowlist; public CSV fallback rejected | Credentials, private-sheet access, and provider behavior UNVERIFIED |
 | GitHub feedback | Disabled by default; private-target requirement; redacted payload contract | Private repository/token scope or permanent disable decision UNVERIFIED |
-| Push/FCM/VAPID | Owner-derived tokens/recipients, generic lock-screen payload, internal deep-link allowlist | Console restrictions, device delivery, and token lifecycle UNVERIFIED |
+| Push/FCM/VAPID | Source/test contract derives tokens/recipients and accepts only a generic lock-screen payload with internal deep links | Console restrictions, device delivery, and token lifecycle UNVERIFIED |
 | Scheduled jobs | Timing-safe machine authentication and fail-closed missing configuration | Approved staging scheduler behavior UNVERIFIED |
 
-No external integration endpoint was contacted during Task 21.
+No external integration endpoint was contacted during this final fix wave.
 
 ## Android
 
@@ -307,7 +333,7 @@ UNVERIFIED.
 
 - The hardened migrations exist only as reviewed files. A real database may contain schema, grants,
   policies, functions, views, or data-shape differences that static tests cannot observe.
-- Direct JWT/PostgREST cross-user and cross-project enforcement, `WITH CHECK` ownership transfer,
+- Direct JWT/PostgREST cross-user and cross-project enforcement, immutable-authority behavior,
   anonymous posture, audit privacy, finance parity, and cleanup remain unproven against PostgreSQL.
 - Supabase TOTP enrollment/challenge, AAL2 claims, password recovery, provider refresh/revocation,
   and dashboard settings remain unproven end to end.
@@ -335,7 +361,7 @@ UNVERIFIED.
 4. After an isolated runtime is proven, capture the required pre-migration snapshot/backup, then
    execute the guarded G5 orchestrator in
    the sole approved order `0018` through `0024`, stopping on any failed verification.
-5. Complete all 16 currently skipped live cases, including direct-JWT/PostgREST RLS, cross-tenant,
+5. Complete all 19 currently skipped live cases, including direct-JWT/PostgREST RLS, cross-tenant,
    IDOR/BOLA, audit, finance parity, cleanup, and post-cleanup posture evidence.
 6. Enable and validate Supabase TOTP/AAL2, password recovery, redirect, refresh, revocation, disabled
    user, and stale-security-version behavior in the isolated target.

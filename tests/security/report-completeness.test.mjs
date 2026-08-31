@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { escapeRegex } from './helpers.mjs';
+import { G5_CASE_MANIFEST, G5_REQUIRED_LIVE_TESTS } from '../../scripts/security/g5-evidence.mjs';
 
 const reportPath = 'SECURITY_HARDENING_REPORT.md';
 const readReport = () => readFile(reportPath, 'utf8');
@@ -119,7 +120,7 @@ test('blocked run has one negative verdict and exact live-evidence statuses', as
     /\| `node scripts\/verify-payroll-xlsx\.cjs <year> <month>` \| NOT RUN \|/,
     /Live database posture[^\n]*UNVERIFIED/,
     /Live cross-tenant, IDOR, RLS, and provider MFA behavior[^\n]*UNVERIFIED/,
-    /16 explicit live skips/,
+    new RegExp(`${G5_REQUIRED_LIVE_TESTS.length} explicit live skips`),
   ]) assert.match(report, required);
 });
 
@@ -131,6 +132,8 @@ test('report keeps deterministic evidence distinct from unperformed live proof',
     'Production is untouched.',
     '17 protected tables plus one classified view',
     'Static contract evidence is not live database proof.',
+    `The measured harness manifest contains ${G5_CASE_MANIFEST.length} exact unique SEC IDs`,
+    'Database-backed evidence: none in this worktree because G5 did not run.',
   ]) assert.match(report, new RegExp(escapeRegex(statement)));
   for (const commit of [
     '72b9196f22812e5dc2452efe33f1fbbf23f3dd4c',
@@ -158,11 +161,15 @@ test('test evidence names every required command with exact status and bounded r
     ['`npm run test:baseline`', /^PASS \(exit 0\)$/, /51 total; 51 pass; 0 skip; 0 fail/],
     ['`npm run verify:interaction-report`', /^PASS \(exit 0\)$/, /27 total; 27 pass; 0 skip; 0 fail/],
     ['`node scripts/verify-payment-order.cjs`', /^PASS \(exit 0\)$/, /24 total; 24 pass; 0 skip; 0 fail/],
-    ['`npm run test:security`', /^PASS \(exit 0\)$/, /\d+ total; \d+ pass; 16 explicit live skips; 0 fail/],
+    [
+      '`npm run test:security`',
+      /^PASS \(exit 0\)$/,
+      new RegExp(`\\d+ total; \\d+ pass; ${G5_REQUIRED_LIVE_TESTS.length} explicit live skips; 0 fail`),
+    ],
     [
       '`node --test tests/security/finance-reports-feedback.test.mjs tests/security/jspdf-compatibility.test.mjs tests/security/exceljs-uuid-compatibility.test.mjs`',
       /^PASS \(exit 0\)$/,
-      /31 total; 31 pass; 0 skip; 0 fail/,
+      /32 total; 32 pass; 0 skip; 0 fail/,
     ],
     [
       '`npm run test:security -- tests/security/report-completeness.test.mjs`',
@@ -202,11 +209,15 @@ test('test evidence names every required command with exact status and bounded r
       /^EXPECTED FAIL \(exit 1\)$/,
       /Release signing configuration missing: android\/keystore\.properties; assertion PASS/,
     ],
-    ['`node scripts/security/g5-local-orchestrator.mjs`', /^BLOCKED \(NOT RUN\)$/, /16 live cases remained explicit skips/],
+    [
+      '`node scripts/security/g5-local-orchestrator.mjs`',
+      /^BLOCKED \(NOT RUN\)$/,
+      new RegExp(`${G5_REQUIRED_LIVE_TESTS.length} live cases remained explicit skips`),
+    ],
     ['`node scripts/verify-month-report.cjs <year> <month>`', /^NOT RUN$/, /`\.env\.local`; privileged Supabase; person-level output/],
     ['`node scripts/verify-payroll-xlsx.cjs <year> <month>`', /^NOT RUN$/, /`\.env\.local`; privileged Supabase; person\/payroll output/],
-    ['`git diff --check`', /^PASS \(exit 0\)$/, /0 whitespace errors; LF-to-CRLF working-copy warnings for both Task-21 files/],
-    ['`git status --short --branch`', /^PASS \(exit 0\)$/, /exactly two tracked Task-21 files modified/],
+    ['`git diff --check`', /^PASS \(exit 0\)$/, /0 whitespace errors; checked before each final report commit/],
+    ['`git status --short --branch`', /^PASS \(exit 0\)$/, /tracked tree clean after the final-report commit/],
   ];
 
   for (const [command, statusPattern, resultPattern] of required) {
