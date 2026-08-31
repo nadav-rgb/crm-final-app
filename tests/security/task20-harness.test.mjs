@@ -13,6 +13,7 @@ import {
   createSecurityRunId,
   provisionLegacyDatabase,
   sanitizeEvidenceRows,
+  waitForLegacySchemaCache,
 } from '../../scripts/security/provision-test-fixtures.mjs';
 import {
   derivePinnedLocalStackContract,
@@ -283,6 +284,9 @@ test('legacy provisioner accepts one prebuilt exact fixture for registry parity'
   const client = {
     from(table) {
       return {
+        select() {
+          return { async limit() { return { error: null }; } };
+        },
         async insert(rows) {
           inserted.set(table, rows);
           return { error: null };
@@ -303,6 +307,35 @@ test('legacy provisioner accepts one prebuilt exact fixture for registry parity'
   assert.equal(provisioned.activistB, actorIds.activistB1);
 });
 
+test('legacy schema cache readiness retries reads only and never retries a mutation', async () => {
+  const trace = [];
+  let toursProbe = 0;
+  const client = {
+    from(table) {
+      return {
+        select() {
+          return {
+            async limit() {
+              trace.push(`probe:${table}`);
+              if (table === 'tours' && toursProbe++ === 0) return { error: { code: 'PGRST205' } };
+              return { error: null };
+            },
+          };
+        },
+      };
+    },
+  };
+  await waitForLegacySchemaCache({
+    client,
+    tables: ['projects', 'tours'],
+    maxAttempts: 2,
+    pause: async () => { trace.push('pause'); },
+  });
+  assert.deepEqual(trace, [
+    'probe:projects', 'probe:tours', 'pause', 'probe:projects', 'probe:tours',
+  ]);
+});
+
 test('legacy provisioner exposes only a safe PostgreSQL code when a local insert fails', async () => {
   const runId = createSecurityRunId();
   const actorIds = Object.fromEntries([
@@ -313,6 +346,9 @@ test('legacy provisioner exposes only a safe PostgreSQL code when a local insert
   const client = {
     from(table) {
       return {
+        select() {
+          return { async limit() { return { error: null }; } };
+        },
         async insert() {
           return table === 'tours'
             ? { error: { code: '22007', message: 'sensitive row value', details: 'sensitive detail' } }

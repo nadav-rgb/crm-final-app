@@ -471,6 +471,45 @@ export function computeDeterministicFinanceExpected({ runId, actorIds }) {
   });
 }
 
+function safeDatabaseCode(error) {
+  return /^(?:[0-9A-Z]{5}|PGRST\d{3})$/.test(error?.code ?? '')
+    ? error.code
+    : 'UNKNOWN';
+}
+
+export async function waitForLegacySchemaCache({
+  client,
+  tables,
+  maxAttempts = 100,
+  pause = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+}) {
+  if (!client || !Array.isArray(tables) || tables.length < 1
+    || new Set(tables).size !== tables.length
+    || tables.some((table) => !/^[a-z][a-z0-9_]{0,62}$/.test(table))
+    || !Number.isSafeInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 100
+    || typeof pause !== 'function') {
+    throw new Error('legacy schema cache readiness refused invalid boundary');
+  }
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    let pending = null;
+    for (const table of tables) {
+      const { error } = await client.from(table).select('security_run_id').limit(1);
+      if (!error) continue;
+      const code = safeDatabaseCode(error);
+      if (!['PGRST204', 'PGRST205'].includes(code)) {
+        throw new Error(`legacy schema cache stopped at ${table} [${code}]`);
+      }
+      pending = { table, code };
+      break;
+    }
+    if (!pending) return;
+    if (attempt === maxAttempts) {
+      throw new Error(`legacy schema cache not ready at ${pending.table} [${pending.code}]`);
+    }
+    await pause(100);
+  }
+}
+
 export async function provisionLegacyDatabase({
   client, runId, actorIds, targetUrl, productionUrl, confirmed,
   expectedProjectId, expectedApiPort, stackIdentity, rowsByTable: suppliedRows,
@@ -484,12 +523,11 @@ export async function provisionLegacyDatabase({
     || rowsByTable?.profiles?.some((row) => row.security_run_id !== runId)) {
     throw new Error('legacy fixture refused: prebuilt rows do not match exact run');
   }
+  await waitForLegacySchemaCache({ client, tables: Object.keys(rowsByTable) });
   for (const [table, rows] of Object.entries(rowsByTable)) {
     const { error } = await client.from(table).insert(rows);
     if (error) {
-      const safeCode = /^(?:[0-9A-Z]{5}|PGRST\d{3})$/.test(error.code ?? '')
-        ? error.code
-        : 'UNKNOWN';
+      const safeCode = safeDatabaseCode(error);
       throw new Error(`legacy fixture stopped at ${table} [${safeCode}]`);
     }
   }
