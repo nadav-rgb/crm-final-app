@@ -1440,6 +1440,35 @@ test('post-cleanup proof reruns anonymous isolation and forced-RLS posture with 
       async rpc() {
         return {
           data: null,
+          error: {
+            code: '22023',
+            message: 'multidimensional arrays must have array expressions with matching dimensions',
+          },
+        };
+      },
+    },
+    async anonymousProbe() { return anonymousRows; },
+  }), /22023[\s\S]*array-constructor-dimensions/i);
+  await assert.rejects(() => module.verifyPostCleanupSecurity({
+    targetUrl: `http://127.0.0.1:${localApiPort}`,
+    publishableKey: 'synthetic-local-publishable-key',
+    serviceClient: {
+      async rpc() {
+        return {
+          data: null,
+          error: { code: '22023', message: 'cannot accumulate arrays of different dimensionality' },
+        };
+      },
+    },
+    async anonymousProbe() { return anonymousRows; },
+  }), /22023[\s\S]*array-aggregate-dimensionality/i);
+  await assert.rejects(() => module.verifyPostCleanupSecurity({
+    targetUrl: `http://127.0.0.1:${localApiPort}`,
+    publishableKey: 'synthetic-local-publishable-key',
+    serviceClient: {
+      async rpc() {
+        return {
+          data: null,
           error: { code: '22023', message: 'empty array includes synthetic-secret' },
         };
       },

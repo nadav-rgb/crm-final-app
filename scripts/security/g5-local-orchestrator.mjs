@@ -429,6 +429,8 @@ export async function verifyPostCleanupSecurity({
         : [
           ['json', 'jsonb'],
           ['extract', 'jsonb'],
+          ['matching dimensions', 'array-constructor-dimensions'],
+          ['different dimensionality', 'array-aggregate-dimensionality'],
           ['dimension', 'array-dimension'],
           ['empty', 'array-empty'],
           ['length', 'array-length'],
