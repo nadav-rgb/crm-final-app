@@ -660,7 +660,6 @@ end $$;
 revoke all on function public.app_project_members_are_active(integer,uuid[]) from public, anon;
 grant execute on function public.app_project_members_are_active(integer,uuid[]) to authenticated;
 
-revoke all on function public.app_notification_recipients(integer) from public, anon, authenticated;
 drop function if exists public.app_notification_recipients(integer);
 
 create or replace function app_private.audit_row_change()

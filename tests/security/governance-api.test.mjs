@@ -156,7 +156,8 @@ test('coordinator and finance use scoped directory and assignee-validation RPCs 
   assert.match(rls, /create or replace function public\.app_project_directory\(p_project_id integer\)/i);
   assert.match(rls, /returns table\(user_id uuid, activist_code integer, name text, role text\)/i);
   assert.match(rls, /create or replace function public\.app_project_members_are_active\(\s*p_project_id integer,\s*p_user_ids uuid\[\]\s*\)/i);
-  assert.match(rls, /revoke all on function public\.app_notification_recipients\(integer\) from public, anon, authenticated/i);
+  assert.match(rls, /drop function if exists public\.app_notification_recipients\(integer\)/i);
+  assert.doesNotMatch(rls, /revoke all on function public\.app_notification_recipients\(integer\)/i);
 
   for (const sourcePath of [
     '../../lib/security/domains/route-support.mjs',
