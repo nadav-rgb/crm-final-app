@@ -1,43 +1,82 @@
-// scripts/debug-payment.cjs — מאבחן B1: מריץ את calcInteractionPayment על נתוני אמת
-// ומדפיס לכל קשר אם הוא משולם ולמה לא. שימוש: node scripts/debug-payment.cjs [activistId]
-const { createClient } = require('@supabase/supabase-js');
-const fs = require('fs');
+// Guarded, redacted diagnostic for one activist in one explicitly approved test project.
+const {
+  appendOperationalAudit,
+  beginOperation,
+  createGuardedSupabase,
+} = require('./security/operational-guard.cjs');
 const { calcInteractionPayment, comparePaymentOrder } = require('../lib/paymentCalc.js');
 
-const env = Object.fromEntries(
-  fs.readFileSync('.env.local', 'utf8').split('\n').filter(Boolean)
-    .map(l => { const i = l.indexOf('='); return [l.slice(0, i).trim(), l.slice(i + 1).trim()]; })
-);
-const sb = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SECRET_KEY, { auth: { persistSession: false } });
+const operation = beginOperation({ scriptName: 'debug-payment' });
+const activistId = requiredActivistId();
+const sb = createGuardedSupabase(operation, { rootDir: require('node:path').join(__dirname, '..') });
 
-(async () => {
-  const activistId = Number(process.argv[2] || 11);
-  const { data: inter } = await sb.from('interactions').select('*').eq('activist_id', activistId);
-  const { data: contacts } = await sb.from('contacts').select('id, name, high_potential');
-  const cmap = Object.fromEntries((contacts || []).map(c => [String(c.id), c]));
-
-  // קבץ לפי חודש כמו שהאפליקציה עושה
-  const byMonth = {};
-  for (const i of (inter || [])) {
-    const d = new Date(i.date); const k = `${d.getFullYear()}-${d.getMonth() + 1}`;
-    (byMonth[k] ||= []).push(i);
+function requiredActivistId() {
+  const activistId = Number(operation.option('activist-id'));
+  if (!Number.isSafeInteger(activistId) || activistId <= 0) {
+    throw new Error('Operational guard refused: --activist-id must be a positive numeric identifier');
   }
+  return activistId;
+}
 
-  for (const [month, list] of Object.entries(byMonth)) {
-    console.log(`\n=== activist ${activistId} — חודש ${month} (${list.length} קשרים) ===`);
-    // אותו סדר ואותה צבירה כמו calcMonthlyPayment — אחרת הסקריפט שנועד לדבג את המנוע
-    // מדווח מספר אחר ממנו: הקצאה לפי ערך (לא לפי תאריך), וצבירה של המזכים בלבד.
-    const sorted = list.sort((a, b) => comparePaymentOrder(a, b));
+function rows(result, label) {
+  if (result.error) throw new Error(`Operational query refused: ${label}`);
+  return operation.assertBoundedRows(result.data ?? [], label);
+}
+
+async function main() {
+  await appendOperationalAudit(sb, operation, 'operational.debug-payment.read');
+  const [interactionsResult, contactsResult] = await Promise.all([
+    sb.from('interactions')
+      .select('id,contact_id,activist_id,project_id,type,quality,duration_minutes,date,participants')
+      .eq('project_id', operation.target.projectId).eq('activist_id', activistId)
+      .limit(operation.maxRows + 1),
+    sb.from('contacts')
+      .select('id,high_potential')
+      .eq('project_id', operation.target.projectId)
+      .limit(operation.maxRows + 1),
+  ]);
+  const interactions = rows(interactionsResult, 'interactions');
+  const contacts = rows(contactsResult, 'contacts');
+  const contactsById = new Map(contacts.map((contact) => [String(contact.id), contact]));
+  const byMonth = new Map();
+  for (const interaction of interactions) {
+    const date = new Date(interaction.date);
+    const month = `${date.getUTCFullYear()}-${date.getUTCMonth() + 1}`;
+    const list = byMonth.get(month) ?? [];
+    list.push(interaction);
+    byMonth.set(month, list);
+  }
+  const summary = [];
+  for (const [month, list] of byMonth) {
     const accumulated = [];
+    let payable = 0;
     let total = 0;
-    for (const i of sorted) {
-      const contact = cmap[String(i.contact_id)];
-      const isHigh = contact?.high_potential ?? false;
-      const prevForContact = accumulated.filter(x => x.contact_id === i.contact_id);
-      const r = calcInteractionPayment(i, prevForContact, isHigh, accumulated);
-      if (r.payable) { accumulated.push(i); total += r.amount; }
-      console.log(`${i.date} ${String(i.type).padEnd(7)} ${String(i.quality).padEnd(8)} dur=${i.duration_minutes} high=${isHigh} → ${r.payable ? `₪${r.amount}` : `❌ ${r.reason}`}`);
+    for (const interaction of [...list].sort(comparePaymentOrder)) {
+      const previousForContact = accumulated.filter((entry) => entry.contact_id === interaction.contact_id);
+      const result = calcInteractionPayment(
+        interaction,
+        previousForContact,
+        contactsById.get(String(interaction.contact_id))?.high_potential ?? false,
+        accumulated,
+      );
+      if (result.payable) {
+        accumulated.push(interaction);
+        payable += 1;
+        total += result.amount;
+      }
     }
-    console.log(`סה"כ חודשי: ₪${total}`);
+    summary.push({ month, rows: list.length, payable, unpaid: list.length - payable, total });
   }
-})();
+  process.stdout.write(`${JSON.stringify({
+    script: operation.scriptName,
+    activist: operation.redact(activistId),
+    projectId: operation.target.projectId,
+    maxRows: operation.maxRows,
+    summary,
+  }, null, 2)}\n`);
+}
+
+main().catch(() => {
+  console.error('Operational diagnostic failed without exposing target or business data.');
+  process.exitCode = 1;
+});

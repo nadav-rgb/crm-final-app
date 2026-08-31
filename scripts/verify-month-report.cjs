@@ -1,70 +1,94 @@
-// scripts/verify-month-report.cjs — מאמת שמנוע התשלומים יודע לחשב חודש היסטורי (לא רק "החודש").
-// שימוש: node scripts/verify-month-report.cjs 2026 7      (שנה, חודש 1-12)
-// מריץ את calcMonthlyPayment על נתוני אמת מ-Supabase עבור החודש המבוקש ומדפיס סיכום לפעיל.
-const { createClient } = require('@supabase/supabase-js');
-const fs = require('fs');
+// Guarded, aggregate-only historical payment verification.
+const path = require('node:path');
+const {
+  appendOperationalAudit,
+  beginOperation,
+  createGuardedSupabase,
+} = require('./security/operational-guard.cjs');
 const { calcMonthlyPayment, deriveMitzvotBonuses } = require('../lib/paymentCalc.js');
 
-const env = Object.fromEntries(
-  fs.readFileSync('.env.local', 'utf8').split('\n').filter(Boolean)
-    .map(l => { const i = l.indexOf('='); return [l.slice(0, i).trim(), l.slice(i + 1).trim()]; })
-);
-const sb = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SECRET_KEY, { auth: { persistSession: false } });
+const operation = beginOperation({ scriptName: 'verify-month-report' });
+const [rawYear, rawMonth] = operation.positional;
+const year = Number(rawYear);
+const month = Number(rawMonth);
+if (!Number.isSafeInteger(year) || year < 2020 || year > 2100 || !Number.isSafeInteger(month) || month < 1 || month > 12) {
+  throw new Error('Operational guard refused: provide explicit year/month positional scope');
+}
+const sb = createGuardedSupabase(operation, { rootDir: path.join(__dirname, '..') });
 
-const MONTH_NAMES = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+function bounded(result, label) {
+  if (result.error) throw new Error(`Operational query refused: ${label}`);
+  return operation.assertBoundedRows(result.data ?? [], label);
+}
 
-(async () => {
-  const year  = Number(process.argv[2] || new Date().getFullYear());
-  const month = Number(process.argv[3] || new Date().getMonth() + 1) - 1; // 0-indexed
-  const monthKey = `${year}-${month}`;
-  const startIso = `${year}-${String(month + 1).padStart(2, '0')}-01`;
-  const endIso   = month === 11 ? `${year + 1}-01-01` : `${year}-${String(month + 2).padStart(2, '0')}-01`;
-
-  const [{ data: interactions }, { data: contacts }, { data: activists }, { data: cancellations }, { data: expenses }, { data: tours }] =
-    await Promise.all([
-      sb.from('interactions').select('*'),
-      sb.from('contacts').select('*'),
-      sb.from('activist_directory').select('*'),
-      sb.from('bonus_cancellations').select('bonus_key'),
-      sb.from('expenses').select('*'),
-      sb.from('tours').select('*'),
-    ]);
-
-  const cancelledKeys = new Set((cancellations || []).map(c => c.bonus_key));
-
-  // בונוסים נגזרים — אותה לוגיקה בדיוק כמו lib/CrmStore.jsx
-  const newParticipantBonuses = (contacts || [])
-    .filter(c => c.activist_id && c.joined_at && (c.source === 'external' || c.referred_by))
-    .map(c => { const d = new Date(c.joined_at); return { activist_id: c.activist_id, contact_id: c.id, contactName: c.name, month: `${d.getFullYear()}-${d.getMonth()}` }; });
-
-  // בונוסי מצוות — מהגזירה המשותפת ב-lib/paymentCalc.js, לא עותק מקומי.
-  // בונוס אחד לכל אירוע-עליה, גם בקפיצה של כמה רמות (דיווח מוטי גלעד, 2026-08-02).
-  const mitzvotBonuses = deriveMitzvotBonuses(contacts);
-
-  // מיפוי זהה ל-lib/CrmStore.jsx: ה-view חושף activist_code, לא id.
-  const paid = (activists || [])
-    .filter(a => a.role === 'activist')
-    .map(a => ({ ...a, id: Number(a.activist_code) }));
-  let grand = 0, rows = 0;
-  console.log(`\n=== ${MONTH_NAMES[month]} ${year} (monthKey=${monthKey}) ===\n`);
-
-  for (const a of paid) {
-    const myMitzvot = mitzvotBonuses.filter(b => Number(b.activist_id) === Number(a.id) && b.month === monthKey);
-    const myNew     = newParticipantBonuses.filter(b => Number(b.activist_id) === Number(a.id) && b.month === monthKey);
-    const r = calcMonthlyPayment(a.id, interactions || [], contacts || [], myMitzvot, myNew, undefined, cancelledKeys, { year, month });
-    const exp = (expenses || []).filter(x => Number(x.activist_id) === Number(a.id) && x.date >= startIso && x.date < endIso)
-      .reduce((s, x) => s + Number(x.amount || 0), 0);
-    const guided = (tours || []).filter(t => t.status === 'completed' && Number(t.guide_activist_id) === Number(a.id) && t.date >= startIso && t.date < endIso).length;
-    const guidePay = guided * 750;
-    const totalRow = r.total + exp + guidePay;
-    if (totalRow === 0) continue;
-    rows++;
-    grand += totalRow;
-    console.log(`${String(a.name).padEnd(22)} ${String(totalRow).padStart(7)} ₪   (קשרים ${r.breakdown.filter(b => b.type === 'קשר').length}, בונוסים ${r.breakdown.filter(b => b.type !== 'קשר').length}${exp ? `, הוצאות ${exp}₪` : ''}${guidePay ? `, סיורים ${guidePay}₪` : ''})`);
+async function main() {
+  await appendOperationalAudit(sb, operation, 'operational.month-report.read');
+  const [interactionsResult, contactsResult, activistsResult, cancellationsResult, expensesResult, toursResult] = await Promise.all([
+    sb.from('interactions').select('id,contact_id,activist_id,project_id,type,quality,duration_minutes,date,participants')
+      .eq('project_id', operation.target.projectId).limit(operation.maxRows + 1),
+    sb.from('contacts').select('id,activist_id,project_id,joined_at,source,referred_by,mitzvot_history,high_potential')
+      .eq('project_id', operation.target.projectId).limit(operation.maxRows + 1),
+    sb.from('activist_directory').select('activist_code,role,project_id,project_ids')
+      .contains('project_ids', [operation.target.projectId]).limit(operation.maxRows + 1),
+    sb.from('bonus_cancellations').select('bonus_key,project_id')
+      .eq('project_id', operation.target.projectId).limit(operation.maxRows + 1),
+    sb.from('expenses').select('activist_id,project_id,date,amount')
+      .eq('project_id', operation.target.projectId).limit(operation.maxRows + 1),
+    sb.from('tours').select('project_id,status,guide_activist_id,date')
+      .eq('project_id', operation.target.projectId).limit(operation.maxRows + 1),
+  ]);
+  const interactions = bounded(interactionsResult, 'interactions');
+  const contacts = bounded(contactsResult, 'contacts');
+  const activists = bounded(activistsResult, 'activists');
+  const cancellations = bounded(cancellationsResult, 'bonus cancellations');
+  const expenses = bounded(expensesResult, 'expenses');
+  const tours = bounded(toursResult, 'tours');
+  const monthIndex = month - 1;
+  const monthKey = `${year}-${monthIndex}`;
+  const start = `${year}-${String(month).padStart(2, '0')}-01`;
+  const end = month === 12 ? `${year + 1}-01-01` : `${year}-${String(month + 1).padStart(2, '0')}-01`;
+  const cancelled = new Set(cancellations.map((entry) => entry.bonus_key));
+  const participantBonuses = contacts
+    .filter((contact) => contact.activist_id && contact.joined_at && (contact.source === 'external' || contact.referred_by))
+    .map((contact) => {
+      const date = new Date(contact.joined_at);
+      return { activist_id: contact.activist_id, contact_id: contact.id, month: `${date.getFullYear()}-${date.getMonth()}` };
+    });
+  const mitzvot = deriveMitzvotBonuses(contacts);
+  const paid = activists.filter((entry) => entry.role === 'activist')
+    .map((entry) => Number(entry.activist_code)).filter(Number.isSafeInteger);
+  let rows = 0;
+  let total = 0;
+  for (const activistId of paid) {
+    const payment = calcMonthlyPayment(
+      activistId, interactions, contacts,
+      mitzvot.filter((bonus) => Number(bonus.activist_id) === activistId && bonus.month === monthKey),
+      participantBonuses.filter((bonus) => Number(bonus.activist_id) === activistId && bonus.month === monthKey),
+      undefined, cancelled, { year, month: monthIndex },
+    );
+    const expensesTotal = expenses.filter((entry) => Number(entry.activist_id) === activistId && entry.date >= start && entry.date < end)
+      .reduce((sum, entry) => sum + Number(entry.amount ?? 0), 0);
+    const guideTotal = tours.filter((entry) => entry.status === 'completed' && Number(entry.guide_activist_id) === activistId
+      && entry.date >= start && entry.date < end).length * 750;
+    const grandTotal = payment.total + expensesTotal + guideTotal;
+    if (grandTotal !== 0) {
+      rows += 1;
+      total += grandTotal;
+    }
   }
+  if (total === 0) throw new Error('Operational verification refused: zero aggregate total');
+  process.stdout.write(`${JSON.stringify({
+    script: operation.scriptName,
+    target: operation.redact(operation.target.ref),
+    projectId: operation.target.projectId,
+    period: `${year}-${String(month).padStart(2, '0')}`,
+    maxRows: operation.maxRows,
+    paidActivists: rows,
+    aggregateTotal: total,
+  }, null, 2)}\n`);
+}
 
-  console.log(`\n${'='.repeat(60)}\nסה"כ ${rows} פעילים: ${grand.toLocaleString()} ₪\n`);
-
-  if (grand === 0) { console.error('❌ FAIL — החישוב החזיר 0. המנוע לא מכבד את הפרמטר period.'); process.exit(1); }
-  console.log('✅ PASS — המנוע חישב חודש היסטורי בהצלחה.');
-})();
+main().catch(() => {
+  console.error('Operational month verification failed without exposing target or payroll data.');
+  process.exitCode = 1;
+});

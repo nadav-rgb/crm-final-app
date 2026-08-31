@@ -1,126 +1,121 @@
-// scripts/verify-payroll-xlsx.cjs — מאמת את גיליון השכר שיורד מכפתור "ייצוא לאקסל".
-// שימוש: node scripts/verify-payroll-xlsx.cjs 2026 7      (שנה, חודש 1-12)
-//
-// בונה את אותו paymentData שעמוד /payments בונה, מריץ עליו את buildPayrollWorkbook
-// האמיתי מ-lib/payrollExcel.js, כותב קובץ, קורא אותו בחזרה ובודק:
-//   1. כל שורה מסתכמת: פעילות + בונוסים + סיורים + הוצאות === סה"כ
-//   2. סכום עמודת הסה"כ === הסכום שעמוד התשלומים מציג
-//   3. הקובץ שנכתב באמת נפתח, עם עברית ונוסחאות SUM תקינות
-const { createClient } = require('@supabase/supabase-js');
-const fs = require('fs');
-const path = require('path');
+// Guarded payroll workbook verification. The workbook stays in approved encrypted/non-synced storage.
+const fs = require('node:fs');
+const path = require('node:path');
+const {
+  appendOperationalAudit,
+  beginOperation,
+  createGuardedSupabase,
+} = require('./security/operational-guard.cjs');
 const { calcMonthlyPayment, deriveMitzvotBonuses } = require('../lib/paymentCalc.js');
 const { buildPayrollWorkbook, buildPayrollRows } = require('../lib/payrollExcel.js');
 
-const env = Object.fromEntries(
-  fs.readFileSync('.env.local', 'utf8').split('\n').filter(Boolean)
-    .map(l => { const i = l.indexOf('='); return [l.slice(0, i).trim(), l.slice(i + 1).trim()]; })
-);
-const sb = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SECRET_KEY, { auth: { persistSession: false } });
+const operation = beginOperation({ scriptName: 'verify-payroll-xlsx' });
+const [rawYear, rawMonth] = operation.positional;
+const year = Number(rawYear);
+const month = Number(rawMonth);
+if (!Number.isSafeInteger(year) || year < 2020 || year > 2100 || !Number.isSafeInteger(month) || month < 1 || month > 12) {
+  throw new Error('Operational guard refused: provide explicit year/month positional scope');
+}
+const sb = createGuardedSupabase(operation, { rootDir: path.join(__dirname, '..') });
 
-const MONTH_NAMES = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
-const fail = m => { console.error(`\n❌ FAIL — ${m}`); process.exit(1); };
+function bounded(result, label) {
+  if (result.error) throw new Error(`Operational query refused: ${label}`);
+  return operation.assertBoundedRows(result.data ?? [], label);
+}
 
-(async () => {
-  const year  = Number(process.argv[2] || new Date().getFullYear());
-  const month = Number(process.argv[3] || new Date().getMonth() + 1) - 1;
-  const monthKey = `${year}-${month}`;
-  const startIso = `${year}-${String(month + 1).padStart(2, '0')}-01`;
-  const endIso   = month === 11 ? `${year + 1}-01-01` : `${year}-${String(month + 2).padStart(2, '0')}-01`;
-
-  const [{ data: interactions }, { data: contacts }, { data: activists }, { data: cancellations }, { data: expenses }, { data: tours }] =
-    await Promise.all([
-      sb.from('interactions').select('*'),
-      sb.from('contacts').select('*'),
-      sb.from('activist_directory').select('*'),
-      sb.from('bonus_cancellations').select('bonus_key'),
-      sb.from('expenses').select('*'),
-      sb.from('tours').select('*'),
-    ]);
-
-  const cancelledKeys = new Set((cancellations || []).map(c => c.bonus_key));
-
-  const newParticipantBonuses = (contacts || [])
-    .filter(c => c.activist_id && c.joined_at && (c.source === 'external' || c.referred_by))
-    .map(c => { const d = new Date(c.joined_at); return { activist_id: c.activist_id, contact_id: c.id, contactName: c.name, month: `${d.getFullYear()}-${d.getMonth()}` }; });
-
-  // בונוסי מצוות — מהגזירה המשותפת ב-lib/paymentCalc.js, לא עותק מקומי.
-  // בונוס אחד לכל אירוע-עליה, גם בקפיצה של כמה רמות (דיווח מוטי גלעד, 2026-08-02).
-  const mitzvotBonuses = deriveMitzvotBonuses(contacts);
-
-  // אותו paymentData בדיוק שעמוד /payments בונה
-  const paymentData = (activists || [])
-    .filter(a => a.role === 'activist')
-    .map(a => ({ ...a, id: Number(a.activist_code) }))
-    .map(activist => {
-      const myMitzvot = mitzvotBonuses.filter(b => Number(b.activist_id) === Number(activist.id) && b.month === monthKey);
-      const myNew     = newParticipantBonuses.filter(b => Number(b.activist_id) === Number(activist.id) && b.month === monthKey);
-      const result = calcMonthlyPayment(activist.id, interactions || [], contacts || [], myMitzvot, myNew, undefined, cancelledKeys, { year, month });
-      const expensesTotal = (expenses || [])
-        .filter(x => Number(x.activist_id) === Number(activist.id) && x.date >= startIso && x.date < endIso)
-        .reduce((s, x) => s + Number(x.amount || 0), 0);
-      const guidedCount = (tours || []).filter(t => t.status === 'completed' && Number(t.guide_activist_id) === Number(activist.id) && t.date >= startIso && t.date < endIso).length;
+async function main() {
+  await appendOperationalAudit(sb, operation, 'operational.payroll-xlsx.read');
+  const [interactionsResult, contactsResult, activistsResult, cancellationsResult, expensesResult, toursResult] = await Promise.all([
+    sb.from('interactions').select('id,contact_id,activist_id,project_id,type,quality,duration_minutes,date,participants')
+      .eq('project_id', operation.target.projectId).limit(operation.maxRows + 1),
+    sb.from('contacts').select('id,activist_id,project_id,joined_at,source,referred_by,mitzvot_history,high_potential')
+      .eq('project_id', operation.target.projectId).limit(operation.maxRows + 1),
+    sb.from('activist_directory').select('activist_code,name,role,project_id,project_ids')
+      .contains('project_ids', [operation.target.projectId]).limit(operation.maxRows + 1),
+    sb.from('bonus_cancellations').select('bonus_key,project_id')
+      .eq('project_id', operation.target.projectId).limit(operation.maxRows + 1),
+    sb.from('expenses').select('activist_id,project_id,date,amount')
+      .eq('project_id', operation.target.projectId).limit(operation.maxRows + 1),
+    sb.from('tours').select('project_id,status,guide_activist_id,date')
+      .eq('project_id', operation.target.projectId).limit(operation.maxRows + 1),
+  ]);
+  const interactions = bounded(interactionsResult, 'interactions');
+  const contacts = bounded(contactsResult, 'contacts');
+  const activists = bounded(activistsResult, 'activists');
+  const cancellations = bounded(cancellationsResult, 'bonus cancellations');
+  const expenses = bounded(expensesResult, 'expenses');
+  const tours = bounded(toursResult, 'tours');
+  const monthIndex = month - 1;
+  const monthKey = `${year}-${monthIndex}`;
+  const start = `${year}-${String(month).padStart(2, '0')}-01`;
+  const end = month === 12 ? `${year + 1}-01-01` : `${year}-${String(month + 1).padStart(2, '0')}-01`;
+  const cancelled = new Set(cancellations.map((entry) => entry.bonus_key));
+  const participantBonuses = contacts
+    .filter((contact) => contact.activist_id && contact.joined_at && (contact.source === 'external' || contact.referred_by))
+    .map((contact) => {
+      const date = new Date(contact.joined_at);
+      return { activist_id: contact.activist_id, contact_id: contact.id, month: `${date.getFullYear()}-${date.getMonth()}` };
+    });
+  const mitzvot = deriveMitzvotBonuses(contacts);
+  const paymentData = activists.filter((entry) => entry.role === 'activist')
+    .map((entry) => ({ ...entry, id: Number(entry.activist_code) }))
+    .filter((entry) => Number.isSafeInteger(entry.id))
+    .map((activist) => {
+      const payment = calcMonthlyPayment(
+        activist.id, interactions, contacts,
+        mitzvot.filter((bonus) => Number(bonus.activist_id) === activist.id && bonus.month === monthKey),
+        participantBonuses.filter((bonus) => Number(bonus.activist_id) === activist.id && bonus.month === monthKey),
+        undefined, cancelled, { year, month: monthIndex },
+      );
+      const expensesTotal = expenses.filter((entry) => Number(entry.activist_id) === activist.id && entry.date >= start && entry.date < end)
+        .reduce((sum, entry) => sum + Number(entry.amount ?? 0), 0);
+      const guidedCount = tours.filter((entry) => entry.status === 'completed' && Number(entry.guide_activist_id) === activist.id
+        && entry.date >= start && entry.date < end).length;
       const guidePay = guidedCount * 750;
-      return { activist, ...result, expensesTotal, guidePay, guidedCount, grandTotal: result.total + expensesTotal + guidePay };
+      return { activist, ...payment, expensesTotal, guidePay, guidedCount, grandTotal: payment.total + expensesTotal + guidePay };
     })
-    .filter(d => d.grandTotal !== 0);
-
-  const pageTotal = paymentData.reduce((s, d) => s + d.grandTotal, 0);
-  const monthName = MONTH_NAMES[month];
-
-  // --- 1. כל שורה מסתכמת ---
+    .filter((entry) => entry.grandTotal !== 0);
+  operation.assertBoundedRows(paymentData, 'payroll rows');
+  if (paymentData.length === 0) throw new Error('Operational verification refused: no bounded payroll rows');
   const rows = buildPayrollRows(paymentData);
-  if (rows.length !== paymentData.length) fail(`נבנו ${rows.length} שורות עבור ${paymentData.length} פעילים`);
-  for (const r of rows) {
-    const sum = r.activity + r.bonuses + r.guide + r.expenses;
-    if (sum !== r.total) fail(`${r.name}: ${r.activity}+${r.bonuses}+${r.guide}+${r.expenses} = ${sum} ≠ ${r.total}`);
+  for (const row of rows) {
+    if (row.activity + row.bonuses + row.guide + row.expenses !== row.total) {
+      throw new Error('Operational verification refused: payroll row total mismatch');
+    }
   }
-  console.log(`✅ כל ${rows.length} השורות מסתכמות נכון (פעילות + בונוסים + סיורים + הוצאות = סה"כ)`);
-
-  // --- 2. הסכום תואם לעמוד ---
-  const rowsTotal = rows.reduce((s, r) => s + r.total, 0);
-  if (rowsTotal !== pageTotal) fail(`סכום הגיליון ${rowsTotal} ≠ הסכום בעמוד ${pageTotal}`);
-  console.log(`✅ סכום הגיליון תואם לעמוד התשלומים: ${rowsTotal.toLocaleString()} ₪`);
-
-  // --- 3. הקובץ נכתב ונקרא בחזרה ---
-  const wb = await buildPayrollWorkbook(paymentData, monthName, year);
-  const outPath = path.join(require('os').tmpdir(), `payroll-${year}-${month}.xlsx`);
-  await wb.xlsx.writeFile(outPath);
-  const bytes = fs.statSync(outPath).size;
-
+  const pageTotal = paymentData.reduce((sum, entry) => sum + entry.grandTotal, 0);
+  if (rows.reduce((sum, row) => sum + row.total, 0) !== pageTotal) {
+    throw new Error('Operational verification refused: aggregate total mismatch');
+  }
+  const monthName = new Intl.DateTimeFormat('he-IL', { month: 'long', timeZone: 'UTC' })
+    .format(new Date(Date.UTC(year, monthIndex, 1)));
+  const workbook = await buildPayrollWorkbook(paymentData, monthName, year);
+  const outputPath = operation.exportPath(`payroll-${operation.target.ref}-${year}-${String(month).padStart(2, '0')}.xlsx`);
+  await workbook.xlsx.writeFile(outputPath);
   const ExcelJS = (await import('exceljs')).default;
-  const back = new ExcelJS.Workbook();
-  await back.xlsx.readFile(outPath);
-  const ws = back.worksheets[0];
-  if (!ws) fail('הקובץ שנכתב לא מכיל גיליון');
-  if (ws.name !== `תשלומים ${monthName}`) fail(`שם גיליון שגוי: "${ws.name}"`);
-  if (!ws.views?.[0]?.rightToLeft) fail('הגיליון לא נשמר כ-RTL');
-
-  const headers = ws.getRow(1).values.slice(1);
-  const expectedHeaders = ['שם הפעיל','תשלום פעילות','בונוסים','הדרכת סיורים','החזר הוצאות','סה"כ לתשלום'];
-  if (JSON.stringify(headers) !== JSON.stringify(expectedHeaders)) fail(`כותרות שגויות: ${JSON.stringify(headers)}`);
-
-  // בקריאה חוזרת מקובץ, exceljs לא משחזר את מפתחות העמודות (הם קיימים רק בזיכרון),
-  // ולכן הגישה כאן היא לפי אינדקס: 1=שם, 2=פעילות, 3=בונוסים, 4=סיורים, 5=הוצאות, 6=סה"כ.
-  const COL = { name: 1, activity: 2, bonuses: 3, guide: 4, expenses: 5, total: 6 };
-
-  // שורת הסיכום היא האחרונה, ובה נוסחת SUM ולא ערך קפוא
-  const last = ws.getRow(ws.rowCount);
-  if (last.getCell(COL.name).value !== 'סה"כ') fail('שורת הסיכום חסרה');
-  const totalCell = last.getCell(COL.total);
-  if (!totalCell.formula || !/^SUM\(/.test(totalCell.formula)) fail(`תא הסיכום אינו נוסחת SUM: ${JSON.stringify(totalCell.value)}`);
-
-  // התאים הכספיים נשמרו כמספרים ולא כטקסט
-  const firstData = ws.getRow(2);
-  for (const key of ['activity','bonuses','guide','expenses','total']) {
-    if (typeof firstData.getCell(COL[key]).value !== 'number') fail(`התא ${key} בשורה 2 אינו מספר`);
+  const reloaded = new ExcelJS.Workbook();
+  await reloaded.xlsx.readFile(outputPath);
+  const worksheet = reloaded.worksheets[0];
+  if (!worksheet?.views?.[0]?.rightToLeft || worksheet.getRow(worksheet.rowCount).getCell(1).value !== 'סה"כ') {
+    throw new Error('Operational verification refused: workbook layout mismatch');
   }
-  if (ws.getColumn(COL.total).numFmt !== '#,##0 ₪') fail('פורמט כספי חסר בעמודת הסה"כ');
+  const totalCell = worksheet.getRow(worksheet.rowCount).getCell(6);
+  if (!totalCell.formula || !/^SUM\(/.test(totalCell.formula)) {
+    throw new Error('Operational verification refused: workbook total formula mismatch');
+  }
+  process.stdout.write(`${JSON.stringify({
+    script: operation.scriptName,
+    target: operation.redact(operation.target.ref),
+    projectId: operation.target.projectId,
+    period: `${year}-${String(month).padStart(2, '0')}`,
+    maxRows: operation.maxRows,
+    payrollRows: rows.length,
+    aggregateTotal: pageTotal,
+    workbook: { path: operation.redact(outputPath), bytes: fs.statSync(outputPath).size },
+  }, null, 2)}\n`);
+}
 
-  console.log(`✅ הקובץ נכתב (${(bytes/1024).toFixed(1)} KB), נקרא בחזרה, RTL + כותרות + נוסחת SUM (${totalCell.formula}) תקינים`);
-  console.log(`✅ תאים כספיים נשמרו כמספרים עם פורמט ₪`);
-  console.log(`\nדוגמה — 3 שורות ראשונות:`);
-  rows.slice(0, 3).forEach(r => console.log(`   ${r.name.padEnd(20)} פעילות ${String(r.activity).padStart(6)} | בונוסים ${String(r.bonuses).padStart(5)} | סיורים ${String(r.guide).padStart(5)} | הוצאות ${String(r.expenses).padStart(5)} | סה"כ ${String(r.total).padStart(6)}`));
-  console.log(`\n📄 ${outPath}`);
-  console.log(`\n✅ PASS — גיליון השכר תקין.`);
-})().catch(e => fail(e.stack || e.message));
+main().catch(() => {
+  console.error('Operational payroll verification failed without exposing target or payroll data.');
+  process.exitCode = 1;
+});
