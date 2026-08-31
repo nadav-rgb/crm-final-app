@@ -1053,7 +1053,7 @@ export function createLocalPostgresAdapter({
     const result = runCommand(dockerExecutable, [
       'exec', '-i', databaseContainer,
       'psql', '--username=postgres', '--dbname=postgres', '--no-psqlrc',
-      '--set=ON_ERROR_STOP=1', '--tuples-only', '--no-align', '--quiet',
+      '--set=ON_ERROR_STOP=1', '--set=VERBOSITY=verbose', '--tuples-only', '--no-align', '--quiet',
     ], {
       input: sql,
       encoding: 'utf8',
@@ -1062,7 +1062,10 @@ export function createLocalPostgresAdapter({
       maxBuffer: 16 * 1024 * 1024,
     });
     if (!result || result.status !== 0 || typeof result.stdout !== 'string') {
-      throw new Error('local PostgreSQL command failed');
+      const sqlState = /ERROR:\s+([0-9A-Z]{5}):/.exec(String(result?.stderr ?? ''))?.[1] ?? 'UNKNOWN';
+      const error = new Error(`local PostgreSQL command failed [${sqlState}]`);
+      error.sqlState = sqlState;
+      throw error;
     }
     return result.stdout.trim();
   }
@@ -1094,7 +1097,15 @@ grant all privileges on all sequences in schema public to service_role;
 notify pgrst, 'reload schema';`);
     },
     async applyFile(file) {
-      await execute(await readFile(repositoryFile(file)));
+      const sql = await readFile(repositoryFile(file));
+      try {
+        await execute(sql);
+      } catch (cause) {
+        const sqlState = /^(?:[0-9A-Z]{5}|UNKNOWN)$/.test(cause?.sqlState ?? '')
+          ? cause.sqlState
+          : 'UNKNOWN';
+        throw new Error(`local PostgreSQL migration failed at ${file} [${sqlState}]`);
+      }
     },
     async inventory() {
       const output = await execute(`select json_build_object(

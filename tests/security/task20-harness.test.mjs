@@ -708,6 +708,34 @@ test('local PostgreSQL adapter executes only exact task-owned Docker/psql comman
   assert.equal(commands[1].options.input, '-- migration 0018');
 });
 
+test('local PostgreSQL adapter reports only an approved migration path and SQLSTATE', async () => {
+  const module = await import('../../scripts/security/g5-local-orchestrator.mjs');
+  let capturedArgs = [];
+  const database = module.createLocalPostgresAdapter({
+    repoRoot: 'C:/synthetic/repository',
+    target: localSafety(),
+    dockerExecutable: 'C:/Program Files/Docker/docker.exe',
+    async readFile() { return '-- failing migration'; },
+    runCommand(_executable, args) {
+      capturedArgs = args;
+      return {
+        status: 1,
+        stdout: '',
+        stderr: 'ERROR:  42P01: sensitive SQL and row value\nLOCATION: sensitive detail',
+      };
+    },
+  });
+  await assert.rejects(
+    () => database.applyFile('migrations/0019_security_rls.sql'),
+    (error) => {
+      assert.match(error.message, /migrations\/0019_security_rls\.sql \[42P01\]/);
+      assert.doesNotMatch(error.message, /sensitive|row value|SQL and/i);
+      return true;
+    },
+  );
+  assert.ok(capturedArgs.includes('--set=VERBOSITY=verbose'));
+});
+
 test('PostgreSQL invariants are measured directly and fail closed without caller verdict JSON', async () => {
   const module = await import('../../scripts/security/g5-local-orchestrator.mjs');
   assert.equal(typeof module.runDirectPostgresAssertions, 'function');
