@@ -79,6 +79,10 @@ function deriveMitzvotBonusesLegacy(contacts, perLevel) {
   const mitzvotNew = NEW.deriveMitzvotBonuses(contacts);
   const mitzvotOld = deriveMitzvotBonusesLegacy(contacts, NEW.MITZVOT_BONUS_PER_LEVEL);
 
+  // בונוס תורני — פיצ'ר חדש שלא קיים במנוע הישן; נגזר ומועבר רק לקריאת NEW,
+  // אותו דפוס כמו scripts/verify-payroll-xlsx.cjs / scripts/verify-month-report.cjs.
+  const toraniNew = NEW.deriveToraniBonuses(interactions, contacts);
+
   const paid = (activists || []).filter(a => a.role === 'activist').map(a => ({ ...a, id: Number(a.activist_code) }));
 
   const rows = [];
@@ -93,7 +97,8 @@ function deriveMitzvotBonusesLegacy(contacts, perLevel) {
     const newRes = NEW.calcMonthlyPayment(a.id, interactions, contacts,
       mitzvotNew.filter(b => Number(b.activist_id) === a.id && b.month === monthKey),
       newParticipantBonuses.filter(b => Number(b.activist_id) === a.id && b.month === monthKey),
-      NEW.DEFAULTS, cancelledKeys, period);
+      NEW.DEFAULTS, cancelledKeys, period,
+      toraniNew.filter(b => Number(b.activist_id) === a.id && b.month === monthKey));
 
     sumOld += oldRes.total;
     sumNew += newRes.total;
