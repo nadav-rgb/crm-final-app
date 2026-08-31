@@ -41,6 +41,7 @@ function verifiedStackIdentity(overrides = {}) {
         name: `supabase_mailpit_${projectId}`, projectId, role: 'mailpit',
         hostPorts: [contract.stackPorts.mailpit, contract.stackPorts.smtp, contract.stackPorts.pop3],
       },
+      { name: `supabase_pg_meta_${projectId}`, projectId, role: 'meta', hostPorts: [] },
       { name: `supabase_studio_${projectId}`, projectId, role: 'studio', hostPorts: [contract.stackPorts.studio] },
     ],
   };
@@ -53,6 +54,7 @@ function pinnedDockerContainers({ projectId = testProjectId, apiPort = testApiPo
     ['kong', { '8000/tcp': [{ HostIp: '127.0.0.1', HostPort: String(ports.api) }] }],
     ['auth', {}],
     ['rest', {}],
+    ['pg_meta', {}],
     ['studio', { '3000/tcp': [{ HostIp: '127.0.0.1', HostPort: String(ports.studio) }] }],
     ['analytics', { '4000/tcp': [{ HostIp: '127.0.0.1', HostPort: String(ports.analytics) }] }],
     ['edge_runtime', {}],

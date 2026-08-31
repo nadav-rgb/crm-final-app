@@ -57,7 +57,7 @@ const REQUIRED_CONTAINERS = Object.freeze({
 });
 const OPTIONAL_CONTAINERS = Object.freeze({
   studio: 'supabase_studio_',
-  meta: 'supabase_meta_',
+  meta: 'supabase_pg_meta_',
   storage: 'supabase_storage_',
   imgproxy: 'supabase_imgproxy_',
   realtime: 'supabase_realtime_',
