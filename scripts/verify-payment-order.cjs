@@ -520,6 +520,74 @@ const JULY = { year: 2026, month: 6 }; // month 0-indexed
   check('getMonthlyTotalForActivist: קשר ידידותי בחודש 1 מהצטרפות (בתוך החלון) כן נספר (250 ₪)', totalJanG, 250);
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// בונוס תורני — 3 חודשים רצופים, פעם אחת בלבד ללקוח (2026-08-31).
+// ────────────────────────────────────────────────────────────────────────────
+{
+  const { deriveToraniBonuses } = require('../lib/paymentCalc.js');
+  const mkT = (activistId, contactId, date, id) => ({ activist_id: activistId, project_id: 1, contact_id: contactId, quality: 'תורני', type: 'פרונטלי', date, id });
+  const contactsTB = [{ id: 1, name: 'לקוח א' }, { id: 2, name: 'לקוח ב' }];
+
+  // 3 חודשים רצופים (יוני,יולי,אוגוסט) → בונוס מיוחס לאוגוסט.
+  const threeConsecutive = [mkT(7, 1, '2026-06-05', 1), mkT(7, 1, '2026-07-05', 2), mkT(7, 1, '2026-08-05', 3)];
+  const bonuses1 = deriveToraniBonuses(threeConsecutive, contactsTB);
+  check('3 חודשים רצופים = בונוס אחד, מיוחס לחודש השלישי', bonuses1.length, 1);
+  check('הבונוס מיוחס לאוגוסט (חודש 7, 0-indexed)', bonuses1[0]?.month, '2026-7');
+  check('סכום הבונוס = 1000', bonuses1[0]?.amount, 1000);
+
+  // 2 חודשים + פער + 1 נוסף — אף פעם לא 3 ברצף → אין בונוס.
+  const withGap = [mkT(7, 2, '2026-06-05', 4), mkT(7, 2, '2026-07-05', 5), mkT(7, 2, '2026-09-05', 6)];
+  check('2 חודשים רצופים ואז פער = אין בונוס', deriveToraniBonuses(withGap, contactsTB).length, 0);
+
+  // פער ואז 3 רצופים בהמשך — הבונוס מיוחס לרצף השני, לא כולל את החודש המבודד.
+  const gapThenRun = [mkT(7, 1, '2026-03-05', 7), mkT(7, 1, '2026-06-05', 8), mkT(7, 1, '2026-07-05', 9), mkT(7, 1, '2026-08-05', 10)];
+  const bonuses2 = deriveToraniBonuses(gapThenRun, contactsTB);
+  check('פער ואז 3 רצופים = בונוס אחד, מיוחס לרצף האמיתי (אוגוסט)', bonuses2.length === 1 && bonuses2[0].month === '2026-7', true);
+
+  // 5 חודשים רצופים ברציפות (יוני-אוקטובר) — עדיין בונוס *אחד* בלבד, לא נוסף בחודש 4/5.
+  const fiveConsecutive = [1,2,3,4,5].map((_, k) => mkT(7, 1, `2026-0${6 + k}-05`, 20 + k));
+  check('5 חודשים רצופים = בונוס אחד בלבד (לא 3)', deriveToraniBonuses(fiveConsecutive, contactsTB).length, 1);
+
+  // התחיל ידידותי, עבר לתורני — הספירה מתחילה מהתורני הראשון, לא מהידידותי.
+  const friendlyThenTorani = [
+    { activist_id: 7, project_id: 1, contact_id: 1, quality: 'ידידותי', type: 'פרונטלי', date: '2026-01-05', id: 30 },
+    { activist_id: 7, project_id: 1, contact_id: 1, quality: 'ידידותי', type: 'פרונטלי', date: '2026-02-05', id: 31 },
+    mkT(7, 1, '2026-06-05', 32), mkT(7, 1, '2026-07-05', 33), mkT(7, 1, '2026-08-05', 34),
+  ];
+  const bonuses3 = deriveToraniBonuses(friendlyThenTorani, contactsTB);
+  check('ידידותי לפני תורני לא משפיע — עדיין 3 חודשים מהתורני (אוגוסט)', bonuses3.length === 1 && bonuses3[0].month === '2026-7', true);
+
+  // שני לקוחות שונים — כל אחד נספר בנפרד.
+  const twoClients = [...threeConsecutive, mkT(7, 2, '2026-06-05', 40), mkT(7, 2, '2026-07-05', 41), mkT(7, 2, '2026-08-05', 42)];
+  check('2 לקוחות, כל אחד השלים רצף בנפרד = 2 בונוסים', deriveToraniBonuses(twoClients, contactsTB).length, 2);
+
+  // שני פעילים שונים עם אותו לקוח — כל רצף נספר בנפרד לפי (activist_id, contact_id).
+  // תואם לשאר מנוע התשלום, שבו לקוח משויך לפעיל אחד; הפונקציה טהורה ולא מניחה
+  // שיוך יחיד, אז כל פעיל נבדק על הרצף שלו בלבד גם אם שניהם קיימים באותם הנתונים.
+  const twoActivists = [
+    mkT(7, 1, '2026-06-05', 50), mkT(7, 1, '2026-07-05', 51), mkT(7, 1, '2026-08-05', 52),
+    mkT(9, 1, '2026-06-05', 53), mkT(9, 1, '2026-07-05', 54), mkT(9, 1, '2026-08-05', 55),
+  ];
+  const bonuses4 = deriveToraniBonuses(twoActivists, contactsTB);
+  check('שני פעילים שונים עם אותו לקוח = 2 בונוסים (נספרים בנפרד)', bonuses4.length, 2);
+  check('כל בונוס מיוחס לפעיל הנכון', bonuses4.map(b => b.activist_id).sort((a, b) => a - b), [7, 9]);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// חיווט toraniBonuses דרך calcMonthlyPayment — נכנס ל-breakdown, מכבד ביטול.
+// ────────────────────────────────────────────────────────────────────────────
+{
+  const contactsTW = [{ id: 1, name: 'לקוח' }];
+  const toraniBonus = [{ activist_id: 7, contact_id: 1, contactName: 'לקוח', amount: 1000, desc: 'השלים 3 חודשים רצופים של קשר תורני', month: '2026-7' }];
+  const r1 = calcMonthlyPayment(7, [], contactsTW, [], [], DEFAULTS, new Set(), { year: 2026, month: 7 }, toraniBonus);
+  check('בונוס תורני נכנס ל-breakdown ולסה"כ', [r1.total, r1.breakdown.find(b => b.type === 'בונוס-תורני')?.amount], [1000, 1000]);
+
+  const { makeBonusKey } = require('../lib/paymentCalc.js');
+  const cancelledKey = makeBonusKey(7, 'בונוס-תורני', 1, '2026-7');
+  const r2 = calcMonthlyPayment(7, [], contactsTW, [], [], DEFAULTS, new Set([cancelledKey]), { year: 2026, month: 7 }, toraniBonus);
+  check('ביטול בונוס-תורני (bonus_cancellations) מכבד — לא נכנס ל-total', r2.total, 0);
+}
+
 // payableInteractionsThisMonth (lib/activistStats.js) קוראת ל-monthStart() הפנימי
 // שלה בלי אפשרות להעביר "עכשיו" מבחוץ — לכן הבדיקה בונה תאריכים *יחסית* לתאריך
 // האמיתי של הרצת הבדיקה (new Date()), לא תאריך קבוע, כדי שתישאר תקפה בכל יום.
