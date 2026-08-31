@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import {
   MIGRATION_SEQUENCE,
@@ -1691,4 +1692,24 @@ test('G5 runbook pins local-only reset, per-step verification, rollback and exac
   assert.match(runbook, /0024[\s\S]*0023[\s\S]*0022[\s\S]*0021[\s\S]*0020[\s\S]*0019[\s\S]*0018/i);
   assert.match(runbook, /security_run_id[\s\S]*exact/i);
   assert.match(runbook, /case ID[\s\S]*expected[\s\S]*actual/i);
+});
+
+test('documented G5 entrypoint fails closed instead of deadlocking when execution is disabled', async () => {
+  const runbook = await readFile(new URL('../../docs/security/STAGING_RUNBOOK.md', import.meta.url), 'utf8');
+  const command = /^node\s+(scripts\/security\/[a-z0-9-]+\.mjs)$/m.exec(runbook)?.[1];
+  assert.ok(command, 'runbook must document one executable G5 entrypoint');
+
+  const result = spawnSync(process.execPath, [command], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+    env: {
+      PATH: process.env.PATH,
+      SystemRoot: process.env.SystemRoot,
+    },
+  });
+  const output = `${result.stdout}\n${result.stderr}`;
+  assert.notEqual(result.status, 0);
+  assert.notEqual(result.status, 13);
+  assert.match(output, /G5 local entry refused incomplete executable configuration/);
+  assert.doesNotMatch(output, /unsettled top-level await/i);
 });

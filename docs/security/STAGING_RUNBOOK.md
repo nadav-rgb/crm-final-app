@@ -97,7 +97,7 @@ credentials. The runner never loads `.env.local`.
 $env:SECURITY_TEST_EXECUTE_LOCAL_G5 = 'true'
 $env:SECURITY_TEST_SUPABASE_CLI = 'C:\absolute\path\to\supabase.exe'
 $env:SECURITY_TEST_DOCKER_CLI = 'C:\absolute\path\to\docker.exe'
-node scripts/security/provision-test-fixtures.mjs
+node scripts/security/g5-local-orchestrator.mjs
 ```
 
 The runner launches the three live suites itself and derives evidence only after their child
