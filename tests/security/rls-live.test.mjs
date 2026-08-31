@@ -36,7 +36,7 @@ function verifiedStackIdentity(overrides = {}) {
       { name: `supabase_auth_${projectId}`, projectId, role: 'auth', hostPorts: [] },
       { name: `supabase_rest_${projectId}`, projectId, role: 'rest', hostPorts: [] },
       { name: `supabase_analytics_${projectId}`, projectId, role: 'analytics', hostPorts: [contract.stackPorts.analytics] },
-      { name: `supabase_edge_runtime_${projectId}`, projectId, role: 'edge-runtime', hostPorts: [contract.stackPorts.edgeInspector] },
+      { name: `supabase_edge_runtime_${projectId}`, projectId, role: 'edge-runtime', hostPorts: [] },
       {
         name: `supabase_mailpit_${projectId}`, projectId, role: 'mailpit',
         hostPorts: [contract.stackPorts.mailpit, contract.stackPorts.smtp, contract.stackPorts.pop3],
@@ -55,7 +55,7 @@ function pinnedDockerContainers({ projectId = testProjectId, apiPort = testApiPo
     ['rest', {}],
     ['studio', { '3000/tcp': [{ HostIp: '127.0.0.1', HostPort: String(ports.studio) }] }],
     ['analytics', { '4000/tcp': [{ HostIp: '127.0.0.1', HostPort: String(ports.analytics) }] }],
-    ['edge_runtime', { '8083/tcp': [{ HostIp: '127.0.0.1', HostPort: String(ports.edgeInspector) }] }],
+    ['edge_runtime', {}],
     [smtpRole, {
       '8025/tcp': [{ HostIp: '127.0.0.1', HostPort: String(ports.mailpit) }],
       '1025/tcp': [{ HostIp: '127.0.0.1', HostPort: String(ports.smtp) }],

@@ -433,6 +433,8 @@ export function createLocalStackController({
   projectDir,
   allowedRoot,
   supabaseExecutable,
+  dockerShimExecutable,
+  dockerExecutable,
   productionUrl,
   prepareProject,
   runCommand = (executable, args, options) => spawnSync(executable, args, options),
@@ -441,11 +443,18 @@ export function createLocalStackController({
 }) {
   const resolvedRoot = path.resolve(allowedRoot ?? '');
   const resolvedProject = path.resolve(projectDir ?? '');
+  const resolvedShim = path.resolve(dockerShimExecutable ?? '');
+  const resolvedDocker = path.resolve(dockerExecutable ?? '');
   const relativeProject = path.relative(resolvedRoot, resolvedProject);
   if (!/^mekarvim-security-g5-[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/.test(projectId ?? '')
     || path.basename(resolvedProject) !== projectId
     || !relativeProject || relativeProject.startsWith('..') || path.isAbsolute(relativeProject)
-    || !path.isAbsolute(supabaseExecutable ?? '')) {
+    || !path.isAbsolute(supabaseExecutable ?? '')
+    || !path.isAbsolute(dockerShimExecutable ?? '')
+    || path.basename(resolvedShim).toLowerCase() !== 'docker.exe'
+    || !path.isAbsolute(dockerExecutable ?? '')
+    || path.basename(resolvedDocker).toLowerCase() !== 'docker.exe'
+    || resolvedShim.toLowerCase() === resolvedDocker.toLowerCase()) {
     throw new Error('local stack controller refused unexpected project boundary');
   }
   let stackContract;
@@ -455,12 +464,20 @@ export function createLocalStackController({
   const expectedPort = stackContract.stackPorts.api;
 
   function command(args, action) {
+    const inheritedPath = process.env.PATH ?? process.env.Path ?? '';
+    const shimmedPath = `${path.dirname(resolvedShim)}${path.delimiter}${inheritedPath}`;
     const result = runCommand(supabaseExecutable, args, {
       encoding: 'utf8', windowsHide: true, shell: false, maxBuffer: 16 * 1024 * 1024,
       env: {
         ...process.env,
+        PATH: shimmedPath,
+        Path: shimmedPath,
         SUPABASE_NO_UPDATE_NOTIFIER: '1',
         SUPABASE_TELEMETRY_DISABLED: '1',
+        G5_DOCKER_LOOPBACK_SHIM_ACTIVE: 'true',
+        G5_DOCKER_REAL_EXECUTABLE: resolvedDocker,
+        G5_DOCKER_EXPECTED_PROJECT_ID: projectId,
+        G5_DOCKER_ALLOWED_PUBLISH_PORTS: stackContract.persistentHostPorts.join(','),
       },
     });
     if (!result || result.status !== 0 || typeof result.stdout !== 'string') {
@@ -537,6 +554,7 @@ export function createLocalStackController({
       if (preparedContract?.cliVersion !== stackContract.cliVersion
         || JSON.stringify(preparedContract?.stackPorts) !== JSON.stringify(stackContract.stackPorts)
         || JSON.stringify(preparedContract?.services) !== JSON.stringify(stackContract.services)
+        || JSON.stringify(preparedContract?.reservedPorts) !== JSON.stringify(stackContract.reservedPorts)
         || JSON.stringify(preparedContract?.listenerPorts) !== JSON.stringify(stackContract.listenerPorts)) {
         throw new Error('local Supabase prepared config did not prove the pinned listener contract');
       }
@@ -806,6 +824,7 @@ export function loadLocalG5Configuration({
   const resolvedRepo = path.resolve(repoRoot ?? '');
   const supabaseExecutable = env.SECURITY_TEST_SUPABASE_CLI;
   const dockerExecutable = env.SECURITY_TEST_DOCKER_CLI;
+  const dockerShimExecutable = env.SECURITY_TEST_DOCKER_LOOPBACK_SHIM;
   const apiPort = Number(env.SECURITY_TEST_SUPABASE_API_PORT ?? 54321);
   const bffPort = Number(env.SECURITY_TEST_BFF_PORT ?? 43877);
   let stackPorts;
@@ -821,8 +840,10 @@ export function loadLocalG5Configuration({
     || !UUID.test(runId ?? '')
     || !path.isAbsolute(supabaseExecutable ?? '')
     || !path.isAbsolute(dockerExecutable ?? '')
+    || !path.isAbsolute(dockerShimExecutable ?? '')
+    || path.basename(dockerShimExecutable).toLowerCase() !== 'docker.exe'
     || !Number.isSafeInteger(bffPort) || bffPort < 1024 || bffPort > 65535
-    || stackContract.listenerPorts.includes(bffPort)) {
+    || stackContract.reservedPorts.includes(bffPort)) {
     throw new Error('G5 local entry refused incomplete executable configuration');
   }
   const suffix = runId.replaceAll('-', '').slice(0, 12);
@@ -843,7 +864,9 @@ export function loadLocalG5Configuration({
     evidencePath: path.join(allowedRoot, `${projectId}-evidence.json`),
     supabaseExecutable,
     dockerExecutable,
+    dockerShimExecutable,
     productionUrl: 'https://production-project.invalid',
+    reservedPorts: stackContract.reservedPorts,
   });
 }
 
@@ -1463,6 +1486,8 @@ export async function runConfiguredLocalG5({
     projectDir: config.projectDir,
     allowedRoot: config.allowedRoot,
     supabaseExecutable: config.supabaseExecutable,
+    dockerShimExecutable: config.dockerShimExecutable,
+    dockerExecutable: config.dockerExecutable,
     productionUrl: config.productionUrl,
     runDocker,
   });

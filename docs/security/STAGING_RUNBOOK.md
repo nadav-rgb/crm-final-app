@@ -93,10 +93,20 @@ verified stack shutdown. Supply only absolute local executable paths and non-sec
 do not supply fixture JSON, expected finance rows, PostgreSQL verdicts, session verdicts, tokens or
 credentials. The runner never loads `.env.local`.
 
+Supabase CLI 2.115.0 omits a host IP from its generated Docker publish arguments. Compile the
+task-owned fail-closed shim before the run; it rewrites only the exact approved mappings to a
+`127.0.0.1` Docker publish binding and rejects every other port, project label or container name.
+The orchestrator prepends this shim only to its child Supabase CLI process. Direct identity and
+cleanup inspection continues to use the absolute real Docker executable.
+
 ```powershell
+$g5ShimRoot = Join-Path $env:LOCALAPPDATA 'Temp\mekarvim-security-g5-loopback-shim'
+New-Item -ItemType Directory -Path $g5ShimRoot | Out-Null
+bun build scripts/security/g5-docker-loopback-shim.mjs --compile --outfile (Join-Path $g5ShimRoot 'docker.exe')
 $env:SECURITY_TEST_EXECUTE_LOCAL_G5 = 'true'
 $env:SECURITY_TEST_SUPABASE_CLI = 'C:\absolute\path\to\supabase.exe'
 $env:SECURITY_TEST_DOCKER_CLI = 'C:\absolute\path\to\docker.exe'
+$env:SECURITY_TEST_DOCKER_LOOPBACK_SHIM = (Join-Path $g5ShimRoot 'docker.exe')
 node scripts/security/g5-local-orchestrator.mjs
 ```
 

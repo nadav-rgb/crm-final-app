@@ -105,8 +105,9 @@ export function derivePinnedLocalStackContract(apiPort) {
     stackPorts.smtp,
     stackPorts.pop3,
     stackPorts.analytics,
-    stackPorts.edgeInspector,
   ]);
+  const reservedPorts = Object.freeze([...new Set(Object.values(stackPorts))]
+    .sort((left, right) => left - right));
   const persistentHostPorts = Object.freeze(listenerPorts.filter((port) => port !== stackPorts.shadowDb));
   const containerHostPorts = Object.freeze({
     database: Object.freeze([stackPorts.db]),
@@ -121,7 +122,7 @@ export function derivePinnedLocalStackContract(apiPort) {
     analytics: Object.freeze([stackPorts.analytics]),
     vector: Object.freeze([]),
     pooler: Object.freeze([]),
-    'edge-runtime': Object.freeze([stackPorts.edgeInspector]),
+    'edge-runtime': Object.freeze([]),
     mailpit: Object.freeze([stackPorts.mailpit, stackPorts.smtp, stackPorts.pop3]),
     inbucket: Object.freeze([stackPorts.mailpit, stackPorts.smtp, stackPorts.pop3]),
   });
@@ -130,6 +131,7 @@ export function derivePinnedLocalStackContract(apiPort) {
     stackPorts,
     services,
     listenerPorts,
+    reservedPorts,
     persistentHostPorts,
     containerHostPorts,
   });

@@ -72,7 +72,7 @@ function pinnedDockerContainers({ projectId = localProjectId, apiPort = localApi
     ['rest', {}],
     ['studio', { '3000/tcp': [{ HostIp: '127.0.0.1', HostPort: String(ports.studio) }] }],
     ['analytics', { '4000/tcp': [{ HostIp: '127.0.0.1', HostPort: String(ports.analytics) }] }],
-    ['edge_runtime', { '8083/tcp': [{ HostIp: '127.0.0.1', HostPort: String(ports.edgeInspector) }] }],
+    ['edge_runtime', {}],
     ['mailpit', {
       '8025/tcp': [{ HostIp: '127.0.0.1', HostPort: String(ports.mailpit) }],
       '1025/tcp': [{ HostIp: '127.0.0.1', HostPort: String(ports.smtp) }],
@@ -117,7 +117,7 @@ function localSafety(targetUrl = `http://127.0.0.1:${localApiPort}`) {
         },
         {
           name: `supabase_edge_runtime_${localProjectId}`, projectId: localProjectId,
-          role: 'edge-runtime', hostPorts: [contract.stackPorts.edgeInspector],
+          role: 'edge-runtime', hostPorts: [],
         },
         {
           name: `supabase_mailpit_${localProjectId}`, projectId: localProjectId,
@@ -827,10 +827,17 @@ test('local stack controller captures keys in memory and binds start/status/stop
     projectDir,
     allowedRoot: 'C:/synthetic/repository/.superpowers/sdd/2026-08-27-security-hardening/g5-local',
     supabaseExecutable: 'C:/synthetic/bin/supabase.exe',
+    dockerShimExecutable: 'C:/synthetic/shim/docker.exe',
+    dockerExecutable: 'C:/Program Files/Docker/docker.exe',
     productionUrl: 'https://production-project.invalid',
     async prepareProject() { calls.push('prepare'); return preparedContract; },
-    runCommand(_executable, args) {
+    runCommand(_executable, args, options) {
       calls.push(args.join(' '));
+      assert.equal(options.env.G5_DOCKER_LOOPBACK_SHIM_ACTIVE, 'true');
+      assert.equal(options.env.G5_DOCKER_REAL_EXECUTABLE, 'C:\\Program Files\\Docker\\docker.exe');
+      assert.equal(options.env.G5_DOCKER_EXPECTED_PROJECT_ID, localProjectId);
+      assert.equal(options.env.G5_DOCKER_ALLOWED_PUBLISH_PORTS, preparedContract.persistentHostPorts.join(','));
+      assert.equal(options.env.PATH.split(';')[0], 'C:\\synthetic\\shim');
       if (args[0] === '--version') return { status: 0, stdout: '2.115.0\n', stderr: '' };
       if (args[0] === 'start') stackRunning = true;
       if (args[0] === 'stop') stackRunning = false;
@@ -896,8 +903,12 @@ test('local stack preparation pins CLI 2.115.0 and validates every enabled and d
     apiPort: localApiPort,
   });
   assert.deepEqual(prepared.contract.listenerPorts, [
-    54320, 54321, 54322, 54323, 54324, 54325, 54326, 54327, 54342,
+    54320, 54321, 54322, 54323, 54324, 54325, 54326, 54327,
   ]);
+  assert.deepEqual(prepared.contract.reservedPorts, [
+    54320, 54321, 54322, 54323, 54324, 54325, 54326, 54327, 54329, 54342,
+  ]);
+  assert.deepEqual(prepared.contract.containerHostPorts['edge-runtime'], []);
   assert.deepEqual(prepared.contract.services, {
     api: true,
     studio: true,
@@ -979,6 +990,8 @@ test('partial non-zero stack start owns cleanup and independently proves exact f
     projectDir,
     allowedRoot: 'C:/synthetic/repository/.superpowers/sdd/2026-08-27-security-hardening/g5-local',
     supabaseExecutable: 'C:/synthetic/bin/supabase.exe',
+    dockerShimExecutable: 'C:/synthetic/shim/docker.exe',
+    dockerExecutable: 'C:/Program Files/Docker/docker.exe',
     productionUrl: 'https://production-project.invalid',
     async prepareProject() { calls.push('prepare'); return contract; },
     runCommand(_executable, args) {
@@ -1030,6 +1043,8 @@ test('partial start preserves the start error and cleanup failure while still ru
     projectDir,
     allowedRoot: 'C:/synthetic/repository/.superpowers/sdd/2026-08-27-security-hardening/g5-local',
     supabaseExecutable: 'C:/synthetic/bin/supabase.exe',
+    dockerShimExecutable: 'C:/synthetic/shim/docker.exe',
+    dockerExecutable: 'C:/Program Files/Docker/docker.exe',
     productionUrl: 'https://production-project.invalid',
     async prepareProject() { return contract; },
     runCommand(_executable, args) {
@@ -1064,6 +1079,8 @@ test('local stack controller rejects an unpinned CLI before project mutation or 
     projectDir: `C:/synthetic/repository/.superpowers/sdd/2026-08-27-security-hardening/g5-local/${localProjectId}`,
     allowedRoot: 'C:/synthetic/repository/.superpowers/sdd/2026-08-27-security-hardening/g5-local',
     supabaseExecutable: 'C:/synthetic/bin/supabase.exe',
+    dockerShimExecutable: 'C:/synthetic/shim/docker.exe',
+    dockerExecutable: 'C:/Program Files/Docker/docker.exe',
     productionUrl: 'https://production-project.invalid',
     async prepareProject() { prepared = true; },
     runCommand(_executable, args, options) {
@@ -1431,6 +1448,7 @@ test('configured G5 entry refuses caller verdicts before constructing local infr
       SECURITY_TEST_EXECUTE_LOCAL_G5: 'true',
       SECURITY_TEST_SUPABASE_CLI: 'C:/synthetic/bin/supabase.exe',
       SECURITY_TEST_DOCKER_CLI: 'C:/Program Files/Docker/docker.exe',
+      SECURITY_TEST_DOCKER_LOOPBACK_SHIM: 'C:/synthetic/shim/docker.exe',
       SECURITY_TEST_POSTGRES_ASSERTIONS: '{"searchPathHijack":"pass"}',
     },
   }), /caller verdict|self-attested/i);
@@ -1442,6 +1460,7 @@ test('configured G5 ports keep the complete pinned listener contract separate fr
     SECURITY_TEST_EXECUTE_LOCAL_G5: 'true',
     SECURITY_TEST_SUPABASE_CLI: 'C:/synthetic/bin/supabase.exe',
     SECURITY_TEST_DOCKER_CLI: 'C:/Program Files/Docker/docker.exe',
+    SECURITY_TEST_DOCKER_LOOPBACK_SHIM: 'C:/synthetic/shim/docker.exe',
   };
   const config = module.loadLocalG5Configuration({
     repoRoot: 'C:/synthetic/repository',
@@ -1461,15 +1480,39 @@ test('configured G5 ports keep the complete pinned listener contract separate fr
     edgeInspector: 65535,
   });
   assert.deepEqual(config.listenerPorts, [
-    65513, 65514, 65515, 65516, 65517, 65518, 65519, 65520, 65535,
+    65513, 65514, 65515, 65516, 65517, 65518, 65519, 65520,
   ]);
+  assert.deepEqual(config.reservedPorts, [
+    65513, 65514, 65515, 65516, 65517, 65518, 65519, 65520, 65522, 65535,
+  ]);
+  assert.equal(config.dockerShimExecutable, 'C:/synthetic/shim/docker.exe');
+
+  assert.throws(() => module.loadLocalG5Configuration({
+    repoRoot: 'C:/synthetic/repository',
+    runId: createSecurityRunId(),
+    env: {
+      SECURITY_TEST_EXECUTE_LOCAL_G5: 'true',
+      SECURITY_TEST_SUPABASE_CLI: 'C:/synthetic/bin/supabase.exe',
+      SECURITY_TEST_DOCKER_CLI: 'C:/Program Files/Docker/docker.exe',
+    },
+  }), /shim|configuration/i);
+
+  assert.throws(() => module.loadLocalG5Configuration({
+    repoRoot: 'C:/synthetic/repository',
+    runId: createSecurityRunId(),
+    env: {
+      ...baseEnv,
+      SECURITY_TEST_SUPABASE_API_PORT: '65514',
+      SECURITY_TEST_BFF_PORT: '65535',
+    },
+  }), /port|configuration/i);
 
   assert.throws(() => module.loadLocalG5Configuration({
     repoRoot: 'C:/synthetic/repository',
     runId: createSecurityRunId(),
     env: { ...baseEnv, SECURITY_TEST_SUPABASE_API_PORT: '65515' },
   }), /port|configuration/i);
-  for (const bffPort of [54320, 54321, 54322, 54323, 54324, 54325, 54326, 54327, 54342]) {
+  for (const bffPort of [54320, 54321, 54322, 54323, 54324, 54325, 54326, 54327, 54329, 54342]) {
     assert.throws(() => module.loadLocalG5Configuration({
       repoRoot: 'C:/synthetic/repository',
       runId: createSecurityRunId(),
@@ -1493,6 +1536,7 @@ test('configured G5 entry owns stack start, lifecycle, sanitized evidence write 
       SECURITY_TEST_EXECUTE_LOCAL_G5: 'true',
       SECURITY_TEST_SUPABASE_CLI: 'C:/synthetic/bin/supabase.exe',
       SECURITY_TEST_DOCKER_CLI: 'C:/Program Files/Docker/docker.exe',
+      SECURITY_TEST_DOCKER_LOOPBACK_SHIM: 'C:/synthetic/shim/docker.exe',
     },
   });
   const evidence = [{
@@ -1692,6 +1736,9 @@ test('G5 runbook pins local-only reset, per-step verification, rollback and exac
   assert.match(runbook, /0024[\s\S]*0023[\s\S]*0022[\s\S]*0021[\s\S]*0020[\s\S]*0019[\s\S]*0018/i);
   assert.match(runbook, /security_run_id[\s\S]*exact/i);
   assert.match(runbook, /case ID[\s\S]*expected[\s\S]*actual/i);
+  assert.match(runbook, /bun build scripts\/security\/g5-docker-loopback-shim\.mjs --compile/i);
+  assert.match(runbook, /SECURITY_TEST_DOCKER_LOOPBACK_SHIM/);
+  assert.match(runbook, /127\.0\.0\.1[\s\S]*Docker publish/i);
 });
 
 test('documented G5 entrypoint fails closed instead of deadlocking when execution is disabled', async () => {
