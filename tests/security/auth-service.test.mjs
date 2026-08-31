@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createAuthService } from '../../lib/security/auth-service.mjs';
+import { buildRateLimitKey, createAuthService } from '../../lib/security/auth-service.mjs';
 import { createApiClient } from '../../lib/security/api-client.mjs';
 import { getServerEnv } from '../../lib/security/env.mjs';
 import { hasCode, pick } from './helpers.mjs';
@@ -214,17 +214,21 @@ test('MFA verification rotates the session and unlocks AAL2 without exposing tok
 
 test('MFA challenge and verify consume distinct shared identity/session/IP buckets', async () => {
   const { service, rateCalls } = makeHarness();
-  const login = await service.login({ username: 'head', password: 'correct-password', ipKey: 'trusted-ip-prefix' });
+  const ipKey = 'ip4:198.51.100.0/24';
+  const login = await service.login({ username: 'head', password: 'correct-password', ipKey });
   const session = await service.getSession(login.cookieValue);
-  const challenge = await service.challengeMfa(session, undefined, { ipKey: 'trusted-ip-prefix' });
+  const challenge = await service.challengeMfa(session, undefined, { ipKey });
   assert.equal(challenge.factorId, '00000000-0000-4000-8000-000000000099');
   await service.verifyMfa(session, {
     factorId: challenge.factorId, challengeId: challenge.challengeId, code: '123456',
-  }, { ipKey: 'trusted-ip-prefix' });
+  }, { ipKey });
   const securityCalls = rateCalls.filter((call) => call.kind !== 'login');
   assert.deepEqual(securityCalls.map((call) => call.kind), ['mfa_challenge', 'mfa_verify']);
   for (const call of securityCalls) {
-    assert.match(call.key, new RegExp(`${IDS.head}.*${session.idHash}.*trusted-ip-prefix`));
+    assert.equal(call.key, buildRateLimitKey({
+      networkKey: ipKey, identity: IDS.head, session: session.idHash,
+    }));
+    assert.doesNotMatch(call.key, new RegExp(`${IDS.head}|${session.idHash}`));
     assert.equal(call.limit, 5);
     assert.equal(call.windowSeconds, 10 * 60);
   }
