@@ -61,6 +61,14 @@ function assertFinanceProjection(rows) {
   for (const row of rows ?? []) assert.deepEqual(Object.keys(row).sort(), financeKeys);
 }
 
+async function atSafeCheckpoint(name, action) {
+  try {
+    return await action();
+  } catch {
+    throw new Error(`G5_SAFE_CHECKPOINT:${name}`);
+  }
+}
+
 test('direct JWT cannot cross reminder or tour workflow boundaries', live, async (t) => {
   const { clients, resources } = loadFixture();
   await expectNoRows(clients.activistA.from('meeting_reminders')
@@ -145,21 +153,21 @@ test('direct JWT finance filters only narrow scope and projection keys are exact
     runId: resources.securityRunId,
     actorIds: resources.actorIds,
   });
-  await expectDenied(clients.financeA.rpc('app_finance_summary', {
+  await atSafeCheckpoint('finance-deny-cross-project', () => expectDenied(clients.financeA.rpc('app_finance_summary', {
     p_period: resources.period, p_project_id: resources.projectB, p_user_id: null,
-  }));
-  await expectDenied(clients.activistA.rpc('app_finance_summary', {
+  })));
+  await atSafeCheckpoint('finance-deny-cross-user', () => expectDenied(clients.activistA.rpc('app_finance_summary', {
     p_period: resources.period, p_project_id: resources.projectA, p_user_id: resources.activistB,
-  }));
-  await expectDenied(clients.headAal1.rpc('app_finance_summary', {
+  })));
+  await atSafeCheckpoint('finance-deny-head-aal1', () => expectDenied(clients.headAal1.rpc('app_finance_summary', {
     p_period: resources.period, p_project_id: resources.projectA, p_user_id: null,
-  }));
-  await expectDenied(clients.ceoAal1.rpc('app_finance_summary', {
+  })));
+  await atSafeCheckpoint('finance-deny-ceo-aal1', () => expectDenied(clients.ceoAal1.rpc('app_finance_summary', {
     p_period: resources.period, p_project_id: null, p_user_id: null,
-  }));
-  await expectDenied(clients.coordA.rpc('app_finance_summary', {
+  })));
+  await atSafeCheckpoint('finance-deny-coordinator', () => expectDenied(clients.coordA.rpc('app_finance_summary', {
     p_period: resources.period, p_project_id: resources.projectA, p_user_id: null,
-  }));
+  })));
 
   const expectedByActor = {
     ceoAal2: financeExpected.byActor.ceoAal2ProjectA,
@@ -167,14 +175,22 @@ test('direct JWT finance filters only narrow scope and projection keys are exact
     financeA: financeExpected.byActor.financeA,
     activistA: financeExpected.byActor.activistA,
   };
+  const checkpointByActor = {
+    ceoAal2: 'finance-allow-ceo-aal2',
+    headAal2: 'finance-allow-head-aal2',
+    financeA: 'finance-allow-finance',
+    activistA: 'finance-allow-activist',
+  };
   for (const actor of Object.keys(expectedByActor)) {
-    const data = await expectAllowed(clients[actor].rpc('app_finance_summary', {
-      p_period: resources.period,
-      p_project_id: resources.projectA,
-      p_user_id: actor === 'activistA' ? resources.activistA : null,
-    }));
-    assertFinanceProjection(data);
-    assert.deepEqual(data, expectedByActor[actor]);
+    await atSafeCheckpoint(checkpointByActor[actor], async () => {
+      const data = await expectAllowed(clients[actor].rpc('app_finance_summary', {
+        p_period: resources.period,
+        p_project_id: resources.projectA,
+        p_user_id: actor === 'activistA' ? resources.activistA : null,
+      }));
+      assertFinanceProjection(data);
+      assert.deepEqual(data, expectedByActor[actor]);
+    });
   }
   observeG5CaseInTest(t, 'SEC-040', 'pass');
 });

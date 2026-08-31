@@ -69,6 +69,17 @@ const LIVE_TEST_FILES = Object.freeze([
   'tests/security/db-contracts-live.test.mjs',
   'tests/security/session-live.test.mjs',
 ]);
+const SAFE_LIVE_CHECKPOINTS = Object.freeze([
+  'finance-deny-cross-project',
+  'finance-deny-cross-user',
+  'finance-deny-head-aal1',
+  'finance-deny-ceo-aal1',
+  'finance-deny-coordinator',
+  'finance-allow-ceo-aal2',
+  'finance-allow-head-aal2',
+  'finance-allow-finance',
+  'finance-allow-activist',
+]);
 const INVENTORY_KEYS = Object.freeze([
   'tables', 'columns', 'constraints', 'rlsEnabled', 'rlsForced',
   'policies', 'tableGrants', 'routineGrants', 'functions',
@@ -853,8 +864,10 @@ export function runLocalLiveTests({
       return match && G5_REQUIRED_LIVE_TESTS.includes(match[1]) ? [match[1]] : [];
     }));
     const failedIndex = G5_REQUIRED_LIVE_TESTS.findIndex((name) => failedNames.has(name));
+    const checkpoint = SAFE_LIVE_CHECKPOINTS.find((name) =>
+      String(result?.stdout ?? '').includes(`G5_SAFE_CHECKPOINT:${name}`));
     throw new Error(failedIndex >= 0
-      ? `live security suite failed [case ${failedIndex + 1}]`
+      ? `live security suite failed [case ${failedIndex + 1}${checkpoint ? ` checkpoint ${checkpoint}` : ''}]`
       : 'live security suite failed');
   }
   const tapLines = result.stdout.split(/\r?\n/);

@@ -1747,12 +1747,12 @@ test('single live-suite runner derives sanitized evidence only from an actual ch
     runCommand() {
       return {
         status: 1,
-        stdout: `not ok 7 - ${module.G5_REQUIRED_LIVE_TESTS[0]}\n# sensitive fixture detail`,
+        stdout: `not ok 7 - ${module.G5_REQUIRED_LIVE_TESTS[0]}\nerror: 'G5_SAFE_CHECKPOINT:finance-allow-ceo-aal2'\n# sensitive fixture detail`,
         stderr: 'sensitive process detail',
       };
     },
   }), (error) => {
-    assert.match(error.message, /live security suite failed \[case 1\]/);
+    assert.match(error.message, /live security suite failed \[case 1 checkpoint finance-allow-ceo-aal2\]/);
     assert.doesNotMatch(error.message, /sensitive|fixture|process/i);
     return true;
   });
