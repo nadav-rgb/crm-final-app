@@ -721,14 +721,14 @@ test('local PostgreSQL adapter reports only an approved migration path and SQLST
       return {
         status: 1,
         stdout: '',
-        stderr: 'ERROR:  42P01: sensitive SQL and row value\nLOCATION: sensitive detail',
+        stderr: 'ERROR:  42P01: sensitive SQL and row value\nLINE 663: sensitive SQL\nLOCATION: sensitive detail',
       };
     },
   });
   await assert.rejects(
     () => database.applyFile('migrations/0019_security_rls.sql'),
     (error) => {
-      assert.match(error.message, /migrations\/0019_security_rls\.sql \[42P01\]/);
+      assert.match(error.message, /migrations\/0019_security_rls\.sql \[42P01 line 663\]/);
       assert.doesNotMatch(error.message, /sensitive|row value|SQL and/i);
       return true;
     },

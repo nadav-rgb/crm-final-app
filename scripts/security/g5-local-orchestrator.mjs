@@ -1062,9 +1062,13 @@ export function createLocalPostgresAdapter({
       maxBuffer: 16 * 1024 * 1024,
     });
     if (!result || result.status !== 0 || typeof result.stdout !== 'string') {
-      const sqlState = /ERROR:\s+([0-9A-Z]{5}):/.exec(String(result?.stderr ?? ''))?.[1] ?? 'UNKNOWN';
+      const safeStderr = String(result?.stderr ?? '');
+      const sqlState = /ERROR:\s+([0-9A-Z]{5}):/.exec(safeStderr)?.[1] ?? 'UNKNOWN';
+      const parsedLine = Number(/\bLINE\s+(\d+):/.exec(safeStderr)?.[1]);
+      const sqlLine = Number.isSafeInteger(parsedLine) && parsedLine > 0 ? parsedLine : null;
       const error = new Error(`local PostgreSQL command failed [${sqlState}]`);
       error.sqlState = sqlState;
+      error.sqlLine = sqlLine;
       throw error;
     }
     return result.stdout.trim();
@@ -1104,7 +1108,10 @@ notify pgrst, 'reload schema';`);
         const sqlState = /^(?:[0-9A-Z]{5}|UNKNOWN)$/.test(cause?.sqlState ?? '')
           ? cause.sqlState
           : 'UNKNOWN';
-        throw new Error(`local PostgreSQL migration failed at ${file} [${sqlState}]`);
+        const sqlLine = Number.isSafeInteger(cause?.sqlLine) && cause.sqlLine > 0
+          ? ` line ${cause.sqlLine}`
+          : '';
+        throw new Error(`local PostgreSQL migration failed at ${file} [${sqlState}${sqlLine}]`);
       }
     },
     async inventory() {
