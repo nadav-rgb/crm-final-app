@@ -100,7 +100,10 @@ export default function AddInteractionPage() {
   // הטיוטה. סינון ידני כאן תמיד יסטה מהמנוע ברגע שכללי התקרה משתנים — וזה מה שקרה:
   // ספירה של כל הדיווחים (גם אלה שנדחו) הזהירה "חרגת" על קשר שהמנוע כן משלם עליו,
   // ועם CAP_EXCEED_BLOCKS דלוק אפילו חסמה אותו לגמרי.
-  const previousActivistMonthly = paidBefore(draft, myMonthly, contacts, paymentConfig);
+  // הפרמטר החמישי (כל ה-interactions, לא רק myMonthly) — כדי ש-paidBefore יוכל לבנות
+  // contactContext נכון *לכל קשר קודם שהוא בעצמו בודק*: בלעדיו חלון-3-החודשים ומעבר-
+  // לתורני לא רואים מעבר לגבול החודש הנוכחי בזמן שהיא מחשבת את הקשרים הקודמים.
+  const previousActivistMonthly = paidBefore(draft, myMonthly, contacts, paymentConfig, interactions);
   const previousContactMonthly  = previousActivistMonthly.filter(i => i.contact_id === contactId);
   const isShabbat = form.type === 'אירוח שבת';
   // "רב משתתפים" עבר לקומפוננטה נפרדת (toggleMulti) — לא מוצג עוד כאיכות רגילה כדי למנוע כפילות.
@@ -115,13 +118,18 @@ export default function AddInteractionPage() {
   const DESCRIPTION_PLACEHOLDERS = { 'אירוח שבת': 'ספר על השבת — מי התארח, איך הייתה האווירה, מה במיוחד ריגש...' };
   const descriptionLabel       = DESCRIPTION_LABELS[form.type] ?? 'תיאור המפגש';
   const descriptionPlaceholder = DESCRIPTION_PLACEHOLDERS[form.type] ?? 'תאר את המפגש בפירוט — מי הלקוח, מה דובר, מה הפוטנציאל...';
+  // contactContext לתצוגה המקדימה — כל קשרי הפעיל עם הלקוח הזה, לא רק החודש הנוכחי
+  // (myMonthly), כדי שחלון-3-חודשים ומעבר-לתורני יעבדו נכון גם לקוח ותיק.
+  const contactHistory = interactions.filter(i => i.contact_id === contactId && i.activist_id === currentUser?.id);
+  const contactContext = { joinedAt: contact.joined_at ?? null, allInteractionsWithContact: contactHistory };
   const payableCheck = (isAchdut && form.type && (form.quality || isShabbat) && form.long_enough)
     ? calcInteractionPayment(
-        { type: form.type, quality: form.quality, duration_minutes: duration },
+        { type: form.type, quality: form.quality, duration_minutes: duration, date: form.date },
         previousContactMonthly,
         contact.high_potential,
         previousActivistMonthly,
-        paymentConfig
+        paymentConfig,
+        contactContext
       )
     : null;
 

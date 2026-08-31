@@ -408,5 +408,58 @@ const JULY = { year: 2026, month: 6 }; // month 0-indexed
     calc(mkFriendly('2026-08-20'), [mkFriendly('2026-08-01')], false, [mkFriendly('2026-08-01')], DEFAULTS, ctx('2026-08-01')).payable, true);
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// עקביות contactContext: calcMonthlyPayment (המנוע) ו-paidBefore+contactContext
+// (תצוגה מקדימה, בדיוק כמו Step 5 בעמוד add-interaction) חייבים להסכים על אותו
+// קשר ידידותי מחוץ לחלון — בדיוק כמו שדיווח מוטי גלעד (2026-07-21) חייב את אותו
+// דבר לגבי תקרות.
+//
+// ⚠️ תיקון לבדיקה שבברifing המקורי: הבדיקה השנייה שם ציפתה ש-paidBefore(draftFC,
+// oldFriendly, contactsFC, DEFAULTS) יחזיר מערך ריק. זה שגוי — ינואר ופברואר כל
+// אחד *בפני עצמו* בתוך חלון 3 החודשים מהצטרפות ינואר (0 ו-1 חודשים בהתאמה) ומתחת
+// למכסת FRIENDLY_FRONTAL_MONTHLY_CAP (2), ולכן שניהם מזכים כשנבדקים ללא אפריל
+// בקלט — התנהגות נכונה, לא תקלה. יתרה מזאת, הבדיקה המקורית כלל לא בדקה את הדבר
+// שהיא טוענת לבדוק (עקביות על *הטיוטה עצמה*) — רק עובדה משנית על צבירה קודמת.
+// הבדיקה למטה מתקנת את הערך הצפוי (2, מאומת ידנית + באמפירית) ומוסיפה את בדיקת
+// העקביות האמיתית: משחזרים את דפוס Step 5 במדויק (paidBefore בונה
+// previousActivistMonthly מכל ההיסטוריה, contactContext נבנה בנפרד מאותה היסטוריה
+// קיימת, ו-calcInteractionPayment מחליט על הטיוטה) ומוודאים שהתוצאה זהה למנוע —
+// גם ב-payable וגם ב-reason.
+// ────────────────────────────────────────────────────────────────────────────
+{
+  const contactsFC = [{ id: 1, name: 'לקוח ותיק', joined_at: '2026-01-01' }];
+  const oldFriendly = Array.from({ length: 2 }, (_, k) => ({
+    activist_id: 7, project_id: 1, id: 800 + k, contact_id: 1, type: 'פרונטלי',
+    quality: 'ידידותי', duration_minutes: 60, date: `2026-0${k + 1}-15`,
+  })); // ינואר, פברואר — כל אחד בפני עצמו עדיין בתוך חלון 3 החודשים מהצטרפות ינואר
+  const draftRow = { activist_id: 7, project_id: 1, contact_id: 1, type: 'פרונטלי', quality: 'ידידותי', duration_minutes: 60, date: '2026-04-15', id: 850 };
+  const draftFC  = { type: 'פרונטלי', quality: 'ידידותי', date: '2026-04-15', id: Number.MAX_SAFE_INTEGER };
+  const allFC    = [...oldFriendly, draftRow];
+
+  // המנוע: הקשר החדש (אפריל, 3 חודשים מהצטרפות ינואר — מחוץ לחלון) לא זוכה.
+  const engineResult = calcMonthlyPayment(7, allFC, contactsFC, [], [], DEFAULTS, new Set(), { year: 2026, month: 3 });
+  check('המנוע דוחה קשר ידידותי בחודש 4 מהצטרפות', engineResult.breakdown.filter(b => b.type === 'קשר').length, 0);
+
+  // paidBefore על ינואר+פברואר בלבד (בלי אפריל ב-monthlyInteractions כלל) מזכה את
+  // שניהם — נכון, לא תקלה (ראה ההסבר למעלה). זו עדיין לא בדיקת-העקביות עצמה, רק
+  // וידוא ש-paidBefore לא סוטה/קורס על הקלט הזה.
+  const previewBefore = paidBefore(draftFC, oldFriendly, contactsFC, DEFAULTS);
+  check('paidBefore מזכה את ינואר+פברואר בפני עצמם (כל אחד בתוך חלונו שלו)', previewBefore.length, 2);
+
+  // בדיקת העקביות עצמה — דפוס Step 5 המדויק: אין קשרים אחרים באפריל, אז
+  // previousActivistMonthly ריק (מבודד את חלון-3-החודשים, לא מכסה כלשהי).
+  const previousActivistMonthlyFC = paidBefore(draftFC, [], contactsFC, DEFAULTS, allFC);
+  const previousContactMonthlyFC  = previousActivistMonthlyFC.filter(i => i.contact_id === 1);
+  const contactContextFC = { joinedAt: contactsFC[0].joined_at, allInteractionsWithContact: oldFriendly };
+  const previewDraftResult = calcInteractionPayment(
+    { type: draftFC.type, quality: draftFC.quality, duration_minutes: 60, date: draftFC.date },
+    previousContactMonthlyFC, false, previousActivistMonthlyFC, DEFAULTS, contactContextFC
+  );
+  check('התצוגה המקדימה (paidBefore+contactContext, כמו Step 5) מסכימה עם המנוע: הטיוטה לא מזכה',
+    previewDraftResult.payable, false);
+  check('התצוגה המקדימה: אותה סיבה בדיוק כמו המנוע (חלון הזכאות)',
+    previewDraftResult.reason, engineResult.unpaid[0]?.reason);
+}
+
 console.log(failures === 0 ? '\nכל הבדיקות עברו.' : `\n${failures} בדיקות נכשלו.`);
 process.exit(failures === 0 ? 0 : 1);
