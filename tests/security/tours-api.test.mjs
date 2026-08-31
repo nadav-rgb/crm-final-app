@@ -69,6 +69,19 @@ test('unsafe report content and authority fields are rejected', async () => {
   await assert.rejects(() => submitTourReportCommand(makeContext(activistA), { ...tourA, status: 'cancelled' }, { notes: 'דיווח' }), hasCode('TOUR_CANCELLED'));
 });
 
+test('direct tour-report RPC rejects missing, null, blank, oversized and extra report fields', async () => {
+  const sql = await readFile(new URL('../../migrations/0022_tours_security.sql', import.meta.url), 'utf8');
+  const rpc = sql.match(/create or replace function public\.app_submit_tour_report\([\s\S]*?end \$\$;/i)?.[0] ?? '';
+  assert.match(rpc, /not\s*\(p_report\s*\?\s*'notes'\)/i,
+    'a missing notes key must be rejected before PostgreSQL NULL semantics can bypass the guard');
+  assert.match(rpc, /coalesce\(jsonb_typeof\(p_report\s*->\s*'notes'\),\s*''\)\s*<>\s*'string'/i,
+    'JSON null must not satisfy the required string contract');
+  assert.match(rpc, /coalesce\(length\(btrim\(p_report\s*->>\s*'notes'\)\),\s*0\)\s*not between\s*1\s*and\s*4000/i,
+    'empty, whitespace-only, and oversized notes must be rejected at the RPC boundary');
+  assert.match(rpc, /p_report\s*-\s*array\['notes','participantCount','outcome'\]\s*<>\s*'\{\}'::jsonb/i,
+    'the direct RPC must retain strict unknown-key rejection');
+});
+
 test('repeated cancel is a conflict and does not mutate again', async () => {
   await assert.rejects(() => cancelTourCommand(makeContext(coordA), { ...tourA, status: 'cancelled' }, { reason: 'כפול' }), hasCode('TOUR_ALREADY_CANCELLED'));
 });

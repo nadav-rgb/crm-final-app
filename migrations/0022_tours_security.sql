@@ -136,8 +136,9 @@ begin
   if auth.uid() is null or nullif(btrim(p_tour_id), '') is null or p_report is null
      or jsonb_typeof(p_report) <> 'object'
      or p_report - array['notes','participantCount','outcome'] <> '{}'::jsonb
-     or jsonb_typeof(p_report -> 'notes') <> 'string'
-     or length(btrim(p_report ->> 'notes')) not between 1 and 4000
+     or not (p_report ? 'notes')
+     or coalesce(jsonb_typeof(p_report -> 'notes'), '') <> 'string'
+     or coalesce(length(btrim(p_report ->> 'notes')), 0) not between 1 and 4000
      or (p_report ? 'participantCount' and (
        jsonb_typeof(p_report -> 'participantCount') <> 'number'
        or (p_report ->> 'participantCount')::numeric <> trunc((p_report ->> 'participantCount')::numeric)
