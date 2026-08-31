@@ -429,6 +429,12 @@ export async function verifyPostCleanupSecurity({
         : [
           ['json', 'jsonb'],
           ['extract', 'jsonb'],
+          ['dimension', 'array-dimension'],
+          ['empty', 'array-empty'],
+          ['length', 'array-length'],
+          ['literal', 'array-literal'],
+          ['subscript', 'array-subscript'],
+          ['null', 'null'],
           ['array', 'array'],
           ['privilege', 'privilege'],
           ['parameter', 'parameter'],
@@ -437,7 +443,6 @@ export async function verifyPostCleanupSecurity({
           ['role', 'role'],
           ['grant', 'grant'],
           ['policy', 'policy'],
-          ['null', 'null'],
         ].find(([token]) => message.includes(token))?.[1] ?? 'UNKNOWN';
     throw new Error(`post-cleanup forced-RLS posture proof failed [${code} ${reason}]`);
   }
