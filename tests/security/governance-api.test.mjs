@@ -10,10 +10,12 @@ import {
   changeMembershipCommand,
   changeMembership,
   createGovernanceRpc,
+  listProjectDirectory,
   projectDirectoryDto,
   profileDirectoryDto,
 } from '../../lib/security/domains/governance.mjs';
 import { membershipChangeSchema } from '../../lib/security/schemas.mjs';
+import { activeMemberLookup } from '../../lib/security/domains/route-support.mjs';
 
 const target = '00000000-0000-4000-8000-000000000099';
 const errorCode = (expected) => (error) => error instanceof SecurityError && error.code === expected;
@@ -116,6 +118,55 @@ test('directory projection is role-specific and contains no contact PII', () => 
     userId: activistA.userId, name: 'משתמש בדיקה', activistCode: 9999,
   });
   assert.equal(JSON.stringify(profileDirectoryDto(makeContext(headA), profile)).includes('private@'), false);
+});
+
+test('coordinator and finance use scoped directory and assignee-validation RPCs instead of raw profile or membership reads', async () => {
+  const calls = [];
+  const db = {
+    rpc: async (name, args) => {
+      calls.push({ name, args });
+      if (name === 'app_project_directory') {
+        return {
+          data: [{ user_id: activistA.userId, activist_code: 7001, name: 'Synthetic', role: 'activist' }],
+          error: null,
+        };
+      }
+      if (name === 'app_project_members_are_active') return { data: true, error: null };
+      throw new Error(`unexpected RPC ${name}`);
+    },
+  };
+  for (const actor of [coordA, financeA]) {
+    const directory = await listProjectDirectory({ ...makeContext(actor), db }, PROJECT_A);
+    assert.deepEqual(directory, [{
+      userId: activistA.userId, activistCode: 7001, name: 'Synthetic', role: 'activist',
+    }]);
+  }
+  assert.equal(await activeMemberLookup({ ...makeContext(coordA), db })(PROJECT_A, activistA.userId), true);
+  assert.deepEqual(calls.map(({ name }) => name), [
+    'app_project_directory', 'app_project_directory', 'app_project_members_are_active',
+  ]);
+  assert.deepEqual(calls[2].args, { p_project_id: PROJECT_A, p_user_ids: [activistA.userId] });
+  assert.equal(await activeMemberLookup({ ...makeContext(coordA), db })(PROJECT_A, null), false,
+    'invalid assignees must be refused before issuing an RPC');
+  assert.equal(calls.length, 3);
+
+  const rls = await readFile(new URL('../../migrations/0019_security_rls.sql', import.meta.url), 'utf8');
+  assert.doesNotMatch(rls, /grant select on public\.profiles to authenticated/i);
+  assert.doesNotMatch(rls, /grant select on public\.project_memberships to authenticated/i);
+  assert.match(rls, /create or replace function public\.app_project_directory\(p_project_id integer\)/i);
+  assert.match(rls, /returns table\(user_id uuid, activist_code integer, name text, role text\)/i);
+  assert.match(rls, /create or replace function public\.app_project_members_are_active\(\s*p_project_id integer,\s*p_user_ids uuid\[\]\s*\)/i);
+  assert.match(rls, /revoke all on function public\.app_notification_recipients\(integer\) from public, anon, authenticated/i);
+
+  for (const sourcePath of [
+    '../../lib/security/domains/route-support.mjs',
+    '../../lib/security/domains/meetings.mjs',
+    '../../lib/security/domains/tours.mjs',
+  ]) {
+    const source = await readFile(new URL(sourcePath, import.meta.url), 'utf8');
+    assert.doesNotMatch(source, /from\(['"]project_memberships['"]\)/);
+    assert.match(source, /app_project_members_are_active|projectMembersAreActive/);
+  }
 });
 
 test('projects projection exposes only authorized project IDs', () => {

@@ -16,6 +16,7 @@ import {
   createExpenseCommand,
   escapeSpreadsheetFormula,
   listExpenses,
+  listBonusCandidates,
   listPayments,
   ownBonusCancellationRequest,
   paymentRequestCommand,
@@ -195,6 +196,49 @@ test('bonus candidate scope rejects role, AAL and cross-project authority', () =
     }),
     hasCode('NOT_FOUND'),
   );
+});
+
+test('coordinator bonus workflow resolves the target through the scoped directory RPC, never raw profiles', async () => {
+  const rpcCalls = [];
+  const tableReads = [];
+  const chain = (result) => ({
+    select: () => chain(result),
+    eq: () => chain(result),
+    gte: () => chain(result),
+    lt: () => chain(result),
+    maybeSingle: async () => result,
+    then: (resolve, reject) => Promise.resolve(result).then(resolve, reject),
+  });
+  const db = {
+    rpc: async (name, args) => {
+      rpcCalls.push({ name, args });
+      if (name !== 'app_project_directory') throw new Error(`unexpected RPC ${name}`);
+      return {
+        data: [{ user_id: activistA.userId, activist_code: 7001, name: 'Synthetic', role: 'activist' }],
+        error: null,
+      };
+    },
+    from: (table) => {
+      tableReads.push(table);
+      if (table === 'payment_config') {
+        return chain({
+          data: {
+            bonus_loyalty_4: 1, bonus_loyalty_6: 1, bonus_mitzvot_level: 1,
+            bonus_new_participant: 1, min_duration_minutes: 15,
+          },
+          error: null,
+        });
+      }
+      return chain({ data: [], error: null });
+    },
+  };
+  assert.deepEqual(await listBonusCandidates({ ...makeContext(coordA), db }, {
+    period: '2026-08', projectId: PROJECT_A, userId: activistA.userId,
+  }), []);
+  assert.deepEqual(rpcCalls, [{
+    name: 'app_project_directory', args: { p_project_id: PROJECT_A },
+  }]);
+  assert.equal(tableReads.includes('profiles'), false);
 });
 
 test('bonus candidates match the legacy key contract and expose no contact PII', () => {

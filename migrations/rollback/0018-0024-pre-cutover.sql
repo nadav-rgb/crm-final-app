@@ -186,6 +186,8 @@ drop trigger if exists sync_bonus_cancellations_actor_identity on public.bonus_c
 drop trigger if exists sync_bonus_cancellations_identity on public.bonus_cancellations;
 
 drop function if exists public.app_security_posture();
+drop function if exists public.app_project_members_are_active(integer,uuid[]);
+drop function if exists public.app_project_directory(integer);
 drop function if exists public.app_notification_recipients(integer);
 drop function if exists public.app_current_role();
 drop function if exists public.app_current_project_ids();

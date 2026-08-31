@@ -218,8 +218,8 @@ end $$;
 revoke all on all tables in schema public from anon;
 revoke all on all tables in schema public from authenticated;
 grant select, insert, delete on public.projects to authenticated;
-grant select on public.project_memberships to authenticated;
-grant select on public.profiles to authenticated;
+grant select (project_id, user_id, role, status) on public.project_memberships to authenticated;
+grant select (id, activist_code, name, global_role, security_version, disabled_at) on public.profiles to authenticated;
 grant select, insert, delete on public.contacts to authenticated;
 grant select, insert on public.interactions to authenticated;
 grant select, insert, delete on public.base_meeting_reports to authenticated;
@@ -380,15 +380,10 @@ create policy projects_delete on public.projects for delete to authenticated usi
 
 create policy project_memberships_select on public.project_memberships for select to authenticated using (
   (user_id = auth.uid() and public.app_user_active()) or public.app_is_ceo()
-  or public.app_has_project_role(project_id, array['head'])
 );
 
 create policy profiles_select on public.profiles for select to authenticated using (
-  (id = auth.uid() and public.app_user_active()) or public.app_is_ceo() or exists (
-    select 1 from public.project_memberships target
-    where target.user_id = profiles.id and target.status = 'active'
-      and public.app_has_project_role(target.project_id, array['head','coord','finance'])
-  )
+  (id = auth.uid() and public.app_user_active()) or public.app_is_ceo()
 );
 
 create policy contacts_select on public.contacts for select to authenticated using (
@@ -603,23 +598,69 @@ create policy feedback_reports_delete on public.feedback_reports for delete to a
 
 alter view public.activist_directory set (security_invoker = on);
 
-create or replace function public.app_notification_recipients(target_project integer)
-returns table(activist_code integer, name text, role text)
-language sql stable security definer set search_path = pg_catalog, public as $$
-  select p.activist_code, p.name,
-         coalesce(p.global_role, pm.role) as role
-  from public.profiles p
-  left join public.project_memberships pm
-    on pm.user_id = p.id and pm.project_id = target_project and pm.status = 'active'
-  where p.disabled_at is null and p.activist_code is not null
-    and (public.app_is_ceo() or exists (
-      select 1 from public.project_memberships caller
-      where caller.user_id = auth.uid() and caller.project_id = target_project and caller.status = 'active'
-    ))
-    and (p.global_role = 'ceo' or pm.role in ('head','coord','finance'))
-$$;
-revoke all on function public.app_notification_recipients(integer) from public, anon;
-grant execute on function public.app_notification_recipients(integer) to authenticated;
+create or replace function public.app_project_directory(p_project_id integer)
+returns table(user_id uuid, activist_code integer, name text, role text)
+language plpgsql stable security definer
+set search_path = pg_catalog, public
+as $$
+begin
+  if p_project_id is null or auth.uid() is null or not (
+    public.app_is_ceo()
+    or public.app_has_project_role(p_project_id, array['head','coord','finance'])
+    or public.app_has_project_role(p_project_id, array['activist'])
+  ) then
+    raise exception 'project directory not found' using errcode = '42501';
+  end if;
+  return query
+  select pm.user_id, p.activist_code, p.name, pm.role
+  from public.project_memberships pm
+  join public.profiles p on p.id = pm.user_id
+  where pm.project_id = p_project_id
+    and pm.status = 'active'
+    and p.disabled_at is null
+    and (
+      public.app_is_ceo()
+      or public.app_has_project_role(p_project_id, array['head','coord','finance'])
+      or pm.user_id = auth.uid()
+    )
+  order by p.name, pm.user_id;
+end $$;
+revoke all on function public.app_project_directory(integer) from public, anon;
+grant execute on function public.app_project_directory(integer) to authenticated;
+
+create or replace function public.app_project_members_are_active(
+  p_project_id integer, p_user_ids uuid[]
+) returns boolean
+language plpgsql stable security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  v_expected integer;
+begin
+  v_expected := cardinality(coalesce(p_user_ids, '{}'::uuid[]));
+  if p_project_id is null or p_user_ids is null or auth.uid() is null
+     or v_expected > 100
+     or exists (select 1 from unnest(p_user_ids) candidate where candidate is null)
+     or (select count(distinct candidate) from unnest(p_user_ids) candidate) <> v_expected
+     or not (
+       public.app_is_ceo()
+       or public.app_has_project_role(p_project_id, array['head','coord'])
+     ) then
+    return false;
+  end if;
+  return (
+    select count(*)
+    from public.project_memberships pm
+    join unnest(p_user_ids) requested(user_id) on requested.user_id = pm.user_id
+    join public.profiles p on p.id = pm.user_id and p.disabled_at is null
+    where pm.project_id = p_project_id and pm.status = 'active'
+  ) = v_expected;
+end $$;
+revoke all on function public.app_project_members_are_active(integer,uuid[]) from public, anon;
+grant execute on function public.app_project_members_are_active(integer,uuid[]) to authenticated;
+
+revoke all on function public.app_notification_recipients(integer) from public, anon, authenticated;
+drop function if exists public.app_notification_recipients(integer);
 
 create or replace function app_private.audit_row_change()
 returns trigger language plpgsql security definer set search_path = pg_catalog, public, app_private as $$

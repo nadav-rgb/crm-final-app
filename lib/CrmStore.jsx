@@ -296,7 +296,7 @@ export function CrmProvider({ children }) {
           userId:     a.userId,
           id:         a.activistCode ?? a.userId,
           name:       a.name,
-          role:       a.memberships?.[0]?.role ?? (a.userId === currentUser.userId ? currentUser.role : null),
+          role:       a.role ?? (a.userId === currentUser.userId ? currentUser.role : null),
           project_id: Number(projectId),
           project_ids: [Number(projectId)],
           status:     'active',

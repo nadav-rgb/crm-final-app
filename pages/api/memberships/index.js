@@ -8,17 +8,6 @@ import {
 function dependencies(context) {
   const serviceRpc = createGovernanceRpc();
   return {
-    findMembership: async (projectId, userId) => {
-      const { data, error } = await context.db.from('project_memberships').select('role,status')
-        .eq('project_id', projectId).eq('user_id', userId).maybeSingle();
-      if (error) throw error;
-      return data;
-    },
-    countActiveCeos: async () => {
-      const { count, error } = await context.db.from('profiles').select('id', { count: 'exact', head: true }).eq('global_role', 'ceo');
-      if (error) throw error;
-      return count ?? 0;
-    },
     rpc: (command) => serviceRpc(context, command),
   };
 }
