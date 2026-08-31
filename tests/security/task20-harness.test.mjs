@@ -1433,6 +1433,19 @@ test('post-cleanup proof reruns anonymous isolation and forced-RLS posture with 
   await assert.rejects(() => module.verifyPostCleanupSecurity({
     targetUrl: `http://127.0.0.1:${localApiPort}`,
     publishableKey: 'synthetic-local-publishable-key',
+    serviceClient: {
+      async rpc() {
+        return {
+          data: null,
+          error: { code: '22023', message: 'cannot extract elements from a scalar' },
+        };
+      },
+    },
+    async anonymousProbe() { return anonymousRows; },
+  }), /posture[\s\S]*22023[\s\S]*jsonb-scalar/i);
+  await assert.rejects(() => module.verifyPostCleanupSecurity({
+    targetUrl: `http://127.0.0.1:${localApiPort}`,
+    publishableKey: 'synthetic-local-publishable-key',
     serviceClient,
     async anonymousProbe() {
       return anonymousRows.map((row, index) => (

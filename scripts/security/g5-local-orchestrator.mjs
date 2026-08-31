@@ -419,7 +419,12 @@ export async function verifyPostCleanupSecurity({
     const code = /^(?:[0-9A-Z]{5}|PGRST\d{3})$/.test(posture.error.code ?? '')
       ? posture.error.code
       : 'UNKNOWN';
-    throw new Error(`post-cleanup forced-RLS posture proof failed [${code}]`);
+    const reason = posture.error.message === 'cannot extract elements from a scalar'
+      ? 'jsonb-scalar'
+      : posture.error.message === 'cannot extract elements from an object'
+        ? 'jsonb-object'
+        : 'UNKNOWN';
+    throw new Error(`post-cleanup forced-RLS posture proof failed [${code} ${reason}]`);
   }
   const postureRows = Array.isArray(posture?.data) ? posture.data : [];
   const postureTables = new Set(postureRows.map((row) => row?.table_name));
