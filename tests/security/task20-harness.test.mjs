@@ -303,6 +303,33 @@ test('legacy provisioner accepts one prebuilt exact fixture for registry parity'
   assert.equal(provisioned.activistB, actorIds.activistB1);
 });
 
+test('legacy provisioner exposes only a safe PostgreSQL code when a local insert fails', async () => {
+  const runId = createSecurityRunId();
+  const actorIds = Object.fromEntries([
+    'ceo', 'headA', 'headB', 'coordA', 'activistA1', 'activistA2',
+    'activistB1', 'financeA', 'disabled', 'staleSecurityVersion', 'unlinked',
+  ].map((alias) => [alias, createSecurityRunId()]));
+  const rowsByTable = buildLegacyFixtureRows(runId, actorIds);
+  const client = {
+    from(table) {
+      return {
+        async insert() {
+          return table === 'tours'
+            ? { error: { code: '22007', message: 'sensitive row value', details: 'sensitive detail' } }
+            : { error: null };
+        },
+      };
+    },
+  };
+  await assert.rejects(() => provisionLegacyDatabase({
+    client, runId, actorIds, rowsByTable, ...localSafety(),
+  }), (error) => {
+    assert.match(error.message, /legacy fixture stopped at tours \[22007\]/);
+    assert.doesNotMatch(error.message, /sensitive/i);
+    return true;
+  });
+});
+
 test('finance parity is computed in-process from the deterministic fixture and existing payment model', async () => {
   const module = await import('../../scripts/security/provision-test-fixtures.mjs');
   assert.equal(typeof module.computeDeterministicFinanceExpected, 'function');

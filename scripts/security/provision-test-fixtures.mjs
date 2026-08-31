@@ -486,7 +486,12 @@ export async function provisionLegacyDatabase({
   }
   for (const [table, rows] of Object.entries(rowsByTable)) {
     const { error } = await client.from(table).insert(rows);
-    if (error) throw new Error(`legacy fixture stopped at ${table}`);
+    if (error) {
+      const safeCode = /^(?:[0-9A-Z]{5}|PGRST\d{3})$/.test(error.code ?? '')
+        ? error.code
+        : 'UNKNOWN';
+      throw new Error(`legacy fixture stopped at ${table} [${safeCode}]`);
+    }
   }
   const actorCodes = Object.fromEntries(Object.entries(actorIds).flatMap(([alias, actorId]) => {
     const code = rowsByTable.profiles.find((profile) => profile.id === actorId)?.activist_code;
