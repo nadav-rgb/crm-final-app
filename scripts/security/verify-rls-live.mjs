@@ -22,6 +22,26 @@ export const RLS_PROTECTED_TABLES = Object.freeze([
   'feedback_reports',
 ]);
 
+export const RLS_EXPECTED_POLICY_COUNTS = Object.freeze({
+  projects: 4,
+  project_memberships: 1,
+  profiles: 1,
+  contacts: 4,
+  interactions: 4,
+  base_meeting_reports: 4,
+  meeting_houses: 4,
+  meeting_reminders: 2,
+  tours: 4,
+  expenses: 4,
+  bonus_cancellations: 3,
+  payment_config: 3,
+  notifications: 3,
+  notification_reads: 4,
+  push_subscriptions: 4,
+  fcm_tokens: 4,
+  feedback_reports: 4,
+});
+
 export const SENSITIVE_TABLES = Object.freeze([
   ...RLS_PROTECTED_TABLES,
   'activist_directory',

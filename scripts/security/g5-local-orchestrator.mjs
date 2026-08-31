@@ -22,6 +22,7 @@ import {
   inspectLocalContainerCandidates,
   inspectLocalStackIdentity,
   PINNED_SUPABASE_CLI_VERSION,
+  RLS_EXPECTED_POLICY_COUNTS,
   RLS_PROTECTED_TABLES,
   SENSITIVE_TABLES,
   verifyAnonymousIsolation,
@@ -452,7 +453,9 @@ export async function verifyPostCleanupSecurity({
     || postureRows.length !== RLS_PROTECTED_TABLES.length
     || postureTables.size !== RLS_PROTECTED_TABLES.length
     || RLS_PROTECTED_TABLES.some((table) => !postureTables.has(table))
-    || postureRows.some((row) => row?.rls_enabled !== true || row?.rls_forced !== true)) {
+    || postureRows.some((row) => row?.rls_enabled !== true
+      || row?.rls_forced !== true
+      || row?.policy_count !== RLS_EXPECTED_POLICY_COUNTS[row?.table_name])) {
     throw new Error('post-cleanup forced-RLS posture proof failed');
   }
   return Object.freeze({

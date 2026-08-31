@@ -15,6 +15,7 @@ import {
 } from '../../scripts/security/provision-test-fixtures.mjs';
 import {
   derivePinnedLocalStackContract,
+  RLS_EXPECTED_POLICY_COUNTS,
   RLS_PROTECTED_TABLES,
   SENSITIVE_TABLES,
 } from '../../scripts/security/verify-rls-live.mjs';
@@ -1185,6 +1186,7 @@ test('post-cleanup proof reruns anonymous isolation and forced-RLS posture with 
   const anonymousRows = SENSITIVE_TABLES.map((table) => ({ table, blocked: true, leaked: false }));
   const postureRows = RLS_PROTECTED_TABLES.map((tableName) => ({
     table_name: tableName, rls_enabled: true, rls_forced: true,
+    policy_count: RLS_EXPECTED_POLICY_COUNTS[tableName],
   }));
   const serviceClient = {
     async rpc(name) {
@@ -1221,6 +1223,19 @@ test('post-cleanup proof reruns anonymous isolation and forced-RLS posture with 
     },
     async anonymousProbe() { return anonymousRows; },
   }), /posture|RLS/i);
+  await assert.rejects(() => module.verifyPostCleanupSecurity({
+    targetUrl: `http://127.0.0.1:${localApiPort}`,
+    publishableKey: 'synthetic-local-publishable-key',
+    serviceClient: {
+      async rpc() {
+        return {
+          data: postureRows.map(({ policy_count, ...row }) => row),
+          error: null,
+        };
+      },
+    },
+    async anonymousProbe() { return anonymousRows; },
+  }), /posture|policy/i);
   await assert.rejects(() => module.verifyPostCleanupSecurity({
     targetUrl: `http://127.0.0.1:${localApiPort}`,
     publishableKey: 'synthetic-local-publishable-key',

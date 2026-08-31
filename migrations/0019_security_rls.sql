@@ -766,16 +766,300 @@ drop trigger if exists audit_feedback_reports_changes on public.feedback_reports
 create trigger audit_feedback_reports_changes after insert or update or delete on public.feedback_reports for each row execute function app_private.audit_row_change();
 
 create or replace function public.app_security_posture()
-returns table(table_name text, rls_enabled boolean, rls_forced boolean, policy_commands text[])
-language sql stable security definer set search_path = pg_catalog, public as $$
-  select c.relname::text, c.relrowsecurity, c.relforcerowsecurity,
-         coalesce(array_agg(distinct p.cmd order by p.cmd) filter (where p.cmd is not null), '{}'::text[])
-  from pg_class c
-  join pg_namespace n on n.oid = c.relnamespace
-  left join pg_policies p on p.schemaname = n.nspname and p.tablename = c.relname
-  where n.nspname = 'public' and c.relkind = 'r'
+returns table(
+  table_name text,
+  rls_enabled boolean,
+  rls_forced boolean,
+  policy_commands text[],
+  policy_count integer
+)
+language plpgsql stable security definer set search_path = pg_catalog, public as $$
+declare
+  v_expected_tables text[] := array[
+    'projects','project_memberships','profiles','contacts','interactions',
+    'base_meeting_reports','meeting_houses','meeting_reminders','tours','expenses',
+    'bonus_cancellations','payment_config','notifications','notification_reads',
+    'push_subscriptions','fcm_tokens','feedback_reports'
+  ];
+  v_expected_policies jsonb := jsonb_build_object(
+    'projects', jsonb_build_array('projects_select','projects_insert','projects_update','projects_delete'),
+    'project_memberships', jsonb_build_array('project_memberships_select'),
+    'profiles', jsonb_build_array('profiles_select'),
+    'contacts', jsonb_build_array('contacts_select','contacts_insert','contacts_update','contacts_delete'),
+    'interactions', jsonb_build_array('interactions_select','interactions_insert','interactions_update','interactions_delete'),
+    'base_meeting_reports', jsonb_build_array('base_meeting_reports_select','base_meeting_reports_insert','base_meeting_reports_update','base_meeting_reports_delete'),
+    'meeting_houses', jsonb_build_array('meeting_houses_select','meeting_houses_insert','meeting_houses_update','meeting_houses_delete'),
+    'meeting_reminders', jsonb_build_array('meeting_reminders_select','meeting_reminders_insert'),
+    'tours', jsonb_build_array('tours_select','tours_insert','tours_update','tours_delete'),
+    'expenses', jsonb_build_array('expenses_select','expenses_insert','expenses_update','expenses_delete'),
+    'bonus_cancellations', jsonb_build_array('bonus_cancellations_select','bonus_cancellations_insert','bonus_cancellations_delete'),
+    'payment_config', jsonb_build_array('payment_config_select','payment_config_insert','payment_config_update'),
+    'notifications', jsonb_build_array('notifications_select','notifications_update','notifications_delete'),
+    'notification_reads', jsonb_build_array('notification_reads_select','notification_reads_insert','notification_reads_update','notification_reads_delete'),
+    'push_subscriptions', jsonb_build_array('push_subscriptions_select','push_subscriptions_insert','push_subscriptions_update','push_subscriptions_delete'),
+    'fcm_tokens', jsonb_build_array('fcm_tokens_select','fcm_tokens_insert','fcm_tokens_update','fcm_tokens_delete'),
+    'feedback_reports', jsonb_build_array('feedback_reports_select','feedback_reports_insert','feedback_reports_update','feedback_reports_delete')
+  );
+  v_expected_table_grants jsonb := jsonb_build_object(
+    'projects', jsonb_build_array('delete','insert','select'),
+    'project_memberships', jsonb_build_array(),
+    'profiles', jsonb_build_array(),
+    'contacts', jsonb_build_array('delete','insert','select'),
+    'interactions', jsonb_build_array('insert','select'),
+    'base_meeting_reports', jsonb_build_array('delete','insert','select'),
+    'meeting_houses', jsonb_build_array('delete','insert','select'),
+    'meeting_reminders', jsonb_build_array('insert','select'),
+    'tours', jsonb_build_array('insert','select'),
+    'expenses', jsonb_build_array('insert','select'),
+    'bonus_cancellations', jsonb_build_array('delete','insert','select'),
+    'payment_config', jsonb_build_array('insert','select'),
+    'notifications', jsonb_build_array('delete','select'),
+    'notification_reads', jsonb_build_array('delete','insert','select'),
+    'push_subscriptions', jsonb_build_array('delete','insert','select'),
+    'fcm_tokens', jsonb_build_array('delete','insert','select'),
+    'feedback_reports', jsonb_build_array('delete','insert','select')
+  );
+  v_allowed_column_grants text[] := array[
+    'project_memberships:select:project_id','project_memberships:select:user_id',
+    'project_memberships:select:role','project_memberships:select:status',
+    'profiles:select:id','profiles:select:activist_code','profiles:select:name',
+    'profiles:select:global_role','profiles:select:security_version','profiles:select:disabled_at',
+    'projects:update:name',
+    'contacts:update:name','contacts:update:phone','contacts:update:city','contacts:update:area',
+    'contacts:update:depth','contacts:update:profession','contacts:update:age','contacts:update:gender',
+    'contacts:update:notes','contacts:update:mitzvot','contacts:update:mitzvot_history',
+    'contacts:update:high_potential','contacts:update:days_since_last_contact',
+    'contacts:update:joined_at','contacts:update:source','contacts:update:referred_by',
+    'contacts:update:next_action','contacts:update:next_action_date','contacts:update:last_interaction_date',
+    'contacts:update:how_met','contacts:update:is_graduate','contacts:update:meeting_place_city',
+    'contacts:update:meeting_place_number','contacts:update:meetinghousecity',
+    'contacts:update:meetinghousenumber','contacts:update:meetinghousekey',
+    'interactions:update:type','interactions:update:quality','interactions:update:notes',
+    'interactions:update:participants','interactions:update:date','interactions:update:time',
+    'interactions:update:duration_minutes','interactions:update:outcome','interactions:update:description',
+    'interactions:update:ai_summary','interactions:update:next_action','interactions:update:next_action_date',
+    'base_meeting_reports:update:report','base_meeting_reports:update:notes',
+    'base_meeting_reports:update:summary','base_meeting_reports:update:results',
+    'meeting_houses:update:house_number','meeting_houses:update:settlement',
+    'meeting_houses:update:city','meeting_houses:update:host_name',
+    'meeting_houses:update:facilitator_name','meeting_houses:update:meetings','meeting_houses:update:notes',
+    'tours:update:tour_number','tours:update:settlement','tours:update:date',
+    'tours:update:start_time','tours:update:notes',
+    'payment_config:update:rate_phone_friendly','payment_config:update:rate_phone_torani',
+    'payment_config:update:rate_video_friendly','payment_config:update:rate_video_torani',
+    'payment_config:update:rate_frontal_friendly','payment_config:update:rate_frontal_torani',
+    'payment_config:update:rate_multi','payment_config:update:rate_shabbat_hosting',
+    'payment_config:update:rate_tour_guide','payment_config:update:min_duration_minutes',
+    'payment_config:update:cap_phone','payment_config:update:cap_frontal','payment_config:update:cap_multi',
+    'payment_config:update:cap_contact_phone_high','payment_config:update:cap_contact_phone_regular',
+    'payment_config:update:cap_contact_frontal_high','payment_config:update:cap_contact_frontal_regular',
+    'payment_config:update:bonus_loyalty_6','payment_config:update:bonus_loyalty_4',
+    'payment_config:update:bonus_mitzvot_level','payment_config:update:bonus_new_participant',
+    'notifications:update:read','push_subscriptions:update:subscription',
+    'fcm_tokens:update:token','fcm_tokens:update:platform','fcm_tokens:update:updated_at'
+  ];
+  v_required_column_grants text[] := array[
+    'project_memberships:select:project_id','project_memberships:select:user_id',
+    'project_memberships:select:role','project_memberships:select:status',
+    'profiles:select:id','profiles:select:activist_code','profiles:select:name',
+    'profiles:select:global_role','profiles:select:security_version','profiles:select:disabled_at',
+    'projects:update:name','notifications:update:read'
+  ];
+  v_authenticated_oid oid;
+  v_anon_oid oid;
+  v_unknown_tables text[];
+  v_missing_tables text[];
+  v_table_record record;
+  v_policy record;
+  v_actual_policy_names text[];
+  v_expected_policy_names text[];
+  v_actual_grants text[];
+  v_expected_grants text[];
+  v_actual_column_grants text[];
+  v_column_grant text;
+  v_expected_command "char";
+  v_qual text;
+  v_with_check text;
+begin
+  select oid into v_authenticated_oid from pg_catalog.pg_roles where rolname = 'authenticated';
+  select oid into v_anon_oid from pg_catalog.pg_roles where rolname = 'anon';
+  if v_authenticated_oid is null or v_anon_oid is null then
+    raise exception 'security posture refused: required API roles are missing';
+  end if;
+
+  select coalesce(array_agg(unknown_table order by unknown_table), '{}'::text[])
+    into v_unknown_tables
+  from (
+    select c.relname::text as unknown_table
+    from pg_catalog.pg_class c
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relkind in ('r', 'p')
+    except
+    select unnest(v_expected_tables)
+  ) unknown_tables;
+  if cardinality(v_unknown_tables) > 0 then
+    raise exception 'security posture refused: unclassified public tables: %', v_unknown_tables;
+  end if;
+
+  select coalesce(array_agg(missing_table order by missing_table), '{}'::text[])
+    into v_missing_tables
+  from (
+    select unnest(v_expected_tables) as missing_table
+    except
+    select c.relname::text
+    from pg_catalog.pg_class c
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relkind in ('r', 'p')
+  ) missing_tables;
+  if cardinality(v_missing_tables) > 0 then
+    raise exception 'security posture refused: classified public tables are missing: %', v_missing_tables;
+  end if;
+
+  if exists (
+    select 1
+    from pg_catalog.pg_class c
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+    cross join lateral pg_catalog.aclexplode(coalesce(c.relacl, '{}'::aclitem[]))
+      as table_grant(grantor, grantee, privilege_type, is_grantable)
+    where n.nspname = 'public' and c.relkind in ('r', 'p')
+      and table_grant.grantee in (0::oid, v_anon_oid)
+  ) then
+    raise exception 'security posture refused: public or anon table grant present';
+  end if;
+
+  if exists (
+    select 1
+    from pg_catalog.pg_class c
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+    join pg_catalog.pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
+    cross join lateral pg_catalog.aclexplode(coalesce(a.attacl, '{}'::aclitem[]))
+      as column_grant(grantor, grantee, privilege_type, is_grantable)
+    where n.nspname = 'public' and c.relkind in ('r', 'p')
+      and column_grant.grantee in (0::oid, v_anon_oid)
+  ) then
+    raise exception 'security posture refused: public or anon column grant present';
+  end if;
+
+  select coalesce(array_agg(format('%s:%s:%s', c.relname, lower(column_grant.privilege_type), a.attname)
+                    order by c.relname, lower(column_grant.privilege_type), a.attname), '{}'::text[])
+    into v_actual_column_grants
+  from pg_catalog.pg_class c
+  join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+  join pg_catalog.pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
+  cross join lateral pg_catalog.aclexplode(coalesce(a.attacl, '{}'::aclitem[]))
+    as column_grant(grantor, grantee, privilege_type, is_grantable)
+  where n.nspname = 'public' and c.relkind in ('r', 'p')
+    and c.relname = any(v_expected_tables)
+    and column_grant.grantee = v_authenticated_oid;
+  if exists (
+    select 1 from unnest(v_actual_column_grants) actual_column_grant
+    where not (actual_column_grant = any(v_allowed_column_grants))
+  ) then
+    raise exception 'security posture refused: unexpected authenticated column grant';
+  end if;
+  foreach v_column_grant in array v_required_column_grants loop
+    if not (v_column_grant = any(v_actual_column_grants)) then
+      raise exception 'security posture refused: required authenticated column grant missing: %', v_column_grant;
+    end if;
+  end loop;
+
+  for v_table_record in
+    select c.oid, c.relname, c.relacl, c.relrowsecurity, c.relforcerowsecurity
+    from pg_catalog.pg_class c
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = any(v_expected_tables) and c.relkind in ('r', 'p')
+    order by c.relname
+  loop
+    if not (v_table_record.relrowsecurity and v_table_record.relforcerowsecurity) then
+      raise exception 'security posture refused: RLS is not enabled and forced on %', v_table_record.relname;
+    end if;
+
+    select coalesce(array_agg(p.polname order by p.polname), '{}'::text[])
+      into v_actual_policy_names
+    from pg_catalog.pg_policy p
+    where p.polrelid = v_table_record.oid;
+    select coalesce(array_agg(expected_policy.name order by expected_policy.name), '{}'::text[])
+      into v_expected_policy_names
+    from jsonb_array_elements_text(v_expected_policies -> v_table_record.relname)
+      as expected_policy(name);
+    if v_actual_policy_names is distinct from v_expected_policy_names then
+      raise exception 'security posture refused: missing or extra policies on %', v_table_record.relname;
+    end if;
+
+    select coalesce(array_agg(lower(table_grant.privilege_type) order by lower(table_grant.privilege_type)), '{}'::text[])
+      into v_actual_grants
+    from pg_catalog.aclexplode(coalesce(v_table_record.relacl, '{}'::aclitem[]))
+      as table_grant(grantor, grantee, privilege_type, is_grantable)
+    where table_grant.grantee = v_authenticated_oid;
+    select coalesce(array_agg(expected_grant.name order by expected_grant.name), '{}'::text[])
+      into v_expected_grants
+    from jsonb_array_elements_text(v_expected_table_grants -> v_table_record.relname)
+      as expected_grant(name);
+    if v_actual_grants is distinct from v_expected_grants then
+      raise exception 'security posture refused: authenticated table grants differ on %', v_table_record.relname;
+    end if;
+
+    for v_policy in
+      select p.polname, p.polcmd, p.polpermissive, p.polroles,
+             pg_catalog.pg_get_expr(p.polqual, p.polrelid) as qual,
+             pg_catalog.pg_get_expr(p.polwithcheck, p.polrelid) as with_check
+      from pg_catalog.pg_policy p
+      where p.polrelid = v_table_record.oid
+      order by p.polname
+    loop
+      v_expected_command := case
+        when v_policy.polname like '%_select' then 'r'
+        when v_policy.polname like '%_insert' then 'a'
+        when v_policy.polname like '%_update' then 'w'
+        when v_policy.polname like '%_delete' then 'd'
+        else null
+      end;
+      if v_expected_command is null or v_policy.polcmd <> v_expected_command
+         or v_policy.polroles is distinct from array[v_authenticated_oid]::oid[] then
+        raise exception 'security posture refused: policy command or role differs on %.%',
+          v_table_record.relname, v_policy.polname;
+      end if;
+      if v_policy.polcmd in ('r', 'w', 'd') and v_policy.qual is null then
+        raise exception 'security posture refused: policy USING predicate missing on %.%',
+          v_table_record.relname, v_policy.polname;
+      end if;
+      if v_policy.polcmd in ('a', 'w') and v_policy.with_check is null then
+        raise exception 'security posture refused: policy WITH CHECK predicate missing on %.%',
+          v_table_record.relname, v_policy.polname;
+      end if;
+
+      v_qual := regexp_replace(lower(coalesce(v_policy.qual, '')), '[[:space:]()]', '', 'g');
+      v_with_check := regexp_replace(lower(coalesce(v_policy.with_check, '')), '[[:space:]()]', '', 'g');
+      if v_policy.polpermissive and (
+        (v_policy.polcmd in ('r', 'w', 'd')
+          and v_qual = any(array['true','true::boolean','''t''::boolean','''true''::boolean','1=1','notfalse']))
+        or (v_policy.polcmd in ('a', 'w')
+          and v_with_check = any(array['true','true::boolean','''t''::boolean','''true''::boolean','1=1','notfalse']))
+      ) then
+        raise exception 'security posture refused: permissive-all policy predicate on %.%',
+          v_table_record.relname, v_policy.polname;
+      end if;
+    end loop;
+  end loop;
+
+  return query
+  select c.relname::text,
+         c.relrowsecurity,
+         c.relforcerowsecurity,
+         array_agg(case p.polcmd
+           when 'r' then 'select'
+           when 'a' then 'insert'
+           when 'w' then 'update'
+           when 'd' then 'delete'
+           else 'all'
+         end order by p.polname)::text[],
+         count(p.polname)::integer
+  from pg_catalog.pg_class c
+  join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+  join pg_catalog.pg_policy p on p.polrelid = c.oid
+  where n.nspname = 'public' and c.relkind in ('r', 'p') and c.relname = any(v_expected_tables)
   group by c.relname, c.relrowsecurity, c.relforcerowsecurity
-  order by c.relname
+  order by c.relname;
 $$;
 revoke all on function public.app_security_posture() from public, anon, authenticated;
 grant execute on function public.app_security_posture() to service_role;

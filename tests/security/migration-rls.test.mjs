@@ -49,6 +49,25 @@ test('RLS migration locks helpers, views and audit storage', async () => {
   assert.match(sql, /revoke all on all tables in schema app_private from public, anon, authenticated/i);
 });
 
+test('service-only posture verifier fails closed on unclassified RLS, policies and grants', async () => {
+  const sql = await readFile(migrationPath, 'utf8');
+  const posture = sql.match(/create or replace function public\.app_security_posture\(\)[\s\S]*?\$\$;/i)?.[0] ?? '';
+  assert.match(posture, /returns table\([^)]*policy_count\s+integer/i);
+  assert.match(posture, /language plpgsql stable security definer/i);
+  assert.match(posture, /v_expected_tables\s+text\[\]/i);
+  assert.match(posture, /v_expected_policies\s+jsonb/i);
+  assert.match(posture, /pg_catalog\.pg_policy/i);
+  assert.match(posture, /pg_get_expr\(p\.polqual/i);
+  assert.match(posture, /pg_get_expr\(p\.polwithcheck/i);
+  assert.match(posture, /v_policy\.polpermissive/i);
+  assert.match(posture, /v_policy\.polroles/i);
+  assert.match(posture, /pg_catalog\.aclexplode/i);
+  assert.match(posture, /security posture refused/i);
+  assert.match(posture, /relrowsecurity\s+and\s+v_table_record\.relforcerowsecurity/i);
+  assert.match(posture, /except\s+select\s+unnest\(v_expected_tables\)/i);
+  for (const table of sensitiveTables) assert.match(posture, new RegExp(`'${table}'`, 'i'));
+});
+
 test('RLS migration attaches atomic redacted audit triggers to sensitive mutations', async () => {
   const sql = await readFile(migrationPath, 'utf8');
   assert.match(sql, /create or replace function app_private\.audit_row_change\(\)/i);

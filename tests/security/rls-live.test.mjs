@@ -5,6 +5,7 @@ import {
   assertSafeTestTarget,
   derivePinnedLocalStackContract,
   loadVerifiedLocalTarget,
+  RLS_EXPECTED_POLICY_COUNTS,
   RLS_PROTECTED_TABLES,
   SENSITIVE_TABLES,
   verifyAnonymousIsolation,
@@ -432,5 +433,6 @@ test('service-only posture inventory proves forced RLS without exposing row data
   for (const row of data) {
     assert.equal(row.rls_enabled, true, `${row.table_name} does not enable RLS`);
     assert.equal(row.rls_forced, true, `${row.table_name} does not force RLS`);
+    assert.equal(row.policy_count, RLS_EXPECTED_POLICY_COUNTS[row.table_name], `${row.table_name} policy count differs`);
   }
 });
