@@ -638,5 +638,21 @@ const JULY = { year: 2026, month: 6 }; // month 0-indexed
     payableInteractionsThisMonth(7, rowsP, contactsP, 1, DEFAULTS), 1);
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// קשר קצרצר — לעולם לא מזכה, ולא נספר בשום מכסה (2026-08-31).
+// ────────────────────────────────────────────────────────────────────────────
+{
+  const brief = { type: 'קצרצר', quality: 'טלפון', duration_minutes: 5, date: '2026-08-01' };
+  const result = calcInteractionPayment(brief, [], false, [], DEFAULTS);
+  check('קשר קצרצר: payable=false, amount=0', [result.payable, result.amount], [false, 0]);
+  check('הסיבה מזהה קשר קצרצר במפורש (לא "פחות מ-15 דקות")', result.reason, 'קשר קצרצר — אינו מזכה בתשלום');
+
+  // לא נספר במכסת טלפון (25/חודש) — כי type='קצרצר' לא תואם i.type==='טלפוני'/'וידאו'.
+  const contactsB = [{ id: 1, name: 'לקוח' }];
+  const briefRows = Array.from({ length: 30 }, (_, k) => ({ activist_id: 7, project_id: 1, id: 900 + k, contact_id: 1, type: 'קצרצר', quality: 'טלפון', duration_minutes: 5, date: `2026-08-${String((k % 28) + 1).padStart(2, '0')}` }));
+  const r = calcMonthlyPayment(7, briefRows, contactsB, [], [], DEFAULTS, new Set(), { year: 2026, month: 7 });
+  check('30 קשרים קצרצרים לא מייצרים אף שורת breakdown ולא חורגים ממכסה', [r.total, r.breakdown.length], [0, 0]);
+}
+
 console.log(failures === 0 ? '\nכל הבדיקות עברו.' : `\n${failures} בדיקות נכשלו.`);
 process.exit(failures === 0 ? 0 : 1);
