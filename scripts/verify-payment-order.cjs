@@ -328,5 +328,26 @@ const JULY = { year: 2026, month: 6 }; // month 0-indexed
     recomputed.payable, false);
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// עדכון תעריפים (2026-08-31, בקשת נדב) — תעריפי ידידותי/תורני חדשים.
+// ────────────────────────────────────────────────────────────────────────────
+{
+  const { BASE_PRICES: PRICES, FRIENDLY_ELIGIBLE_MONTHS, FRIENDLY_FRONTAL_MONTHLY_CAP, TORANI_BONUS_AMOUNT, TORANI_BONUS_MONTHS } = require('../lib/paymentCalc.js');
+  const { calcInteractionPayment } = require('../lib/paymentCalc.js');
+  check('תעריף חדש: טלפוני-ידידותי = 0', PRICES['טלפוני-ידידותי'], 0);
+  check('תעריף חדש: טלפוני-תורני = 150', PRICES['טלפוני-תורני'], 150);
+  check('תעריף חדש: וידאו-תורני = 200', PRICES['וידאו-תורני'], 200);
+  check('תעריף ללא שינוי: פרונטלי-ידידותי = 250', PRICES['פרונטלי-ידידותי'], 250);
+  check('תעריף ללא שינוי: וידאו-ידידותי = 200', PRICES['וידאו-ידידותי'], 200);
+  check('קבועים חדשים מיוצאים נכון', [FRIENDLY_ELIGIBLE_MONTHS, FRIENDLY_FRONTAL_MONTHLY_CAP, TORANI_BONUS_AMOUNT, TORANI_BONUS_MONTHS], [3, 2, 1000, 3]);
+
+  // baseAmount===0 (טלפוני-ידידותי) חייב payable:true, לא "סוג קשר לא מזוהה".
+  const zeroRateResult = calcInteractionPayment(
+    { type: 'טלפוני', quality: 'ידידותי', duration_minutes: 30, date: '2026-07-05' },
+    [], false, [], DEFAULTS);
+  check('טלפוני-ידידותי (0 ₪): payable=true, amount=0, לא "סוג לא מזוהה"',
+    [zeroRateResult.payable, zeroRateResult.amount, zeroRateResult.reason], [true, 0, '']);
+}
+
 console.log(failures === 0 ? '\nכל הבדיקות עברו.' : `\n${failures} בדיקות נכשלו.`);
 process.exit(failures === 0 ? 0 : 1);
