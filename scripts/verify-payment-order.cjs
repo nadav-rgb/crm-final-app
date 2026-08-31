@@ -236,5 +236,26 @@ const JULY = { year: 2026, month: 6 }; // month 0-indexed
     recomputed.payable, false);
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// דיווח נוסף (2026-08-31) — דוח פעילות לפי סוג (lib/activityByTypeExcel.js) צריך
+// date/duration_minutes/type/quality גולמיים על שורות breakdown/unpaid, לא רק
+// desc מחורז ("פרונטלי תורני"). נבדק ישירות מול calcMonthlyPayment.
+// ────────────────────────────────────────────────────────────────────────────
+{
+  const rows = [
+    { activist_id: 7, project_id: 1, id: 900, contact_id: 1, type: 'פרונטלי', quality: 'תורני', duration_minutes: 45, date: '2026-07-05' },
+    { activist_id: 7, project_id: 1, id: 901, contact_id: 1, type: 'פרונטלי', quality: 'תורני', duration_minutes: 5,  date: '2026-07-06' }, // מתחת למינימום — לא זוכה
+  ];
+  const r = calcMonthlyPayment(7, rows, contacts, [], [], DEFAULTS, new Set(), JULY);
+  const paidRow = r.breakdown.find(b => b.type === 'קשר');
+  check('שדות גולמיים בשורת breakdown זוכה',
+    [paidRow?.date, paidRow?.duration_minutes, paidRow?.interactionType, paidRow?.quality],
+    ['2026-07-05', 45, 'פרונטלי', 'תורני']);
+  const unpaidRow = r.unpaid[0];
+  check('שדות גולמיים בשורת unpaid',
+    [unpaidRow?.duration_minutes, unpaidRow?.interactionType, unpaidRow?.quality],
+    [5, 'פרונטלי', 'תורני']);
+}
+
 console.log(failures === 0 ? '\nכל הבדיקות עברו.' : `\n${failures} בדיקות נכשלו.`);
 process.exit(failures === 0 ? 0 : 1);
