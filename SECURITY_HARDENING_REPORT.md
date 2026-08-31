@@ -31,11 +31,12 @@ registry results are time-bound rather than a claim about deployed software.
 
 G4 has an accepted independent review. Docker Engine became available on 2026-09-01, but G5 remains
 blocked at the controlled-live boundary because the supplied `mekusharim` stack failed target
-identity. Its Supabase labels point to a CHABAD App worktree, its database contains 32 unrelated
-public tables and existing rows, only three of the 17 required CRM surfaces are present, and the
-four published ports bind all host interfaces rather than loopback only. The prepared G5 runner
-correctly refuses this project id and would otherwise drop `public` and `app_private` during its
-disposable reset. No destructive SQL was sent. Migrations 0018 through 0024,
+identity. Most service-container labels reported a CHABAD App worktree. Its database contains 32
+unrelated public tables; the catalog row estimate across those tables was 293. Only three of the 17
+required CRM surfaces are present, and the four published ports bind all host interfaces rather
+than loopback only. The prepared G5 runner correctly refuses this project id and would otherwise
+drop `public` and `app_private` during its disposable reset. No destructive SQL was sent. Migrations
+0018 through 0024,
 direct-JWT/PostgREST isolation, provider-backed MFA, and live cleanup/posture evidence therefore
 remain unexercised.
 
@@ -257,9 +258,9 @@ closed loopback provider URL; it did not contact Supabase.
 | `npm run test:baseline` | PASS (exit 0) | 51 total; 51 pass; 0 skip; 0 fail (27 interaction + 24 payment) |
 | `npm run verify:interaction-report` | PASS (exit 0) | 27 total; 27 pass; 0 skip; 0 fail |
 | `node scripts/verify-payment-order.cjs` | PASS (exit 0) | 24 total; 24 pass; 0 skip; 0 fail |
-| `npm run test:security` | PASS (exit 0) | 329 total; 310 pass; 19 explicit live skips; 0 fail; known module-type and synthetic-fixture LF-to-CRLF warnings only |
+| `npm run test:security` | PASS (exit 0) | 330 total; 311 pass; 19 explicit live skips; 0 fail; known module-type and synthetic-fixture LF-to-CRLF warnings only |
 | `node --test tests/security/finance-reports-feedback.test.mjs tests/security/jspdf-compatibility.test.mjs tests/security/exceljs-uuid-compatibility.test.mjs` | PASS (exit 0) | 32 total; 32 pass; 0 skip; 0 fail |
-| `npm run test:security -- tests/security/report-completeness.test.mjs` | PASS (exit 0) | 7 total; 7 pass; 0 skip; 0 fail; scoped-table RED was 7 total, 6 pass, 1 missing-table failure |
+| `npm run test:security -- tests/security/report-completeness.test.mjs` | PASS (exit 0) | 8 total; 8 pass; 0 skip; 0 fail; target-evidence RED was 8 total, 7 pass, 1 exact-evidence failure |
 | `npm run build` | PASS (exit 0) | Next.js 16.3.3 Webpack production build; known `optimizeFonts`, middleware-convention, and `_app.getInitialProps` warnings only |
 | `node .superpowers/sdd/2026-08-27-security-hardening/start-g4-http.mjs` | PASS (owned process started) | Synthetic production server ready on `127.0.0.1:43877`; pre-start listener count 0 |
 | `$env:SECURITY_HTTP_BASE_URL='http://127.0.0.1:43877'; node scripts/security/verify-http.mjs` | PASS (exit 0) | exact 200/401/403/404/500; required headers; five unique nonces; no wildcard CORS; verifier PASS |
@@ -382,11 +383,13 @@ UNVERIFIED.
 
 1. Docker Engine is running, so the former `dockerInference` runtime blocker is resolved. The
    current blocker is target identity, not Docker availability.
-2. The supplied containers use project label `mekusharim`, but their config/workdir provenance is
+2. The supplied containers use project label `mekusharim`. Most service-container labels reported
    `CHABAD App/chabad-app/.superpowers/worktrees/founder-acceptance-design-v1`, not this CRM
-   worktree. The read-only database inventory contained 32 unrelated public tables, existing rows,
-   47 policies and 39 public functions. Fourteen of the 17 required CRM tables were absent and
-   `app_private` did not exist.
+   worktree; the database container did not carry that workdir label, so provenance was established
+   from the surrounding exact-project services and the config at their labelled path. The read-only
+   database inventory contained 32 unrelated public tables, 47 policies and 39 public functions;
+   the catalog row estimate across those tables was 293. Fourteen of the 17 required CRM tables
+   were absent and `app_private` did not exist.
 3. Host ports 54321 through 54324 were published on `0.0.0.0` and `[::]`; the prepared identity
    guard requires exact loopback bindings. The separate `shabbat-hosting` stack on 55321 through
    55324 was not stopped, modified, entered, migrated, or cleaned; container metadata was inspected

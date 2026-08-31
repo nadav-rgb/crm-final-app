@@ -150,6 +150,29 @@ test('report keeps deterministic evidence distinct from unperformed live proof',
   assert.match(report, /\| Critical \| High \| Moderate \| Low \| Total \|/);
 });
 
+test('G5 resume preflight records the exact rejected target without a live overclaim', async () => {
+  const report = await readReport();
+  for (const pattern of [
+    /Docker Engine became available on 2026-09-01/,
+    /service-container labels reported a CHABAD App worktree/,
+    /32 unrelated public tables/,
+    /catalog row estimate across those tables was 293/,
+    /only three of the 17\s+required CRM surfaces are present/i,
+    /four published ports bind all host interfaces rather\s+than loopback only/,
+    /No destructive SQL was sent/,
+    /`resetToLegacy\(\)` drops `public` and `app_private` with `CASCADE`/,
+    /`shabbat-hosting`[\s\S]*container metadata was inspected\s+only/,
+    /330 total; 311 pass; 19 explicit live skips; 0 fail/,
+  ]) assert.match(report, pattern);
+
+  for (const forbidden of [
+    /The Docker daemon remains down/,
+    /Docker API pipe `dockerDesktopLinuxEngine` was absent/,
+    /G5 LIVE PASS/,
+    /G6 PASS/,
+  ]) assert.doesNotMatch(report, forbidden);
+});
+
 test('scoped closeout table accounts for every requested finding without conflating live proof', async () => {
   const report = await readReport();
   const rows = tableRows(sectionUnderHeading(report, 'Findings'), [
