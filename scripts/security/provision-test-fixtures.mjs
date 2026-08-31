@@ -147,7 +147,10 @@ const ACTOR_CLASSES = new Set([
 const RESOURCE_CLASSES = new Set([
   'contact', 'interaction', 'meeting-reminder', 'tour', 'notification',
   'finance-summary', 'session', 'audit', 'security-posture', 'membership',
-  'project', 'http', 'auth-user', 'push-subscription', 'feedback-report', 'expense',
+  'project', 'profile', 'directory', 'meeting-report', 'meeting-house',
+  'payment-config', 'notification-read', 'push-subscription', 'fcm-token',
+  'feedback-report', 'expense', 'bonus-cancellation', 'authority-transfer',
+  'http', 'auth-user',
 ]);
 const BLOCKING_LAYERS = new Set([
   'RLS', 'PostgREST', 'RPC', 'Grant', 'BFF', 'Session', 'CSRF',
@@ -218,6 +221,9 @@ export function buildSyntheticFixtureBlueprint(securityRunId) {
       { alias: 'financeA', role: 'finance', project: 'projectA', aal: 1 },
       { alias: 'disabled', role: 'activist', project: 'projectA', state: 'disabled', aal: 1 },
       { alias: 'staleSecurityVersion', role: 'activist', project: 'projectA', state: 'stale', aal: 1 },
+      // Exists only as a valid auth.users FK target for an attempted direct-JWT
+      // profile insert. It deliberately has no profile or membership row.
+      { alias: 'unlinked', role: 'none', aal: 1 },
     ]),
     resources: Object.freeze([
       'contacts', 'interactions', 'meetingHouses', 'meetingReminders', 'tours',
@@ -482,6 +488,10 @@ export async function provisionLegacyDatabase({
     const { error } = await client.from(table).insert(rows);
     if (error) throw new Error(`legacy fixture stopped at ${table}`);
   }
+  const actorCodes = Object.fromEntries(Object.entries(actorIds).flatMap(([alias, actorId]) => {
+    const code = rowsByTable.profiles.find((profile) => profile.id === actorId)?.activist_code;
+    return Number.isSafeInteger(code) ? [[alias, code]] : [];
+  }));
   return Object.freeze({
     securityRunId: runId,
     projectA: rowsByTable.projects[0].id,
@@ -489,12 +499,33 @@ export async function provisionLegacyDatabase({
     contactA: rowsByTable.contacts[0].id,
     contactA2: rowsByTable.contacts[1].id,
     contactB: rowsByTable.contacts[2].id,
+    interactionA: rowsByTable.interactions[0].id,
+    interactionB: rowsByTable.interactions[2].id,
+    baseMeetingReportA: rowsByTable.base_meeting_reports[0].id,
+    baseMeetingReportB: rowsByTable.base_meeting_reports[1].id,
     meetingA: rowsByTable.meeting_houses[0].id,
     meetingB: rowsByTable.meeting_houses[1].id,
+    meetingReminderA: rowsByTable.meeting_reminders[0].id,
+    meetingReminderB: rowsByTable.meeting_reminders[1].id,
     tourAssignedA: rowsByTable.tours[0].id,
     tourB: rowsByTable.tours[1].id,
+    expenseA: rowsByTable.expenses[0].id,
+    expenseB: rowsByTable.expenses[1].id,
+    bonusCancellationA: rowsByTable.bonus_cancellations[0].id,
+    paymentConfigId: rowsByTable.payment_config[0].id,
+    notificationA: rowsByTable.notifications[0].id,
+    notificationB: rowsByTable.notifications[1].id,
+    notificationReadA: rowsByTable.notification_reads[0].id,
+    notificationReadB: rowsByTable.notification_reads[1].id,
+    pushSubscriptionA: rowsByTable.push_subscriptions[0].id,
+    pushSubscriptionB: rowsByTable.push_subscriptions[1].id,
+    fcmTokenA: rowsByTable.fcm_tokens[0].id,
+    fcmTokenB: rowsByTable.fcm_tokens[1].id,
+    feedbackReportA: rowsByTable.feedback_reports[0].id,
+    feedbackReportB: rowsByTable.feedback_reports[1].id,
     activistA: actorIds.activistA1,
     activistB: actorIds.activistB1,
+    actorCodes: Object.freeze(actorCodes),
     rowsByTable,
     period: '2026-08',
   });

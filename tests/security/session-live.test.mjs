@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createClient } from '@supabase/supabase-js';
 import { createLocalPostgresAdapter } from '../../scripts/security/g5-local-orchestrator.mjs';
+import { observeG5Case } from '../../scripts/security/g5-evidence.mjs';
 import { generateTotpCode } from '../../scripts/security/provision-test-fixtures.mjs';
 import { loadVerifiedLocalTarget } from '../../scripts/security/verify-rls-live.mjs';
 
@@ -66,7 +67,11 @@ async function login(bffOrigin, credential) {
   return { cookie: response.cookie, csrf: response.payload.csrfToken, payload: response.payload };
 }
 
-test('disabled-user JWT cannot read protected rows', live, async () => {
+function observeG5CaseInTest(testContext, caseId, actualStatus) {
+  return observeG5Case(caseId, actualStatus, { testName: testContext.name });
+}
+
+test('disabled-user JWT cannot read protected rows', live, async (t) => {
   const { targetUrl, publishableKey, fixture } = loadSessionFixture();
   for (const actor of ['disabled']) {
     const client = createClient(targetUrl, publishableKey, {
@@ -76,9 +81,10 @@ test('disabled-user JWT cannot read protected rows', live, async () => {
     const { data, error } = await client.from('contacts').select('id').limit(1);
     assert.ok(error || data?.length === 0, `${actor} unexpectedly retained data access`);
   }
+  observeG5CaseInTest(t, 'SEC-064', 'denied');
 });
 
-test('AAL1 privileged roles are denied while AAL2 is exercised separately', live, async () => {
+test('AAL1 privileged roles are denied while AAL2 is exercised separately', live, async (t) => {
   const { targetUrl, publishableKey, fixture } = loadSessionFixture();
   for (const actor of ['ceoAal1', 'headAal1']) {
     const client = createClient(targetUrl, publishableKey, {
@@ -92,21 +98,24 @@ test('AAL1 privileged roles are denied while AAL2 is exercised separately', live
     });
     assert.ok(error, `${actor} unexpectedly crossed the AAL2 boundary`);
   }
+  observeG5CaseInTest(t, 'SEC-027', 'denied');
 });
 
-test('local BFF measures expiry, logout replay, rotation, privilege transition and disabled-user denial', live, async () => {
+test('local BFF measures expiry, logout replay, rotation, privilege transition and disabled-user denial', live, async (t) => {
   const { fixture, target, bffOrigin } = loadSessionFixture();
   const database = localDatabase(target);
 
   const expired = await login(bffOrigin, fixture.credentials.activistA1);
   await database.expireSessionsForUser(fixture.resources.actorIds.activistA1);
   assert.equal((await bffRequest(bffOrigin, '/api/auth/session', { cookie: expired.cookie })).status, 401);
+  observeG5CaseInTest(t, 'SEC-015', 'denied');
 
   const logout = await login(bffOrigin, fixture.credentials.activistA1);
   assert.equal((await bffRequest(bffOrigin, '/api/auth/logout', {
     method: 'POST', cookie: logout.cookie, csrf: logout.csrf, body: {},
   })).status, 200);
   assert.equal((await bffRequest(bffOrigin, '/api/auth/session', { cookie: logout.cookie })).status, 401);
+  observeG5CaseInTest(t, 'SEC-016', 'denied');
 
   const rotating = await login(bffOrigin, fixture.credentials.activistA1);
   const rotated = await bffRequest(bffOrigin, '/api/auth/session', { cookie: rotating.cookie });
@@ -114,23 +123,27 @@ test('local BFF measures expiry, logout replay, rotation, privilege transition a
   assert.ok(rotated.cookie && rotated.cookie !== rotating.cookie, 'resume did not rotate the opaque cookie');
   assert.equal((await bffRequest(bffOrigin, '/api/auth/session', { cookie: rotating.cookie })).status, 401);
   assert.equal((await bffRequest(bffOrigin, '/api/auth/session', { cookie: rotated.cookie })).status, 200);
+  observeG5CaseInTest(t, 'SEC-028', 'denied');
 
   const stale = await login(bffOrigin, fixture.credentials.activistA2);
   await database.bumpSecurityVersion(fixture.resources.actorIds.activistA2);
   assert.equal((await bffRequest(bffOrigin, '/api/auth/session', { cookie: stale.cookie })).status, 401);
+  observeG5CaseInTest(t, 'SEC-017', 'denied');
 
   const disabled = await login(bffOrigin, fixture.credentials.activistB1);
   await database.disableProfile(fixture.resources.actorIds.activistB1);
   assert.equal((await bffRequest(bffOrigin, '/api/auth/session', { cookie: disabled.cookie })).status, 401);
+  observeG5CaseInTest(t, 'SEC-029', 'denied');
 });
 
-test('local BFF measures foreign-origin CSRF, token mismatch and shared login rate limit', live, async () => {
+test('local BFF measures foreign-origin CSRF, token mismatch and shared login rate limit', live, async (t) => {
   const { fixture, bffOrigin } = loadSessionFixture();
   const csrf = await login(bffOrigin, fixture.credentials.coordA);
   assert.equal((await bffRequest(bffOrigin, '/api/auth/logout', {
     method: 'POST', cookie: csrf.cookie, csrf: csrf.csrf,
     origin: 'https://foreign.invalid', body: {},
   })).status, 403);
+  observeG5CaseInTest(t, 'SEC-026', 'denied');
   assert.equal((await bffRequest(bffOrigin, '/api/auth/logout', {
     method: 'POST', cookie: csrf.cookie, csrf: 'mismatched-csrf-token-value', body: {},
   })).status, 403);
@@ -145,13 +158,14 @@ test('local BFF measures foreign-origin CSRF, token mismatch and shared login ra
   }
   assert.deepEqual(statuses.slice(0, 5), [401, 401, 401, 401, 401]);
   assert.equal(statuses[5], 429);
+  observeG5CaseInTest(t, 'SEC-021', 'denied');
 });
 
 test('RFC-compatible TOTP generation uses the expected 30-second SHA-1 counter', () => {
   assert.equal(generateTotpCode('GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ', 59_000), '287082');
 });
 
-test('local GoTrue performs real TOTP enrollment, AAL2 rotation and factor reset', live, async () => {
+test('local GoTrue performs real TOTP enrollment, AAL2 rotation and factor reset', live, async (t) => {
   const { targetUrl, publishableKey, fixture, bffOrigin, target } = loadSessionFixture();
   const database = localDatabase(target);
   const credential = fixture.credentials?.headA;
@@ -224,4 +238,5 @@ test('local GoTrue performs real TOTP enrollment, AAL2 rotation and factor reset
     }
     await client.auth.signOut({ scope: 'local' });
   }
+  observeG5CaseInTest(t, 'SEC-065', 'pass');
 });

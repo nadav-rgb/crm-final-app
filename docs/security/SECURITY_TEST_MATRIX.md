@@ -43,6 +43,30 @@
 | SEC-039 | Notification event derives project/recipients and enforces event capability | `db-contracts-live.test.mjs` | G5 | Direct JWT negative |
 | SEC-040 | Finance filters cannot expand project/user scope and output is allowlisted | `db-contracts-live.test.mjs` | G5 | Direct JWT positive/negative |
 | SEC-041 | Finance RPC resists search-path hijack and fails closed when audit append fails | `db-contract-reconciliation.test.mjs` and G5 PostgreSQL verification | G3/G5 | Static/live |
+| SEC-042 | Direct JWT cannot cross the project boundary through `projects` select/insert/update/delete | `rls-live.test.mjs` direct-object matrix | G5 | Direct JWT negative |
+| SEC-043 | Direct JWT cannot alter or enumerate another project membership | `rls-live.test.mjs` direct-object matrix | G5 | Direct JWT negative |
+| SEC-044 | Direct JWT cannot enumerate or create a profile outside its authority | `rls-live.test.mjs` direct-object matrix | G5 | Direct JWT negative |
+| SEC-045 | Direct JWT cannot cross contact read/write/delete boundaries | `rls-live.test.mjs` direct-object matrix | G5 | Direct JWT negative |
+| SEC-046 | Direct JWT cannot cross interaction read/write/delete boundaries | `rls-live.test.mjs` direct-object matrix | G5 | Direct JWT negative |
+| SEC-047 | Direct JWT cannot cross base-meeting-report read/write/delete boundaries | `rls-live.test.mjs` direct-object matrix | G5 | Direct JWT negative |
+| SEC-048 | Direct JWT cannot cross meeting-house read/write/delete boundaries | `rls-live.test.mjs` direct-object matrix | G5 | Direct JWT negative |
+| SEC-049 | Direct JWT cannot cross meeting-reminder read/write/delete boundaries | `rls-live.test.mjs` direct-object matrix | G5 | Direct JWT negative |
+| SEC-050 | Direct JWT cannot cross tour read/write/delete boundaries | `rls-live.test.mjs` direct-object matrix | G5 | Direct JWT negative |
+| SEC-051 | Direct JWT cannot cross expense read/write/delete boundaries | `rls-live.test.mjs` direct-object matrix | G5 | Direct JWT negative |
+| SEC-052 | Direct JWT cannot cross bonus-cancellation read/write/delete boundaries | `rls-live.test.mjs` direct-object matrix | G5 | Direct JWT negative |
+| SEC-053 | Active user may read, but cannot mutate, payment configuration without CEO authority | `rls-live.test.mjs` direct-object matrix | G5 | Direct JWT positive/negative |
+| SEC-054 | Direct JWT cannot cross notification read/write/delete boundaries | `rls-live.test.mjs` direct-object matrix | G5 | Direct JWT negative |
+| SEC-055 | Direct JWT cannot cross notification-read read/write/delete boundaries | `rls-live.test.mjs` direct-object matrix | G5 | Direct JWT negative |
+| SEC-056 | Direct JWT cannot cross push-subscription read/write/delete boundaries | `rls-live.test.mjs` direct-object matrix | G5 | Direct JWT negative |
+| SEC-057 | Direct JWT cannot cross FCM-token read/write/delete boundaries | `rls-live.test.mjs` direct-object matrix | G5 | Direct JWT negative |
+| SEC-058 | Direct JWT cannot cross feedback-report read/write/delete boundaries | `rls-live.test.mjs` direct-object matrix | G5 | Direct JWT negative |
+| SEC-059 | Security-invoker directory view cannot disclose another project's profile | `rls-live.test.mjs` direct-object matrix | G5 | Direct JWT negative |
+| SEC-060 | Old/new-authorized transfer and deliberately divergent UUID/legacy pair are rejected | `rls-live.test.mjs` authority-transfer matrix | G5 | Direct JWT negative |
+| SEC-061 | Direct tour-report RPC rejects null, malformed, extra-key, empty and oversized JSON | `db-contracts-live.test.mjs` | G5 | Direct JWT negative |
+| SEC-062 | Removed legacy notification routines have no authenticated direct-JWT path | `db-contracts-live.test.mjs` | G5 | Direct JWT negative |
+| SEC-063 | Exact reminder-recipient and assigned-tour RPC paths succeed | `db-contracts-live.test.mjs` | G5 | Direct JWT positive |
+| SEC-064 | Disabled direct JWT cannot read a protected contact | `session-live.test.mjs` | G5 | Direct JWT negative |
+| SEC-065 | Real local TOTP AAL2 session succeeds and post-unenroll session is denied | `session-live.test.mjs` | G5 | Provider/BFF positive/negative |
 
 ## G5 evidence mapping
 
@@ -53,14 +77,20 @@ positive Docker inspection of the exact Supabase project labels/container names.
 
 | IDs | Live evidence | Required blocking layer/result |
 | --- | --- | --- |
-| SEC-001, SEC-004, SEC-009, SEC-010, SEC-023, SEC-025 | `rls-live.test.mjs`, `verify-rls-live.mjs` | anonymous/cross-tenant CRUD denied by PostgREST/RLS; all classified tables forced; audit read denied |
+| SEC-001, SEC-004, SEC-008..014, SEC-023 | `rls-live.test.mjs`, `verify-rls-live.mjs` | anonymous/cross-tenant CRUD denied by PostgREST/RLS; role projection is exact; all classified tables forced |
+| SEC-042..059 | `rls-live.test.mjs` direct-object matrix | every classified object is probed through direct JWT select/insert/update/delete (directory select only); payment-config read is allowed while mutation is denied |
+| SEC-060 | `rls-live.test.mjs` authority-transfer matrix | CEO/owner old-to-new authority writes and a deliberate UUID/legacy identity divergence are denied |
 | SEC-015..017, SEC-021, SEC-026..029 | `session-live.test.mjs` | actual local DB/BFF requests prove expiry/logout/replay/rotation/disable/stale-version/CSRF/rate/AAL/escalation denial |
-| SEC-037 | `db-contracts-live.test.mjs` | other-recipient/project reminder cancel denied; exact own/manager path allowed |
-| SEC-038 | `db-contracts-live.test.mjs` | unassigned/cross-project/reporter forgery denied; exact assigned report allowed |
+| SEC-025 | `db-contracts-live.test.mjs` | private audit-store read denied |
+| SEC-037, SEC-038, SEC-061..063 | `db-contracts-live.test.mjs` | cross-recipient/project workflow and malformed RPC paths denied; only exact valid workflow allowed |
 | SEC-039 | `db-contracts-live.test.mjs` | event capability/project/recipient spoofing denied; recipients resource-derived |
 | SEC-040 | `db-contracts-live.test.mjs` | CEO/Head/Finance/Activist scopes exact; Coordinator and forged narrowing filters denied; projection keys exact |
 | SEC-041 | direct PostgreSQL queries in `db-contracts-live.test.mjs` | temporary-schema hijack denied; a synthetic local audit-trigger failure aborts projection before any result is assigned |
+| SEC-064, SEC-065 | `session-live.test.mjs` | disabled direct JWT is denied; local provider-backed AAL2/unenroll lifecycle is measured |
 
+The measured manifest contains 48 exact unique SEC IDs. Each observation is emitted only after the
+corresponding assertion and is bound to that Node test's actual `TestContext.name`; the runner rejects
+missing, duplicate, unknown, wrong-status, or wrong-test-name rows before it writes sanitized evidence.
 Every live evidence record is limited to case ID, actor class, resource class, blocking layer,
 expected status and actual status. Tokens, credentials, names, notes, payloads and row contents are
 forbidden. Until all live rows, finance parity and real AAL2 are proven, G5 remains `BLOCKED`.

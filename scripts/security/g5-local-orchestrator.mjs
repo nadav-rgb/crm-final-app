@@ -17,6 +17,11 @@ import {
   sanitizeEvidenceRows,
 } from './provision-test-fixtures.mjs';
 import {
+  buildMeasuredEvidenceRows,
+  G5_REQUIRED_LIVE_TESTS,
+  parseG5ObservationsFromTap,
+} from './g5-evidence.mjs';
+import {
   assertSafeTestTarget,
   derivePinnedLocalStackContract,
   inspectLocalContainerCandidates,
@@ -29,6 +34,7 @@ import {
 } from './verify-rls-live.mjs';
 
 export { PINNED_SUPABASE_CLI_VERSION };
+export { G5_CASE_MANIFEST, G5_REQUIRED_LIVE_TESTS } from './g5-evidence.mjs';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CLEANUP_ORDER = Object.freeze({
@@ -63,52 +69,6 @@ const LIVE_TEST_FILES = Object.freeze([
   'tests/security/db-contracts-live.test.mjs',
   'tests/security/session-live.test.mjs',
 ]);
-export const G5_REQUIRED_LIVE_TESTS = Object.freeze([
-  'anonymous isolation denies every classified public surface',
-  'direct PostgREST rejects anonymous PII mutation independently of the BFF',
-  'RLS denies cross-project and cross-activist contact CRUD',
-  'RLS role projection is exact across CEO, Head, Coordinator, Finance and Activist',
-  'service-only posture inventory proves forced RLS without exposing row data',
-  'direct JWT cannot cross reminder or tour workflow boundaries',
-  'direct JWT permits only the exact reminder-recipient and assigned-tour paths',
-  'direct JWT cannot forge notification event authority or tenant',
-  'direct JWT finance filters only narrow scope and projection keys are exact',
-  'unauthorized direct JWT cannot read the private audit store',
-  'live PostgreSQL assertions prove search-path and atomic-audit behavior',
-  'disabled-user JWT cannot read protected rows',
-  'AAL1 privileged roles are denied while AAL2 is exercised separately',
-  'local BFF measures expiry, logout replay, rotation, privilege transition and disabled-user denial',
-  'local BFF measures foreign-origin CSRF, token mismatch and shared login rate limit',
-  'local GoTrue performs real TOTP enrollment, AAL2 rotation and factor reset',
-]);
-const G5_EVIDENCE = Object.freeze([
-  ['SEC-001', 'anonymous', 'contact', 'RLS', 'denied'],
-  ['SEC-004', 'activist', 'project', 'RLS', 'denied'],
-  ['SEC-009', 'activist', 'contact', 'RLS', 'denied'],
-  ['SEC-010', 'activist', 'contact', 'RLS', 'denied'],
-  ['SEC-015', 'stale-session', 'session', 'Session', 'denied'],
-  ['SEC-016', 'activist', 'session', 'Session', 'denied'],
-  ['SEC-017', 'activist', 'session', 'Session', 'denied'],
-  ['SEC-021', 'anonymous', 'session', 'RateLimit', 'denied'],
-  ['SEC-023', 'anonymous', 'security-posture', 'PostgreSQL', 'pass'],
-  ['SEC-025', 'finance', 'audit', 'Grant', 'denied'],
-  ['SEC-026', 'activist', 'session', 'CSRF', 'denied'],
-  ['SEC-027', 'head-aal1', 'finance-summary', 'MFA', 'denied'],
-  ['SEC-028', 'activist', 'session', 'Session', 'denied'],
-  ['SEC-029', 'disabled-user', 'session', 'Session', 'denied'],
-  ['SEC-037', 'activist', 'meeting-reminder', 'RPC', 'denied'],
-  ['SEC-038', 'activist', 'project', 'RPC', 'denied'],
-  ['SEC-039', 'coordinator', 'notification', 'RPC', 'denied'],
-  ['SEC-040', 'finance', 'finance-summary', 'RPC', 'pass'],
-  ['SEC-041', 'ceo-aal2', 'finance-summary', 'PostgreSQL', 'pass'],
-].map(([caseId, actorClass, resourceClass, blockingLayer, status]) => Object.freeze({
-  caseId,
-  actorClass,
-  resourceClass,
-  blockingLayer,
-  expectedStatus: status,
-  actualStatus: status,
-})));
 const INVENTORY_KEYS = Object.freeze([
   'tables', 'columns', 'constraints', 'rlsEnabled', 'rlsForced',
   'policies', 'tableGrants', 'routineGrants', 'functions',
@@ -823,7 +783,10 @@ export function runLocalLiveTests({
     || G5_REQUIRED_LIVE_TESTS.some((name) => !passedNames.has(name))) {
     throw new Error('measured live cases are incomplete');
   }
-  return Object.freeze(sanitizeEvidenceRows(G5_EVIDENCE));
+  return Object.freeze(sanitizeEvidenceRows(buildMeasuredEvidenceRows({
+    observations: parseG5ObservationsFromTap(result.stdout),
+    passedTests: passedNames,
+  })));
 }
 
 export function loadLocalG5Configuration({

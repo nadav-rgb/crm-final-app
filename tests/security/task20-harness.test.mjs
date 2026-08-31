@@ -19,6 +19,7 @@ import {
   RLS_PROTECTED_TABLES,
   SENSITIVE_TABLES,
 } from '../../scripts/security/verify-rls-live.mjs';
+import { G5_CASE_MANIFEST } from '../../scripts/security/g5-evidence.mjs';
 
 const schemaPath = new URL('./fixtures/legacy-security-schema.sql', import.meta.url);
 const localProjectId = 'mekarvim-security-g5-harness';
@@ -241,7 +242,7 @@ test('synthetic fixture blueprint contains no credentials, tokens, PII or author
   assert.deepEqual(blueprint.projects.map((project) => project.alias), ['projectA', 'projectB']);
   assert.deepEqual(blueprint.actors.map((actor) => actor.alias), [
     'ceo', 'headA', 'headB', 'coordA', 'activistA1', 'activistA2',
-    'activistB1', 'financeA', 'disabled', 'staleSecurityVersion',
+    'activistB1', 'financeA', 'disabled', 'staleSecurityVersion', 'unlinked',
   ]);
   const serialized = JSON.stringify(blueprint);
   assert.doesNotMatch(serialized, /password|access[_-]?token|refresh[_-]?token|service[_-]?role|phone|notes/i);
@@ -252,7 +253,7 @@ test('legacy fixture rows exercise owner backfills for both tenants using exact 
   const runId = createSecurityRunId();
   const actorIds = Object.fromEntries([
     'ceo', 'headA', 'headB', 'coordA', 'activistA1', 'activistA2',
-    'activistB1', 'financeA', 'disabled', 'staleSecurityVersion',
+    'activistB1', 'financeA', 'disabled', 'staleSecurityVersion', 'unlinked',
   ].map((alias) => [alias, createSecurityRunId()]));
   const fixture = buildLegacyFixtureRows(runId, actorIds);
   assert.deepEqual(fixture.projects.map((row) => row.id), [1, 2]);
@@ -274,7 +275,7 @@ test('legacy provisioner accepts one prebuilt exact fixture for registry parity'
   const runId = createSecurityRunId();
   const actorIds = Object.fromEntries([
     'ceo', 'headA', 'headB', 'coordA', 'activistA1', 'activistA2',
-    'activistB1', 'financeA', 'disabled', 'staleSecurityVersion',
+    'activistB1', 'financeA', 'disabled', 'staleSecurityVersion', 'unlinked',
   ].map((alias) => [alias, createSecurityRunId()]));
   const rowsByTable = buildLegacyFixtureRows(runId, actorIds);
   const inserted = new Map();
@@ -306,7 +307,7 @@ test('finance parity is computed in-process from the deterministic fixture and e
   assert.equal(typeof module.computeDeterministicFinanceExpected, 'function');
   const actorIds = Object.fromEntries([
     'ceo', 'headA', 'headB', 'coordA', 'activistA1', 'activistA2',
-    'activistB1', 'financeA', 'disabled', 'staleSecurityVersion',
+    'activistB1', 'financeA', 'disabled', 'staleSecurityVersion', 'unlinked',
   ].map((alias) => [alias, createSecurityRunId()]));
   const expected = module.computeDeterministicFinanceExpected({
     runId: createSecurityRunId(),
@@ -715,7 +716,7 @@ test('direct-JWT fixture creates measured AAL1/AAL2 tokens and enacts disabled/s
   assert.equal(typeof module.createDirectJwtFixture, 'function');
   const aliases = [
     'ceo', 'headA', 'headB', 'coordA', 'activistA1', 'activistA2',
-    'activistB1', 'financeA', 'disabled', 'staleSecurityVersion',
+    'activistB1', 'financeA', 'disabled', 'staleSecurityVersion', 'unlinked',
   ];
   const actors = new Map(aliases.map((alias) => [alias, {
     alias,
@@ -777,7 +778,7 @@ test('run registry inventories every seeded, Auth, membership and derived privat
   const runId = createSecurityRunId();
   const aliases = [
     'ceo', 'headA', 'headB', 'coordA', 'activistA1', 'activistA2',
-    'activistB1', 'financeA', 'disabled', 'staleSecurityVersion',
+    'activistB1', 'financeA', 'disabled', 'staleSecurityVersion', 'unlinked',
   ];
   const actorIds = Object.fromEntries(aliases.map((alias) => [alias, createSecurityRunId()]));
   const actors = new Map(aliases.map((alias) => [alias, { alias, id: actorIds[alias] }]));
@@ -1340,7 +1341,8 @@ test('local BFF shutdown fails closed when TCP listener remains despite non-read
 test('single live-suite runner derives sanitized evidence only from an actual child PASS', async () => {
   const module = await import('../../scripts/security/g5-local-orchestrator.mjs');
   assert.equal(typeof module.runLocalLiveTests, 'function');
-  assert.equal(module.G5_REQUIRED_LIVE_TESTS.length, 16);
+  assert.equal(module.G5_REQUIRED_LIVE_TESTS.length, new Set(G5_CASE_MANIFEST.map((row) => row.testName)).size);
+  assert.ok(G5_CASE_MANIFEST.length >= 25);
   const calls = [];
   const target = localSafety();
   const result = module.runLocalLiveTests({
@@ -1360,9 +1362,12 @@ test('single live-suite runner derives sanitized evidence only from an actual ch
       const cases = module.G5_REQUIRED_LIVE_TESTS
         .map((name, index) => `ok ${index + 1} - ${name}`)
         .join('\n');
+      const observations = G5_CASE_MANIFEST
+        .map(({ caseId, expectedStatus, testName }) => `# G5_OBSERVATION ${JSON.stringify({ caseId, actualStatus: expectedStatus, testName })}`)
+        .join('\n');
       return {
         status: 0,
-        stdout: `TAP version 13\n${cases}\n# fail 0\n# skipped 0\n`,
+        stdout: `TAP version 13\n${cases}\n${observations}\n# fail 0\n# skipped 0\n`,
         stderr: '',
       };
     },
@@ -1374,7 +1379,7 @@ test('single live-suite runner derives sanitized evidence only from an actual ch
   assert.equal(calls[0].options.env.SECURITY_TEST_SUPABASE_SERVICE_ROLE_KEY,
     'synthetic-local-service-role-key');
   assert.equal(calls[0].options.env.SUPABASE_SERVICE_ROLE_KEY, undefined);
-  assert.equal(result.length >= 19, true);
+  assert.equal(result.length, G5_CASE_MANIFEST.length);
   assert.deepEqual(Object.keys(result[0]).sort(), [
     'actorClass', 'actualStatus', 'blockingLayer', 'caseId',
     'expectedStatus', 'resourceClass',
@@ -1407,9 +1412,12 @@ test('single live-suite runner derives sanitized evidence only from an actual ch
     directFixture: { tokens: {}, resources: {} },
     sessionFixture: { tokens: {}, credentials: {}, resources: {} },
     runCommand() {
-      return { status: 0, stdout: 'TAP version 13\n# fail 0\n# skipped 0\n', stderr: '' };
+      const cases = module.G5_REQUIRED_LIVE_TESTS
+        .map((name, index) => `ok ${index + 1} - ${name}`)
+        .join('\n');
+      return { status: 0, stdout: `TAP version 13\n${cases}\n# fail 0\n# skipped 0\n`, stderr: '' };
     },
-  }), /measured live cases are incomplete/);
+  }), /observation|measured evidence.*incomplete/i);
 });
 
 test('configured G5 entry refuses caller verdicts before constructing local infrastructure', async () => {

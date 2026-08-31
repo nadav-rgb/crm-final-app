@@ -6,6 +6,7 @@ import {
   createLocalPostgresAdapter,
   runDirectPostgresAssertions,
 } from '../../scripts/security/g5-local-orchestrator.mjs';
+import { observeG5Case } from '../../scripts/security/g5-evidence.mjs';
 import { loadVerifiedLocalTarget } from '../../scripts/security/verify-rls-live.mjs';
 
 const enabled = process.env.SECURITY_TEST_CONFIRM_ISOLATED === 'true';
@@ -47,6 +48,10 @@ async function expectAllowed(promise) {
   return data;
 }
 
+function observeG5CaseInTest(testContext, caseId, actualStatus) {
+  return observeG5Case(caseId, actualStatus, { testName: testContext.name });
+}
+
 const financeKeys = [
   'activity_total', 'bonus_total', 'expense_total', 'grand_total',
   'name', 'period', 'tour_total', 'user_id',
@@ -56,7 +61,7 @@ function assertFinanceProjection(rows) {
   for (const row of rows ?? []) assert.deepEqual(Object.keys(row).sort(), financeKeys);
 }
 
-test('direct JWT cannot cross reminder or tour workflow boundaries', live, async () => {
+test('direct JWT cannot cross reminder or tour workflow boundaries', live, async (t) => {
   const { clients, resources } = loadFixture();
   await expectNoRows(clients.activistA.from('meeting_reminders')
     .update({ cancelled_at: new Date().toISOString() })
@@ -74,9 +79,40 @@ test('direct JWT cannot cross reminder or tour workflow boundaries', live, async
   }));
   await expectDenied(clients.coordA.from('tours')
     .update({ reported_by_user_id: resources.activistB }).eq('id', resources.tourA).select('id'));
+  observeG5CaseInTest(t, 'SEC-037', 'denied');
+  observeG5CaseInTest(t, 'SEC-038', 'denied');
 });
 
-test('direct JWT permits only the exact reminder-recipient and assigned-tour paths', live, async () => {
+test('direct JWT rejects malformed tour report JSON and legacy notification routines', live, async (t) => {
+  const { clients, resources } = loadFixture();
+  for (const report of [
+    null,
+    [],
+    {},
+    { notes: null },
+    { notes: '' },
+    { notes: ' ' },
+    { notes: 'x'.repeat(4001) },
+    { notes: 'synthetic valid-looking notes', unexpected: true },
+  ]) {
+    await expectDenied(clients.activistA.rpc('app_submit_tour_report', {
+      p_tour_id: resources.tourAssignedA,
+      p_report: report,
+    }));
+  }
+  for (const legacyRoutine of [
+    'enqueue_interaction_notification',
+    'enqueue_base_meeting_notification',
+    'enqueue_tour_notification',
+    'app_notification_recipients',
+  ]) {
+    await expectDenied(clients.activistA.rpc(legacyRoutine, {}));
+  }
+  observeG5CaseInTest(t, 'SEC-061', 'denied');
+  observeG5CaseInTest(t, 'SEC-062', 'denied');
+});
+
+test('direct JWT permits only the exact reminder-recipient and assigned-tour paths', live, async (t) => {
   const { clients, resources } = loadFixture();
   const cancelled = await expectAllowed(clients.activistA.rpc('app_cancel_meeting_reminders', {
     p_meeting_id: resources.meetingA,
@@ -89,9 +125,10 @@ test('direct JWT permits only the exact reminder-recipient and assigned-tour pat
   }));
   assert.equal(tours?.[0]?.reported_by_user_id, resources.activistA);
   assert.equal(tours?.[0]?.project_id, resources.projectA);
+  observeG5CaseInTest(t, 'SEC-063', 'allowed');
 });
 
-test('direct JWT cannot forge notification event authority or tenant', live, async () => {
+test('direct JWT cannot forge notification event authority or tenant', live, async (t) => {
   const { clients, resources } = loadFixture();
   await expectDenied(clients.financeA.rpc('app_enqueue_notification_event', {
     p_event_type: 'tour_created', p_resource_id: resources.tourA, p_project_id: resources.projectA,
@@ -99,9 +136,10 @@ test('direct JWT cannot forge notification event authority or tenant', live, asy
   await expectDenied(clients.coordA.rpc('app_enqueue_notification_event', {
     p_event_type: 'tour_created', p_resource_id: resources.tourB, p_project_id: resources.projectA,
   }));
+  observeG5CaseInTest(t, 'SEC-039', 'denied');
 });
 
-test('direct JWT finance filters only narrow scope and projection keys are exact', live, async () => {
+test('direct JWT finance filters only narrow scope and projection keys are exact', live, async (t) => {
   const { clients, resources } = loadFixture();
   const financeExpected = computeDeterministicFinanceExpected({
     runId: resources.securityRunId,
@@ -138,15 +176,17 @@ test('direct JWT finance filters only narrow scope and projection keys are exact
     assertFinanceProjection(data);
     assert.deepEqual(data, expectedByActor[actor]);
   }
+  observeG5CaseInTest(t, 'SEC-040', 'pass');
 });
 
-test('unauthorized direct JWT cannot read the private audit store', live, async () => {
+test('unauthorized direct JWT cannot read the private audit store', live, async (t) => {
   const { clients } = loadFixture();
   await expectDenied(clients.financeA.schema('app_private').from('audit_events').select('id').limit(1));
   await expectDenied(clients.activistA.schema('app_private').from('audit_events').select('id').limit(1));
+  observeG5CaseInTest(t, 'SEC-025', 'denied');
 });
 
-test('live PostgreSQL assertions prove search-path and atomic-audit behavior', live, async () => {
+test('live PostgreSQL assertions prove search-path and atomic-audit behavior', live, async (t) => {
   const { resources, target } = loadFixture();
   const financeExpected = computeDeterministicFinanceExpected({
     runId: resources.securityRunId,
@@ -171,4 +211,5 @@ test('live PostgreSQL assertions prove search-path and atomic-audit behavior', l
     financeAuditFailure: 'pass',
     unauditedRowsReturned: 0,
   });
+  observeG5CaseInTest(t, 'SEC-041', 'pass');
 });
