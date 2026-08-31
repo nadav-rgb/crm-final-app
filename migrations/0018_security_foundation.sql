@@ -103,7 +103,7 @@ create table if not exists app_private.audit_events (
   occurred_at timestamptz not null default now(),
   actor_user_id uuid references auth.users(id),
   effective_role text,
-  project_id integer references public.projects(id),
+  project_id integer,
   action text not null,
   resource_type text not null,
   resource_id text,

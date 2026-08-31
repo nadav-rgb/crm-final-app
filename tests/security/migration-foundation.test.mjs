@@ -25,6 +25,15 @@ test('foundation migration creates private security stores and membership author
   assert.doesNotMatch(migration, /authenticated_all/i);
 });
 
+test('audit history keeps deleted project ids without a blocking project foreign key', async () => {
+  const migration = await readFile(migrationPath, 'utf8');
+  const auditTable = migration.match(
+    /create table if not exists app_private\.audit_events\s*\([\s\S]*?\n\);/i,
+  )?.[0] ?? '';
+  assert.match(auditTable, /project_id\s+integer\b/i);
+  assert.doesNotMatch(auditTable, /project_id\s+integer\s+references\s+public\.projects/i);
+});
+
 test('foundation migration backfills every legacy owner and refuses incomplete mappings', async () => {
   const migration = await readFile(migrationPath, 'utf8');
   const mappings = [
