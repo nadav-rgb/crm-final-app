@@ -4,7 +4,7 @@ Evidence date: 2026-08-31 (Asia/Jerusalem)
 
 Branch: `security/hardening-p0`
 
-Deterministic source/test cutoff before this report update: `b2108b68a6331c80d9ad3358c8f8ba3a16582b8d`
+Deterministic source/test cutoff before this report update: `543232aba80d58f945d54825a7b51e6ca89ac816`
 
 This report is an engineering evidence record, not an authorization to use real sensitive data,
 merge, deploy, or apply a database migration. Static contract evidence is not live database proof.
@@ -24,8 +24,8 @@ The original hardening baseline was commit
 3 Critical, 10 High, and 3 Moderate findings, and the application still relied on browser-held
 Supabase authority and permissive database paths. The autonomous night mission began from
 `6e3a950c52bc18f7e29730b0e6443762f75b81c1`. Its earlier deterministic/local checkpoint was
-`a2af2026de052fd696f948a8375dcec7cc5704f7`; the final-fix-wave source/test checkpoint is
-`b2108b68a6331c80d9ad3358c8f8ba3a16582b8d`. Fresh local audit commands are recorded below; their
+`a2af2026de052fd696f948a8375dcec7cc5704f7`; the final scoped re-review source/test checkpoint is
+`543232aba80d58f945d54825a7b51e6ca89ac816`. Fresh local audit commands are recorded below; their
 registry results are time-bound rather than a claim about deployed software.
 
 G4 has an accepted independent review. G5 remains blocked at the controlled-live boundary because
@@ -49,6 +49,32 @@ No migration has been applied. No Supabase environment was contacted. Production
 | Night-mission starting state at `6e3a950c52bc18f7e29730b0e6443762f75b81c1` | 0 | 0 | 2 | 0 | 2 |
 | Fresh full audit at the final-fix-wave local cutoff | 0 | 0 | 0 | 0 | 0 |
 | Fresh production-only audit at the final-fix-wave local cutoff | 0 | 0 | 0 | 0 | 0 |
+
+### Scoped closeout: C1, I1–I11, M1–M3
+
+The re-review followed the implementation and SQL call paths for every requested finding. The
+mapped deterministic suite passed 202 of 202 tests. Two residual authorization defects were proven
+with focused failing regressions, corrected minimally, and committed separately before this table
+was finalized. `ADDRESSED` means the reviewed source/test defect is addressed; it does not convert
+blocked G5 database/provider evidence into a live pass.
+
+| Finding | Original defect | Fix commit(s) | Test evidence | Status | Residual risk |
+| --- | --- | --- | --- | --- | --- |
+| `C1` | Broad direct authority/workflow mutation allowed caller-controlled ownership changes. | `bb507ec` | `authority-workflow-rpcs.test.mjs`; `migration-rls.test.mjs` | ADDRESSED | Static contract only; G5 database runtime remains unverified. |
+| `I1` | CRM/BFF DTO and schema drift dropped operational fields and trusted client-created IDs. | `7eff62a` | `canonical-crm-contract.test.mjs` | ADDRESSED | Static contract only; G5 database runtime remains unverified. |
+| `I2` | Legacy numeric identities and provider UUID identities could diverge across scalar and array fields. | `74450ac` | `identity-compatibility.test.mjs` | ADDRESSED | Static migration contract only; G5 database runtime remains unverified. |
+| `I3` | Notification callers could supply sensitive or cross-resource delivery content. | `920b336` | `notification-callgraph.test.mjs` | ADDRESSED | Provider delivery runtime and G5 database enforcement remain unverified. |
+| `I4` | Protected MFA sessions and abuse controls did not consistently bind assurance, refresh ownership, and shared buckets. | `3e87f92`, `06530d7` | `auth-service.test.mjs`; `session-csrf-rate.test.mjs`; `contacts-interactions-api.test.mjs`; `trusted-client-key.test.mjs` | ADDRESSED | Provider MFA and G5 session runtime remain unverified. |
+| `I5` | Required denial audit and governance actor/session attribution could fail open or be forged. | `594983b` | `rbac-context-audit.test.mjs`; `governance-api.test.mjs` | ADDRESSED | Atomic PostgreSQL audit behavior requires G5 runtime proof. |
+| `I6` | Coordinators could read raw expenses; the first correction left historical actor-owned rows readable after promotion. | `2050862`, `dc73081` | Focused RED then 22/22 GREEN in `finance-reports-feedback.test.mjs` | ADDRESSED | Static RLS contract only; G5 direct-JWT runtime remains unverified. |
+| `I7` | Tour-report notes and JSON admitted unknown fields and insufficient bounds. | `a75c6ab` | `tours-api.test.mjs` | ADDRESSED | Static RPC contract only; G5 database runtime remains unverified. |
+| `I8` | Directory and assignment lookups exposed broad profile/membership data. | `ec86c8f` | `governance-api.test.mjs`; `finance-reports-feedback.test.mjs` | ADDRESSED | Static projection contract only; G5 database runtime remains unverified. |
+| `I9` | Privileged operational scripts could initialize secrets or remote clients before proving a bounded non-production target. | `9407592` | `operational-scripts.test.mjs` | ADDRESSED | Operator-selected target and external runtime remain residual controls. |
+| `I10` | G5 evidence could overcount duplicate or unobserved cases and omit parts of the direct-JWT matrix. | `b2108b6` | `g5-evidence.test.mjs`; `task20-harness.test.mjs` | ADDRESSED | Harness contract is addressed; G5 live execution remains blocked. |
+| `I11` | The report overstated evidence boundaries and did not bind exact command/status contracts. | `de92300` and this report update | `report-completeness.test.mjs` | ADDRESSED | Report evidence is time-bound; G5 live proof remains blocked. |
+| `M1` | Static posture verification tolerated incomplete or unexpected grants, policies, and table posture. | `7463d9e` | `migration-rls.test.mjs`; `task20-harness.test.mjs` | ADDRESSED | Static verifier only; G5 catalog runtime remains unverified. |
+| `M2` | Caller-controlled forwarding data and over-specific addresses could fragment rate-limit identity. | `06530d7` | `trusted-client-key.test.mjs`; `auth-service.test.mjs` | ADDRESSED | Trusted-proxy runtime configuration remains external and time-bound. |
+| `M3` | Reminder ownership fields and broad reminder reads preserved identity ambiguity and excess projection. | `74450ac` | `identity-compatibility.test.mjs` | ADDRESSED | Static projection/migration contract only; G5 database runtime remains unverified. |
 
 ### Critical
 
@@ -119,6 +145,9 @@ security runtime behavior implicitly.
 | `06530d7` | M2: canonicalize trusted rate-limit keys |
 | `7463d9e` | M1: make the static security-posture verifier fail closed |
 | `b2108b6` | I10: measure the exact G5 evidence manifest and direct-JWT matrix contract |
+| `de92300` | I11: correct final-report evidence boundaries and command contracts |
+| `dc73081` | I6 closeout: deny historical raw-expense reads after an Activist becomes a Coordinator |
+| `543232a` | Close stale-membership owner paths for reminders, tours, bonus cancellations, and feedback |
 
 The report-update commit is intentionally reported in the Git handoff rather than embedded in its
 own content-addressed document.
@@ -209,7 +238,7 @@ reported.
 ## Test Evidence
 
 Fresh final-fix-wave verification was performed from the reviewed source/test checkpoint
-`b2108b68a6331c80d9ad3358c8f8ba3a16582b8d` and the report/test correction in this change. The full
+`543232aba80d58f945d54825a7b51e6ca89ac816` and the report/test correction in this change. The full
 security suite contains 19 explicit live skips; they are skips, not passes. Commands below are
 literal sanitized reproductions of the commands used in this Windows worktree. Android SDK
 variables were set only in the Gradle process. The loopback launcher used synthetic settings and a
@@ -217,13 +246,13 @@ closed loopback provider URL; it did not contact Supabase.
 
 | Command | Status | Exact result |
 | --- | --- | --- |
-| `npm ci` | PASS (exit 0) | 310 packages installed; 311 audited; 0 vulnerabilities; deprecation warnings only |
+| `npm ci` | PASS (exit 0) | 277 packages installed; 278 audited; 0 vulnerabilities; deprecation warnings only |
 | `npm run test:baseline` | PASS (exit 0) | 51 total; 51 pass; 0 skip; 0 fail (27 interaction + 24 payment) |
 | `npm run verify:interaction-report` | PASS (exit 0) | 27 total; 27 pass; 0 skip; 0 fail |
 | `node scripts/verify-payment-order.cjs` | PASS (exit 0) | 24 total; 24 pass; 0 skip; 0 fail |
-| `npm run test:security` | PASS (exit 0) | 327 total; 308 pass; 19 explicit live skips; 0 fail; known module-type and synthetic-fixture LF-to-CRLF warnings only |
+| `npm run test:security` | PASS (exit 0) | 329 total; 310 pass; 19 explicit live skips; 0 fail; known module-type and synthetic-fixture LF-to-CRLF warnings only |
 | `node --test tests/security/finance-reports-feedback.test.mjs tests/security/jspdf-compatibility.test.mjs tests/security/exceljs-uuid-compatibility.test.mjs` | PASS (exit 0) | 32 total; 32 pass; 0 skip; 0 fail |
-| `npm run test:security -- tests/security/report-completeness.test.mjs` | PASS (exit 0) | 6 total; 6 pass; 0 skip; 0 fail; preceding I11 RED was 6 total, 3 pass, 3 report-contract failures |
+| `npm run test:security -- tests/security/report-completeness.test.mjs` | PASS (exit 0) | 7 total; 7 pass; 0 skip; 0 fail; scoped-table RED was 7 total, 6 pass, 1 missing-table failure |
 | `npm run build` | PASS (exit 0) | Next.js 16.3.3 Webpack production build; known `optimizeFonts`, middleware-convention, and `_app.getInitialProps` warnings only |
 | `node .superpowers/sdd/2026-08-27-security-hardening/start-g4-http.mjs` | PASS (owned process started) | Synthetic production server ready on `127.0.0.1:43877`; pre-start listener count 0 |
 | `$env:SECURITY_HTTP_BASE_URL='http://127.0.0.1:43877'; node scripts/security/verify-http.mjs` | PASS (exit 0) | exact 200/401/403/404/500; required headers; five unique nonces; no wildcard CORS; verifier PASS |
@@ -235,9 +264,9 @@ closed loopback provider URL; it did not contact Supabase.
 | `npm audit --json` | PASS (exit 0) | 0 Critical; 0 High; 0 Moderate; 0 Low; 0 total; 310 dependencies in metadata |
 | `npm audit --omit=dev --json` | PASS (exit 0) | 0 Critical; 0 High; 0 Moderate; 0 Low; 0 total; 310 dependencies in metadata |
 | `node --test tests/security/android-hardening.test.mjs` | PASS (exit 0) | 6 total; 6 pass; 0 skip; 0 fail |
-| `$env:ANDROID_HOME=Join-Path $env:LOCALAPPDATA 'Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; if (-not (Test-Path -LiteralPath $env:ANDROID_HOME -PathType Container)) { throw 'installed Android SDK not found' }; android\gradlew.bat -p android testDebugUnitTest assembleDebug` | PASS (exit 0) | Process-only SDK environment; BUILD SUCCESSFUL; 169 actionable tasks (169 up-to-date); safe flatDir, SDK XML, API, and Gradle deprecation warnings |
-| `$env:ANDROID_HOME=Join-Path $env:LOCALAPPDATA 'Android\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; if (Test-Path -LiteralPath 'android\keystore.properties') { throw 'unexpected release signing configuration present' }; android\gradlew.bat -p android assembleRelease` | EXPECTED FAIL (exit 1) | Release signing configuration missing: android/keystore.properties; assertion PASS; failure occurred at the intended signing guard |
-| `node scripts/security/g5-local-orchestrator.mjs` | BLOCKED (NOT RUN) | 19 live cases remained explicit skips; Docker daemon down after Windows error 1920; no isolated target; no migration or live case ran |
+| `$taskAndroidSdk=Join-Path $env:LOCALAPPDATA 'Android\Sdk'; if (-not (Test-Path -LiteralPath $taskAndroidSdk)) { throw 'Android SDK unavailable' }; $env:ANDROID_HOME=$taskAndroidSdk; $env:ANDROID_SDK_ROOT=$taskAndroidSdk; android\gradlew.bat -p android testDebugUnitTest assembleDebug` | PASS (exit 0) | Process-only SDK environment; BUILD SUCCESSFUL in 11s; 169 actionable tasks (82 executed, 87 up-to-date); Gradle deprecation warning only |
+| `$taskAndroidSdk=Join-Path $env:LOCALAPPDATA 'Android\Sdk'; if (Test-Path -LiteralPath 'android\keystore.properties') { throw 'keystore.properties unexpectedly exists' }; $env:ANDROID_HOME=$taskAndroidSdk; $env:ANDROID_SDK_ROOT=$taskAndroidSdk; android\gradlew.bat -p android assembleRelease` | EXPECTED FAIL (exit 1) | Release signing configuration missing: android/keystore.properties; assertion PASS; failure occurred at the intended signing guard |
+| `node scripts/security/g5-local-orchestrator.mjs` | BLOCKED (NOT RUN) | 19 live cases remained explicit skips; Docker API pipe `dockerDesktopLinuxEngine` was absent and the daemon was unavailable; no isolated target; no migration or live case ran |
 | `node scripts/verify-month-report.cjs <year> <month>` | NOT RUN | Inspection only: `.env.local`; privileged Supabase; person-level output; no approved isolated source |
 | `node scripts/verify-payroll-xlsx.cjs <year> <month>` | NOT RUN | Inspection only: `.env.local`; privileged Supabase; person/payroll output; no approved isolated source |
 | `git diff --check` | PASS (exit 0) | 0 whitespace errors; checked before each final report commit |

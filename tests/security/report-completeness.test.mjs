@@ -52,6 +52,12 @@ const classifiedDatabaseObjects = [
 
 const protectedTables = classifiedDatabaseObjects.filter((object) => object !== 'activist_directory');
 
+const scopedFindings = [
+  'C1',
+  ...Array.from({ length: 11 }, (_, index) => `I${index + 1}`),
+  ...Array.from({ length: 3 }, (_, index) => `M${index + 1}`),
+];
+
 function sectionUnderHeading(report, heading) {
   const startPattern = new RegExp(`^## ${escapeRegex(heading)}\\r?$`, 'm');
   const match = startPattern.exec(report);
@@ -143,6 +149,28 @@ test('report keeps deterministic evidence distinct from unperformed live proof',
   assert.match(report, /\| Critical \| High \| Moderate \| Low \| Total \|/);
 });
 
+test('scoped closeout table accounts for every requested finding without conflating live proof', async () => {
+  const report = await readReport();
+  const rows = tableRows(sectionUnderHeading(report, 'Findings'), [
+    'Finding', 'Original defect', 'Fix commit(s)', 'Test evidence', 'Status', 'Residual risk',
+  ]);
+  assert.equal(rows.length, scopedFindings.length, 'scoped closeout table must contain exactly 15 rows');
+
+  const names = [];
+  for (const row of rows) {
+    assert.equal(row.length, 6, `finding row must have exactly six fields: ${row.join(' | ')}`);
+    assert.ok(row.every(Boolean), `finding row must have no empty field: ${row.join(' | ')}`);
+    const findingMatch = /^`(C1|I(?:[1-9]|1[01])|M[1-3])`$/.exec(row[0]);
+    assert.ok(findingMatch, `invalid scoped finding id: ${row[0]}`);
+    names.push(findingMatch[1]);
+    assert.equal(row[4], 'ADDRESSED', `${findingMatch[1]} must have an exact addressed status`);
+    assert.match(row[5], /G5|time-bound|operator|runtime/i, `${findingMatch[1]} must name a bounded residual risk`);
+  }
+
+  assert.equal(new Set(names).size, scopedFindings.length, 'scoped closeout table must not duplicate findings');
+  assert.deepEqual([...names].sort(), [...scopedFindings].sort());
+});
+
 test('test evidence names every required command with exact status and bounded result', async () => {
   const report = await readReport();
   const rows = tableRows(sectionUnderHeading(report, 'Test Evidence'), [
@@ -200,12 +228,12 @@ test('test evidence names every required command with exact status and bounded r
     ['`npm audit --omit=dev --json`', /^PASS \(exit 0\)$/, /0 Critical; 0 High; 0 Moderate; 0 Low; 0 total/],
     ['`node --test tests/security/android-hardening.test.mjs`', /^PASS \(exit 0\)$/, /6 total; 6 pass; 0 skip; 0 fail/],
     [
-      "`$env:ANDROID_HOME=Join-Path $env:LOCALAPPDATA 'Android\\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; if (-not (Test-Path -LiteralPath $env:ANDROID_HOME -PathType Container)) { throw 'installed Android SDK not found' }; android\\gradlew.bat -p android testDebugUnitTest assembleDebug`",
+      "`$taskAndroidSdk=Join-Path $env:LOCALAPPDATA 'Android\\Sdk'; if (-not (Test-Path -LiteralPath $taskAndroidSdk)) { throw 'Android SDK unavailable' }; $env:ANDROID_HOME=$taskAndroidSdk; $env:ANDROID_SDK_ROOT=$taskAndroidSdk; android\\gradlew.bat -p android testDebugUnitTest assembleDebug`",
       /^PASS \(exit 0\)$/,
-      /BUILD SUCCESSFUL; \d+ actionable tasks/,
+      /BUILD SUCCESSFUL(?: in \d+s)?; \d+ actionable tasks/,
     ],
     [
-      "`$env:ANDROID_HOME=Join-Path $env:LOCALAPPDATA 'Android\\Sdk'; $env:ANDROID_SDK_ROOT=$env:ANDROID_HOME; if (Test-Path -LiteralPath 'android\\keystore.properties') { throw 'unexpected release signing configuration present' }; android\\gradlew.bat -p android assembleRelease`",
+      "`$taskAndroidSdk=Join-Path $env:LOCALAPPDATA 'Android\\Sdk'; if (Test-Path -LiteralPath 'android\\keystore.properties') { throw 'keystore.properties unexpectedly exists' }; $env:ANDROID_HOME=$taskAndroidSdk; $env:ANDROID_SDK_ROOT=$taskAndroidSdk; android\\gradlew.bat -p android assembleRelease`",
       /^EXPECTED FAIL \(exit 1\)$/,
       /Release signing configuration missing: android\/keystore\.properties; assertion PASS/,
     ],
