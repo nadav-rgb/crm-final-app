@@ -477,6 +477,14 @@ function safeDatabaseCode(error) {
     : 'UNKNOWN';
 }
 
+function safeAuthFailure(error) {
+  const code = /^[a-z][a-z0-9_]{0,63}$/.test(error?.code ?? '') ? error.code : 'UNKNOWN';
+  const status = Number.isSafeInteger(error?.status) && error.status >= 400 && error.status <= 599
+    ? error.status
+    : 'UNKNOWN';
+  return `${code} status ${status}`;
+}
+
 export async function waitForLegacySchemaCache({
   client,
   tables,
@@ -701,7 +709,9 @@ export async function createDirectJwtFixture({ actors, createClientForActor, dat
       password: actor.password,
     });
     const aal1 = signedIn?.data?.session?.access_token;
-    if (signedIn?.error || !aal1) throw new Error(`direct-JWT fixture stopped at ${alias} AAL1`);
+    if (signedIn?.error || !aal1) {
+      throw new Error(`direct-JWT fixture stopped at ${alias} AAL1 [${safeAuthFailure(signedIn?.error)}]`);
+    }
 
     if (alias === 'ceo' || alias === 'headA') {
       const prefix = alias === 'ceo' ? 'ceo' : 'head';
@@ -714,19 +724,23 @@ export async function createDirectJwtFixture({ actors, createClientForActor, dat
         factorId = enrolled?.data?.id;
         const secret = enrolled?.data?.totp?.secret;
         if (enrolled?.error || !factorId || !secret) {
-          throw new Error(`direct-JWT fixture stopped at ${alias} enrollment`);
+          throw new Error(`direct-JWT fixture stopped at ${alias} enrollment [${safeAuthFailure(enrolled?.error)}]`);
         }
         const verified = await client.auth.mfa.challengeAndVerify({
           factorId,
           code: generateTotpCode(secret),
         });
         const aal2 = verified?.data?.access_token;
-        if (verified?.error || !aal2) throw new Error(`direct-JWT fixture stopped at ${alias} AAL2`);
+        if (verified?.error || !aal2) {
+          throw new Error(`direct-JWT fixture stopped at ${alias} AAL2 [${safeAuthFailure(verified?.error)}]`);
+        }
         tokens[`${prefix}Aal2`] = aal2;
       } finally {
         if (factorId) {
           const reset = await client.auth.mfa.unenroll({ factorId });
-          if (reset?.error) throw new Error(`direct-JWT fixture factor cleanup failed at ${alias}`);
+          if (reset?.error) {
+            throw new Error(`direct-JWT fixture factor cleanup failed at ${alias} [${safeAuthFailure(reset.error)}]`);
+          }
         }
         await client.auth.signOut({ scope: 'local' });
       }

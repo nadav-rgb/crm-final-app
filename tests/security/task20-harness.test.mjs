@@ -861,6 +861,33 @@ test('direct-JWT fixture creates measured AAL1/AAL2 tokens and enacts disabled/s
     ['stale', actors.get('staleSecurityVersion').id],
   ]);
   assert.deepEqual(factorsReset.sort(), ['ceo-factor', 'headA-factor']);
+
+  await assert.rejects(() => module.createDirectJwtFixture({
+    actors,
+    createClientForActor(actor) {
+      return {
+        auth: {
+          async signInWithPassword() {
+            return { data: { session: { access_token: `${actor.alias}-aal1` } }, error: null };
+          },
+          mfa: {
+            async enroll() {
+              return {
+                data: null,
+                error: { code: 'mfa_factor_name_conflict', status: 422, message: 'sensitive provider detail' },
+              };
+            },
+          },
+          async signOut() { return { error: null }; },
+        },
+      };
+    },
+    database,
+  }), (error) => {
+    assert.match(error.message, /ceo enrollment \[mfa_factor_name_conflict status 422\]/);
+    assert.doesNotMatch(error.message, /sensitive|provider detail/i);
+    return true;
+  });
 });
 
 test('run registry inventories every seeded, Auth, membership and derived private resource', async () => {
