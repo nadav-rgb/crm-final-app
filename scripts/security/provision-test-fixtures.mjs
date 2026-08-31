@@ -56,6 +56,9 @@ const MIGRATION_VERIFICATIONS = Object.freeze({
       to_regprocedure('app_private.audit_row_change()') is not null
       and (select count(*) from pg_trigger where tgname like 'audit_%_changes' and not tgisinternal) >= 16
       then 'pass' else 'fail' end`),
+    migrationCheck('0019', 'posture-callable', `select case when
+      (select count(*) from public.app_security_posture()) = 17
+      then 'pass' else 'fail' end`),
   ]),
   '0020': Object.freeze([
     migrationCheck('0020', 'rpc-dependencies-resolve', `select case when

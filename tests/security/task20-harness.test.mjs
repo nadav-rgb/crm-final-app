@@ -239,6 +239,9 @@ test('migration harness encodes exact ordered stop-and-verify steps', () => {
       assert.equal(verification.expected, 'pass');
     }
   }
+  const postureCheck = plan.find((step) => step.id === '0019')?.verifications
+    .find((verification) => verification.id === '0019-posture-callable');
+  assert.match(postureCheck?.sql ?? '', /from\s+public\.app_security_posture\(\)/i);
 });
 
 test('synthetic fixture blueprint contains no credentials, tokens, PII or authority inputs', () => {
@@ -584,7 +587,7 @@ test('local lifecycle executes reset proof, migrations, rollback, live flows and
   assert.ok(trace.indexOf('provision') < trace.indexOf('live-evidence'));
   assert.ok(trace.indexOf('live-evidence') < trace.indexOf('cleanup'));
   assert.equal(result.lifecycleEvidence.inventories.length, 19);
-  assert.equal(result.lifecycleEvidence.checks.length, 45);
+  assert.equal(result.lifecycleEvidence.checks.length, 47);
   assert.deepEqual(result.lifecycleEvidence.inventories[0], {
     stage: 'legacy-before-reset-proof',
     migrationId: null,
