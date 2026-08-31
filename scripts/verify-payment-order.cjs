@@ -2,7 +2,7 @@
 // שימוש: node scripts/verify-payment-order.cjs
 // אין framework בדיקות בפרויקט — זה סקריפט node עצמאי, בדפוס scripts/verify-*.cjs.
 // עובד על נתונים סינתטיים בלבד: לא נוגע ב-Supabase ולא דורש .env.local.
-const { calcMonthlyPayment, calcInteractionPayment, calcConsultantDashboard, deriveMitzvotBonuses, comparePaymentOrder, paidBefore, DEFAULTS } = require('../lib/paymentCalc.js');
+const { calcMonthlyPayment, calcInteractionPayment, calcConsultantDashboard, deriveMitzvotBonuses, previewNewMitzvotBonusCount, previewNewMitzvotBonusChanges, comparePaymentOrder, paidBefore, DEFAULTS } = require('../lib/paymentCalc.js');
 
 let failures = 0;
 function check(name, actual, expected) {
@@ -90,6 +90,98 @@ const JULY = { year: 2026, month: 6 }; // month 0-indexed
     mitzvot_history: [{ mitzva: 'שבת', from: 2, to: 2, date: '2026-07-30' }, { mitzva: 'כיפה', from: 3, to: 1, date: '2026-07-30' }],
   };
   check('#3 ירידה או אי-שינוי אינם מזכים', deriveMitzvotBonuses([noRise]).length, 0);
+
+  // דיווח נוסף (2026-08-31) — אותה מצווה שעולה בשתי שמירות נפרדות באותו חודש (0→1 ואז
+  // 1→2) עדיין שילמה 1,200 ₪ לפני התיקון: כל רשומת mitzvot_history הפיקה בונוס משלה.
+  const twoSaves = {
+    id: 12, name: 'שתי שמירות', activist_id: 7,
+    mitzvot_history: [
+      { mitzva: 'שבת', from: 0, to: 1, date: '2026-07-05' },
+      { mitzva: 'שבת', from: 1, to: 2, date: '2026-07-20' },
+    ],
+  };
+  const twoSavesBonuses = deriveMitzvotBonuses([twoSaves]);
+  check('#3 עלייה באותה מצווה בשתי שמירות נפרדות באותו חודש = בונוס אחד', twoSavesBonuses.length, 1);
+  check('#3 הבונוס המאוחד משקף את טווח העלייה המלא (0 עד 2)', twoSavesBonuses[0]?.desc, 'עליה בשבת מרמה 0 ל-2');
+
+  // מצווה *שונה* לאותו לקוח באותו חודש לא אמורה להיבלע בקיבוץ — עדיין שני בונוסים נפרדים.
+  const twoMitzvot = {
+    id: 13, name: 'שתי מצוות', activist_id: 7,
+    mitzvot_history: [
+      { mitzva: 'שבת',   from: 0, to: 1, date: '2026-07-05' },
+      { mitzva: 'כשרות', from: 0, to: 1, date: '2026-07-06' },
+    ],
+  };
+  check('#3 שתי מצוות שונות לאותו לקוח באותו חודש = שני בונוסים נפרדים', deriveMitzvotBonuses([twoMitzvot]).length, 2);
+
+  // עלייה שחוצה חודשים לא מתקזזת לבונוס אחד — התקרה היא חודשית, לא לכל החיים.
+  const crossMonth = {
+    id: 14, name: 'חוצה חודשים', activist_id: 7,
+    mitzvot_history: [
+      { mitzva: 'שבת', from: 0, to: 1, date: '2026-07-28' },
+      { mitzva: 'שבת', from: 1, to: 2, date: '2026-08-03' },
+    ],
+  };
+  check('#3 עלייה חוצת-חודשים = בונוס נפרד לכל חודש', deriveMitzvotBonuses([crossMonth]).length, 2);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// דיווח נוסף (2026-08-31) — תצוגה מקדימה של בונוס-מצוות ב-update-mitzvot/[id].jsx.
+// totalBonus שם מחושב *לפני* השמירה, אז ה-history של השמירה הנוכחית עוד לא קיים
+// ב-DB ו-deriveMitzvotBonuses לא יכולה לראות אותו ישירות. previewNewMitzvotBonusCount
+// חייבת בכל זאת להסכים עם deriveMitzvotBonuses: מצווה שכבר קיבלה בונוס החודש
+// (שורת history קודמת עם to>from באותו חודש קלנדרי) לא נספרת שוב, גם אם היא עולה
+// עוד רמה בשמירה הנוכחית. נבדק מול changes בצורת {mitzva,from,to} — כמו שהדף בונה.
+// ────────────────────────────────────────────────────────────────────────────
+{
+  const TODAY = new Date('2026-08-31'); // קבוע כדי שהבדיקה לא תהיה תלוית-שעון-מערכת
+  const EARLIER_THIS_MONTH = '2026-08-02';
+  const LAST_MONTH = '2026-07-20';
+
+  // שבת כבר עלתה 0→1 החודש בשמירה קודמת (וכבר קיבלה בונוס). שמירה חדשה מעלה אותה
+  // עוד: 1→2. זו אותה קבוצה (פעיל,לקוח,שבת,חודש) ב-deriveMitzvotBonuses — לא בונוס נוסף.
+  const alreadyBonused = {
+    id: 20, name: 'כבר קיבל בונוס', activist_id: 7,
+    mitzvot_history: [{ mitzva: 'שבת', from: 0, to: 1, date: EARLIER_THIS_MONTH }],
+  };
+  check('תצוגה מקדימה: מצווה שכבר קיבלה בונוס החודש לא נספרת שוב',
+    previewNewMitzvotBonusCount(alreadyBonused, [{ mitzva: 'שבת', from: 1, to: 2 }], TODAY), 0);
+
+  check('תצוגה מקדימה: מצווה שלא עלתה עדיין החודש כן נספרת',
+    previewNewMitzvotBonusCount(alreadyBonused, [{ mitzva: 'כשרות', from: 0, to: 1 }], TODAY), 1);
+
+  // שני שינויים באותה שמירה: אחד חדש (כשרות) ואחד שכבר קיבל בונוס החודש (שבת) —
+  // רק החדש נספר, לא changes.length (2) כמו הנוסחה הישנה.
+  check('תצוגה מקדימה: מתוך שני שינויים באותה שמירה, רק החדש נספר',
+    previewNewMitzvotBonusCount(alreadyBonused,
+      [{ mitzva: 'שבת', from: 1, to: 2 }, { mitzva: 'כשרות', from: 0, to: 1 }], TODAY), 1);
+
+  // עליה קודמת בחודש *שעבר* לא חוסמת בונוס החודש — התקרה היא חודשית, לא לכל החיים.
+  const rosePriorMonth = {
+    id: 21, name: 'עלה בחודש קודם', activist_id: 7,
+    mitzvot_history: [{ mitzva: 'שבת', from: 0, to: 1, date: LAST_MONTH }],
+  };
+  check('תצוגה מקדימה: עליה בחודש הקודם לא חוסמת בונוס החודש',
+    previewNewMitzvotBonusCount(rosePriorMonth, [{ mitzva: 'שבת', from: 1, to: 2 }], TODAY), 1);
+
+  // אותו תרחיש, ברמת שורה: previewNewMitzvotBonusChanges חייבת להסכים עם
+  // previewNewMitzvotBonusCount לא רק על הסכום אלא על *איזו* שורה היא ה-1.
+  check('תצוגה מקדימה לפי-שורה: מצווה שכבר קיבלה בונוס מסומנת isNewBonus:false',
+    previewNewMitzvotBonusChanges(alreadyBonused, [{ mitzva: 'שבת', from: 1, to: 2 }], TODAY)
+      .map(c => c.isNewBonus),
+    [false]);
+
+  check('תצוגה מקדימה לפי-שורה: מתוך שני שינויים, רק החדש מסומן isNewBonus:true',
+    previewNewMitzvotBonusChanges(alreadyBonused,
+      [{ mitzva: 'שבת', from: 1, to: 2 }, { mitzva: 'כשרות', from: 0, to: 1 }], TODAY)
+      .map(c => ({ mitzva: c.mitzva, isNewBonus: c.isNewBonus })),
+    [{ mitzva: 'שבת', isNewBonus: false }, { mitzva: 'כשרות', isNewBonus: true }]);
+
+  // בלי history בכלל — כל השינויים חדשים (ההתנהגות הבסיסית, עדיין נכונה כברירת מחדל).
+  const noHistory = { id: 22, name: 'ללא היסטוריה', activist_id: 7, mitzvot_history: [] };
+  check('תצוגה מקדימה: בלי היסטוריה קודמת כל השינויים נספרים',
+    previewNewMitzvotBonusCount(noHistory,
+      [{ mitzva: 'שבת', from: 0, to: 1 }, { mitzva: 'כשרות', from: 0, to: 1 }], TODAY), 2);
 }
 
 // ────────────────────────────────────────────────────────────────────────────
