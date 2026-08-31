@@ -61,6 +61,20 @@ function assertFinanceProjection(rows) {
   for (const row of rows ?? []) assert.deepEqual(Object.keys(row).sort(), financeKeys);
 }
 
+function financeParityMismatch(actual, expected) {
+  if (!Array.isArray(actual) || !Array.isArray(expected) || actual.length !== expected.length) {
+    return 'row-count';
+  }
+  for (let index = 0; index < expected.length; index += 1) {
+    for (const key of financeKeys) {
+      if (!Object.is(actual[index]?.[key], expected[index]?.[key])) {
+        return key.replaceAll('_', '-');
+      }
+    }
+  }
+  return null;
+}
+
 async function atSafeCheckpoint(name, action) {
   try {
     return await action();
@@ -204,11 +218,9 @@ test('direct JWT finance filters only narrow scope and projection keys are exact
     } catch {
       failSafeCheckpoint(`${checkpoint}-projection`);
     }
-    try {
-      assert.deepEqual(data, expectedByActor[actor]);
-    } catch {
-      failSafeCheckpoint(`${checkpoint}-parity`);
-    }
+    const mismatch = financeParityMismatch(data, expectedByActor[actor]);
+    if (mismatch) failSafeCheckpoint(`${checkpoint}-parity-${mismatch}`);
+    assert.deepEqual(data, expectedByActor[actor]);
   }
   observeG5CaseInTest(t, 'SEC-040', 'pass');
 });

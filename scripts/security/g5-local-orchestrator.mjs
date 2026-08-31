@@ -69,24 +69,24 @@ const LIVE_TEST_FILES = Object.freeze([
   'tests/security/db-contracts-live.test.mjs',
   'tests/security/session-live.test.mjs',
 ]);
+const SAFE_FINANCE_ALLOWED_ACTORS = Object.freeze([
+  'ceo-aal2', 'head-aal2', 'finance', 'activist',
+]);
+const SAFE_FINANCE_PARITY_FIELDS = Object.freeze([
+  'row-count', 'user-id', 'name', 'period', 'activity-total', 'bonus-total',
+  'tour-total', 'expense-total', 'grand-total',
+]);
 const SAFE_LIVE_CHECKPOINTS = Object.freeze([
   'finance-deny-cross-project',
   'finance-deny-cross-user',
   'finance-deny-head-aal1',
   'finance-deny-ceo-aal1',
   'finance-deny-coordinator',
-  'finance-allow-ceo-aal2-rpc',
-  'finance-allow-ceo-aal2-projection',
-  'finance-allow-ceo-aal2-parity',
-  'finance-allow-head-aal2-rpc',
-  'finance-allow-head-aal2-projection',
-  'finance-allow-head-aal2-parity',
-  'finance-allow-finance-rpc',
-  'finance-allow-finance-projection',
-  'finance-allow-finance-parity',
-  'finance-allow-activist-rpc',
-  'finance-allow-activist-projection',
-  'finance-allow-activist-parity',
+  ...SAFE_FINANCE_ALLOWED_ACTORS.flatMap((actor) => [
+    `finance-allow-${actor}-rpc`,
+    `finance-allow-${actor}-projection`,
+    ...SAFE_FINANCE_PARITY_FIELDS.map((field) => `finance-allow-${actor}-parity-${field}`),
+  ]),
 ]);
 const INVENTORY_KEYS = Object.freeze([
   'tables', 'columns', 'constraints', 'rlsEnabled', 'rlsForced',
