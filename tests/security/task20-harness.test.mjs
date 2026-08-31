@@ -647,6 +647,34 @@ test('local lifecycle performs exact abort cleanup after actor creation on migra
   assert.deepEqual(trace, ['reset', 'prepare-actors', 'seed-legacy', 'abort-cleanup']);
 });
 
+test('local lifecycle preserves the root failure when abort cleanup also fails', async () => {
+  const module = await import('../../scripts/security/g5-local-orchestrator.mjs');
+  const plan = buildMigrationPlan('tests/security/fixtures/legacy-security-schema.sql');
+  const database = {
+    async resetToLegacy() {},
+    async inventory() { return inventoryCounts(); },
+    async applyFile() { throw new Error('synthetic root failure'); },
+    async queryCheck() { return 'pass'; },
+    async verifyRollback() { return true; },
+  };
+  await assert.rejects(() => module.runG5LocalLifecycle({
+    migrationPlan: plan,
+    database,
+    target: { verified: true },
+    async assertTarget() {},
+    async prepareActors() { return { actorIds: { synthetic: true } }; },
+    async seedLegacy() {},
+    async provision() { throw new Error('must not provision'); },
+    async runLiveEvidence() { throw new Error('must not run live'); },
+    async cleanup() { throw new Error('must not use normal cleanup'); },
+    async abortCleanup() { throw new Error('synthetic abort failure'); },
+  }), (error) => {
+    assert.match(error.message, /synthetic root failure/);
+    assert.match(error.message, /abort cleanup/i);
+    return true;
+  });
+});
+
 test('local PostgreSQL adapter executes only exact task-owned Docker/psql commands', async () => {
   const module = await import('../../scripts/security/g5-local-orchestrator.mjs');
   assert.equal(typeof module.createLocalPostgresAdapter, 'function');
@@ -1717,6 +1745,55 @@ test('configured G5 entry owns stack start, lifecycle, sanitized evidence write 
     evidenceCount: 1,
     cleanupClean: true,
   });
+});
+
+test('configured G5 abort cleanup resets the disposable database without a second Auth delete', async () => {
+  const module = await import('../../scripts/security/g5-local-orchestrator.mjs');
+  const trace = [];
+  const config = module.loadLocalG5Configuration({
+    repoRoot: 'C:/synthetic/repository',
+    runId: createSecurityRunId(),
+    env: {
+      SECURITY_TEST_EXECUTE_LOCAL_G5: 'true',
+      SECURITY_TEST_SUPABASE_CLI: 'C:/synthetic/bin/supabase.exe',
+      SECURITY_TEST_DOCKER_CLI: 'C:/Program Files/Docker/docker.exe',
+      SECURITY_TEST_DOCKER_LOOPBACK_SHIM: 'C:/synthetic/shim/docker.exe',
+    },
+  });
+  await assert.rejects(() => module.runConfiguredLocalG5({
+    config,
+    runtime: {
+      createStackController() {
+        return {
+          async start() {
+            trace.push('stack-start');
+            return {
+              target: { safety: localSafety() },
+              credentials: {
+                publishableKey: 'synthetic-local-publishable-key',
+                serviceRoleKey: 'synthetic-local-service-role-key',
+              },
+            };
+          },
+          async stop() { trace.push('stack-stop'); },
+        };
+      },
+      createDatabase() {
+        return { async resetToLegacy() { trace.push('reset'); } };
+      },
+      createServiceClient() {
+        return {
+          auth: { admin: { async deleteUser() { throw new Error('second Auth delete forbidden'); } } },
+        };
+      },
+      async runLifecycle(options) {
+        const actors = new Map([['synthetic', { id: createSecurityRunId() }]]);
+        await options.abortCleanup({ actors: { actors } });
+        throw new Error('synthetic root failure');
+      },
+    },
+  }), /synthetic root failure/);
+  assert.deepEqual(trace, ['stack-start', 'reset', 'stack-stop']);
 });
 
 test('partial Auth provisioning deletes only users created by the failed exact run', async () => {

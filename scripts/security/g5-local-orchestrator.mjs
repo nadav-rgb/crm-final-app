@@ -1472,7 +1472,14 @@ export async function runG5LocalLifecycle({
       lifecycleEvidence: sanitizeLifecycleEvidence(lifecycleEvidence),
     });
   } catch (cause) {
-    if (actors) await abortCleanup({ database, target, actors });
+    if (actors) {
+      try {
+        await abortCleanup({ database, target, actors });
+      } catch (cleanupCause) {
+        const rootMessage = cause instanceof Error ? cause.message : 'G5 lifecycle failure';
+        throw new Error(`${rootMessage}; abort cleanup failed`, { cause: cleanupCause });
+      }
+    }
     throw cause;
   }
 }
@@ -1681,11 +1688,9 @@ export async function runConfiguredLocalG5({
           await bffController.stop();
           bffStarted = false;
         }
+        // The exact disposable project reset erases its public and Auth schemas together.
+        // Deleting the now-absent Auth users again would turn a successful abort into a false failure.
         await database.resetToLegacy();
-        for (const actor of actors.actors.values()) {
-          const deletion = await service.auth.admin.deleteUser(actor.id);
-          if (deletion?.error) throw new Error('G5 abort cleanup failed for exact synthetic actor');
-        }
       },
     });
     const evidence = sanitizeEvidenceRows(lifecycle.evidence);
