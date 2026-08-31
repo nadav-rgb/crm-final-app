@@ -102,6 +102,16 @@ test('coordinator is denied raw expenses before a data query and the RLS policy 
 
   const rls = await readFile(new URL('../../migrations/0019_security_rls.sql', import.meta.url), 'utf8');
   const expenseSelect = rls.match(/create policy expenses_select[\s\S]*?\);/i)?.[0] ?? '';
+  assert.match(
+    expenseSelect,
+    /actor_user_id\s*=\s*auth\.uid\(\)\s+and\s+public\.app_has_project_role\(project_id,\s*array\['activist'\]\)/i,
+    'an owner may read a raw expense only while actively assigned as an Activist in that project',
+  );
+  assert.doesNotMatch(
+    expenseSelect,
+    /actor_user_id\s*=\s*auth\.uid\(\)\s+and\s+public\.app_user_active\(\)/i,
+    'generic active-user ownership would expose historical raw expenses after promotion to Coordinator',
+  );
   assert.match(expenseSelect, /array\['head','finance'\]/i);
   assert.doesNotMatch(expenseSelect, /coord/i);
 });
