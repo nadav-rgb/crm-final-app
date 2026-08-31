@@ -65,6 +65,8 @@ test('service-only posture verifier fails closed on unclassified RLS, policies a
   assert.match(posture, /security posture refused/i);
   assert.match(posture, /relrowsecurity\s+and\s+v_table_record\.relforcerowsecurity/i);
   assert.match(posture, /except\s+select\s+unnest\(v_expected_tables\)/i);
+  assert.match(posture, /array\s*\(\s*select/i);
+  assert.doesNotMatch(posture, /array_agg\s*\(/i);
   for (const table of sensitiveTables) assert.match(posture, new RegExp(`'${table}'`, 'i'));
 });
 

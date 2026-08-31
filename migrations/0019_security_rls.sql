@@ -887,30 +887,34 @@ begin
     raise exception 'security posture refused: required API roles are missing';
   end if;
 
-  select coalesce(array_agg(unknown_table order by unknown_table), '{}'::text[])
-    into v_unknown_tables
-  from (
-    select c.relname::text as unknown_table
-    from pg_catalog.pg_class c
-    join pg_catalog.pg_namespace n on n.oid = c.relnamespace
-    where n.nspname = 'public' and c.relkind in ('r', 'p')
-    except
-    select unnest(v_expected_tables)
-  ) unknown_tables;
+  select array(
+    select unknown_table
+    from (
+      select c.relname::text as unknown_table
+      from pg_catalog.pg_class c
+      join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'public' and c.relkind in ('r', 'p')
+      except
+      select unnest(v_expected_tables)
+    ) unknown_tables
+    order by unknown_table
+  ) into v_unknown_tables;
   if cardinality(v_unknown_tables) > 0 then
     raise exception 'security posture refused: unclassified public tables: %', v_unknown_tables;
   end if;
 
-  select coalesce(array_agg(missing_table order by missing_table), '{}'::text[])
-    into v_missing_tables
-  from (
-    select unnest(v_expected_tables) as missing_table
-    except
-    select c.relname::text
-    from pg_catalog.pg_class c
-    join pg_catalog.pg_namespace n on n.oid = c.relnamespace
-    where n.nspname = 'public' and c.relkind in ('r', 'p')
-  ) missing_tables;
+  select array(
+    select missing_table
+    from (
+      select unnest(v_expected_tables) as missing_table
+      except
+      select c.relname::text
+      from pg_catalog.pg_class c
+      join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'public' and c.relkind in ('r', 'p')
+    ) missing_tables
+    order by missing_table
+  ) into v_missing_tables;
   if cardinality(v_missing_tables) > 0 then
     raise exception 'security posture refused: classified public tables are missing: %', v_missing_tables;
   end if;
@@ -940,17 +944,18 @@ begin
     raise exception 'security posture refused: public or anon column grant present';
   end if;
 
-  select coalesce(array_agg(format('%s:%s:%s', c.relname, lower(column_grant.privilege_type), a.attname)
-                    order by c.relname, lower(column_grant.privilege_type), a.attname), '{}'::text[])
-    into v_actual_column_grants
-  from pg_catalog.pg_class c
-  join pg_catalog.pg_namespace n on n.oid = c.relnamespace
-  join pg_catalog.pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
-  cross join lateral pg_catalog.aclexplode(coalesce(a.attacl, '{}'::aclitem[]))
-    as column_grant(grantor, grantee, privilege_type, is_grantable)
-  where n.nspname = 'public' and c.relkind in ('r', 'p')
-    and c.relname = any(v_expected_tables)
-    and column_grant.grantee = v_authenticated_oid;
+  select array(
+    select format('%s:%s:%s', c.relname, lower(column_grant.privilege_type), a.attname)
+    from pg_catalog.pg_class c
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+    join pg_catalog.pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
+    cross join lateral pg_catalog.aclexplode(coalesce(a.attacl, '{}'::aclitem[]))
+      as column_grant(grantor, grantee, privilege_type, is_grantable)
+    where n.nspname = 'public' and c.relkind in ('r', 'p')
+      and c.relname = any(v_expected_tables)
+      and column_grant.grantee = v_authenticated_oid
+    order by c.relname, lower(column_grant.privilege_type), a.attname
+  ) into v_actual_column_grants;
   if exists (
     select 1 from unnest(v_actual_column_grants) actual_column_grant
     where not (actual_column_grant = any(v_allowed_column_grants))
@@ -974,27 +979,35 @@ begin
       raise exception 'security posture refused: RLS is not enabled and forced on %', v_table_record.relname;
     end if;
 
-    select coalesce(array_agg(p.polname order by p.polname), '{}'::text[])
-      into v_actual_policy_names
-    from pg_catalog.pg_policy p
-    where p.polrelid = v_table_record.oid;
-    select coalesce(array_agg(expected_policy.name order by expected_policy.name), '{}'::text[])
-      into v_expected_policy_names
-    from jsonb_array_elements_text(v_expected_policies -> v_table_record.relname)
-      as expected_policy(name);
+    select array(
+      select p.polname::text
+      from pg_catalog.pg_policy p
+      where p.polrelid = v_table_record.oid
+      order by p.polname
+    ) into v_actual_policy_names;
+    select array(
+      select expected_policy.name
+      from jsonb_array_elements_text(v_expected_policies -> v_table_record.relname)
+        as expected_policy(name)
+      order by expected_policy.name
+    ) into v_expected_policy_names;
     if v_actual_policy_names is distinct from v_expected_policy_names then
       raise exception 'security posture refused: missing or extra policies on %', v_table_record.relname;
     end if;
 
-    select coalesce(array_agg(lower(table_grant.privilege_type) order by lower(table_grant.privilege_type)), '{}'::text[])
-      into v_actual_grants
-    from pg_catalog.aclexplode(coalesce(v_table_record.relacl, '{}'::aclitem[]))
-      as table_grant(grantor, grantee, privilege_type, is_grantable)
-    where table_grant.grantee = v_authenticated_oid;
-    select coalesce(array_agg(expected_grant.name order by expected_grant.name), '{}'::text[])
-      into v_expected_grants
-    from jsonb_array_elements_text(v_expected_table_grants -> v_table_record.relname)
-      as expected_grant(name);
+    select array(
+      select lower(table_grant.privilege_type)
+      from pg_catalog.aclexplode(coalesce(v_table_record.relacl, '{}'::aclitem[]))
+        as table_grant(grantor, grantee, privilege_type, is_grantable)
+      where table_grant.grantee = v_authenticated_oid
+      order by lower(table_grant.privilege_type)
+    ) into v_actual_grants;
+    select array(
+      select expected_grant.name
+      from jsonb_array_elements_text(v_expected_table_grants -> v_table_record.relname)
+        as expected_grant(name)
+      order by expected_grant.name
+    ) into v_expected_grants;
     if v_actual_grants is distinct from v_expected_grants then
       raise exception 'security posture refused: authenticated table grants differ on %', v_table_record.relname;
     end if;
@@ -1046,19 +1059,22 @@ begin
   select c.relname::text,
          c.relrowsecurity,
          c.relforcerowsecurity,
-         array_agg(case p.polcmd
-           when 'r' then 'select'
-           when 'a' then 'insert'
-           when 'w' then 'update'
-           when 'd' then 'delete'
-           else 'all'
-         end order by p.polname)::text[],
-         count(p.polname)::integer
+         array(
+           select case p.polcmd
+             when 'r' then 'select'
+             when 'a' then 'insert'
+             when 'w' then 'update'
+             when 'd' then 'delete'
+             else 'all'
+           end
+           from pg_catalog.pg_policy p
+           where p.polrelid = c.oid
+           order by p.polname
+         )::text[],
+         (select count(*)::integer from pg_catalog.pg_policy p where p.polrelid = c.oid)
   from pg_catalog.pg_class c
   join pg_catalog.pg_namespace n on n.oid = c.relnamespace
-  join pg_catalog.pg_policy p on p.polrelid = c.oid
   where n.nspname = 'public' and c.relkind in ('r', 'p') and c.relname = any(v_expected_tables)
-  group by c.relname, c.relrowsecurity, c.relforcerowsecurity
   order by c.relname;
 end
 $$;
