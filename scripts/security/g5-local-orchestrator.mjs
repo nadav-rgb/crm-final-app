@@ -395,6 +395,11 @@ function safeDatabaseFailureReason(messageValue) {
   const message = typeof messageValue === 'string' ? messageValue.toLowerCase() : '';
   if (message === 'cannot extract elements from a scalar') return 'jsonb-scalar';
   if (message === 'cannot extract elements from an object') return 'jsonb-object';
+  if (message.includes('public or anon table grant present')) return 'anonymous-table-grant';
+  if (message.includes('public or anon column grant present')) return 'anonymous-column-grant';
+  if (message.includes('unexpected authenticated column grant')) return 'unexpected-column-grant';
+  if (message.includes('required authenticated column grant missing')) return 'required-column-grant-missing';
+  if (message.includes('authenticated table grants differ')) return 'table-grant-mismatch';
   return [
     ['json', 'jsonb'],
     ['extract', 'jsonb'],

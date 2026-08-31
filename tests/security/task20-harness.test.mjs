@@ -797,6 +797,41 @@ test('local PostgreSQL checks classify array failures without exposing database 
   });
 });
 
+test('local PostgreSQL checks distinguish sanitized posture grant failures', async () => {
+  const module = await import('../../scripts/security/g5-local-orchestrator.mjs');
+  const cases = [
+    ['public or anon table grant present', 'anonymous-table-grant'],
+    ['public or anon column grant present', 'anonymous-column-grant'],
+    ['unexpected authenticated column grant', 'unexpected-column-grant'],
+    ['required authenticated column grant missing: sensitive-detail', 'required-column-grant-missing'],
+    ['authenticated table grants differ on sensitive-detail', 'table-grant-mismatch'],
+  ];
+  for (const [databaseMessage, expectedReason] of cases) {
+    const database = module.createLocalPostgresAdapter({
+      repoRoot: 'C:/synthetic/repository',
+      target: localSafety(),
+      dockerExecutable: 'C:/Program Files/Docker/docker.exe',
+      async readFile() { return '-- unused'; },
+      runCommand() {
+        return {
+          status: 1,
+          stdout: '',
+          stderr: `ERROR:  P0001: security posture refused: ${databaseMessage}`,
+        };
+      },
+    });
+    await assert.rejects(() => database.queryCheck({
+      id: '0019-posture-callable',
+      sql: "select case when true then 'pass' else 'fail' end",
+      expected: 'pass',
+    }), (error) => {
+      assert.match(error.message, new RegExp(`P0001 ${expectedReason}`));
+      assert.doesNotMatch(error.message, /sensitive-detail/i);
+      return true;
+    });
+  }
+});
+
 test('PostgreSQL invariants are measured directly and fail closed without caller verdict JSON', async () => {
   const module = await import('../../scripts/security/g5-local-orchestrator.mjs');
   assert.equal(typeof module.runDirectPostgresAssertions, 'function');
