@@ -23,7 +23,7 @@ export default function ExpensesPage() {
   const [loadErr,  setLoadErr]  = useState('');
 
   const isActivist = currentUser?.role === 'activist';
-  const seesAll    = ['coord', 'head', 'finance', 'ceo'].includes(currentUser?.role);
+  const seesAll    = ['head', 'finance', 'ceo'].includes(currentUser?.role);
 
   // רשימת התצוגה — החודש הנוכחי בלבד. ה-store כבר מסונן ב-RLS ובצד-לקוח לפי בעלות;
   // הסינון כאן הוא הגנת-הגנה נוספת, באותו דפוס כמו שאר הדפים.

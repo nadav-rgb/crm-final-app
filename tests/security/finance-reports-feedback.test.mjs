@@ -15,6 +15,7 @@ import {
   buildBonusCandidates,
   createExpenseCommand,
   escapeSpreadsheetFormula,
+  listExpenses,
   listPayments,
   ownBonusCancellationRequest,
   paymentRequestCommand,
@@ -84,12 +85,24 @@ test('expense create derives actor and project and rejects authority fields', as
   });
 });
 
-test('expense owner access is concealed from another activist and another project', () => {
+test('coordinator is denied raw expenses before a data query and the RLS policy excludes it', async () => {
   const row = { id: 1, actor_user_id: activistA.userId, project_id: PROJECT_A, amount: 10 };
   assert.throws(() => assertExpenseAccess(makeContext(activistA), row, 'delete'), hasCode('CAPABILITY_DENIED'));
-  assert.doesNotThrow(() => assertExpenseAccess(makeContext(coordA), row, 'read'));
+  assert.throws(() => assertExpenseAccess(makeContext(coordA), row, 'read'), hasCode('CAPABILITY_DENIED'));
   assert.throws(() => assertExpenseAccess(makeContext(activistB), row, 'delete'), hasCode('NOT_FOUND'));
   assert.throws(() => assertExpenseAccess(makeContext(financeA), { ...row, project_id: PROJECT_B }, 'read'), hasCode('NOT_FOUND'));
+
+  let queryStarted = false;
+  await assert.rejects(() => listExpenses({
+    ...makeContext(coordA),
+    db: { from: () => { queryStarted = true; throw new Error('raw expense query must not run'); } },
+  }), hasCode('CAPABILITY_DENIED'));
+  assert.equal(queryStarted, false);
+
+  const rls = await readFile(new URL('../../migrations/0019_security_rls.sql', import.meta.url), 'utf8');
+  const expenseSelect = rls.match(/create policy expenses_select[\s\S]*?\);/i)?.[0] ?? '';
+  assert.match(expenseSelect, /array\['head','finance'\]/i);
+  assert.doesNotMatch(expenseSelect, /coord/i);
 });
 
 test('expense DTO uses UUID ownership and an explicit field allowlist', () => {

@@ -504,7 +504,7 @@ create policy tours_delete on public.tours for delete to authenticated using (
 
 create policy expenses_select on public.expenses for select to authenticated using (
   (actor_user_id = auth.uid() and public.app_user_active()) or public.app_is_ceo()
-  or public.app_has_project_role(project_id, array['head','coord','finance'])
+  or public.app_has_project_role(project_id, array['head','finance'])
 );
 create policy expenses_insert on public.expenses for insert to authenticated with check (
   actor_user_id = auth.uid() and public.app_has_project_role(project_id, array['activist'])
