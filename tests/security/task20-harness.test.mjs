@@ -1446,6 +1446,23 @@ test('post-cleanup proof reruns anonymous isolation and forced-RLS posture with 
   await assert.rejects(() => module.verifyPostCleanupSecurity({
     targetUrl: `http://127.0.0.1:${localApiPort}`,
     publishableKey: 'synthetic-local-publishable-key',
+    serviceClient: {
+      async rpc() {
+        return {
+          data: null,
+          error: { code: '22023', message: 'invalid parameter value includes synthetic-secret' },
+        };
+      },
+    },
+    async anonymousProbe() { return anonymousRows; },
+  }), (error) => {
+    assert.match(error.message, /posture[\s\S]*22023[\s\S]*parameter/i);
+    assert.doesNotMatch(error.message, /synthetic-secret/i);
+    return true;
+  });
+  await assert.rejects(() => module.verifyPostCleanupSecurity({
+    targetUrl: `http://127.0.0.1:${localApiPort}`,
+    publishableKey: 'synthetic-local-publishable-key',
     serviceClient,
     async anonymousProbe() {
       return anonymousRows.map((row, index) => (

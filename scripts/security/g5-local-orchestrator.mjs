@@ -419,11 +419,26 @@ export async function verifyPostCleanupSecurity({
     const code = /^(?:[0-9A-Z]{5}|PGRST\d{3})$/.test(posture.error.code ?? '')
       ? posture.error.code
       : 'UNKNOWN';
-    const reason = posture.error.message === 'cannot extract elements from a scalar'
+    const message = typeof posture.error.message === 'string'
+      ? posture.error.message.toLowerCase()
+      : '';
+    const reason = message === 'cannot extract elements from a scalar'
       ? 'jsonb-scalar'
-      : posture.error.message === 'cannot extract elements from an object'
+      : message === 'cannot extract elements from an object'
         ? 'jsonb-object'
-        : 'UNKNOWN';
+        : [
+          ['json', 'jsonb'],
+          ['extract', 'jsonb'],
+          ['array', 'array'],
+          ['privilege', 'privilege'],
+          ['parameter', 'parameter'],
+          ['input syntax', 'input-syntax'],
+          ['acl', 'acl'],
+          ['role', 'role'],
+          ['grant', 'grant'],
+          ['policy', 'policy'],
+          ['null', 'null'],
+        ].find(([token]) => message.includes(token))?.[1] ?? 'UNKNOWN';
     throw new Error(`post-cleanup forced-RLS posture proof failed [${code} ${reason}]`);
   }
   const postureRows = Array.isArray(posture?.data) ? posture.data : [];
