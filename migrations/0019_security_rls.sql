@@ -923,7 +923,7 @@ begin
     select 1
     from pg_catalog.pg_class c
     join pg_catalog.pg_namespace n on n.oid = c.relnamespace
-    cross join lateral pg_catalog.aclexplode(coalesce(c.relacl, '{}'::aclitem[]))
+    cross join lateral pg_catalog.aclexplode(c.relacl)
       as table_grant(grantor, grantee, privilege_type, is_grantable)
     where n.nspname = 'public' and c.relkind in ('r', 'p')
       and table_grant.grantee in (0::oid, v_anon_oid)
@@ -936,7 +936,7 @@ begin
     from pg_catalog.pg_class c
     join pg_catalog.pg_namespace n on n.oid = c.relnamespace
     join pg_catalog.pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
-    cross join lateral pg_catalog.aclexplode(coalesce(a.attacl, '{}'::aclitem[]))
+    cross join lateral pg_catalog.aclexplode(a.attacl)
       as column_grant(grantor, grantee, privilege_type, is_grantable)
     where n.nspname = 'public' and c.relkind in ('r', 'p')
       and column_grant.grantee in (0::oid, v_anon_oid)
@@ -949,7 +949,7 @@ begin
     from pg_catalog.pg_class c
     join pg_catalog.pg_namespace n on n.oid = c.relnamespace
     join pg_catalog.pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
-    cross join lateral pg_catalog.aclexplode(coalesce(a.attacl, '{}'::aclitem[]))
+    cross join lateral pg_catalog.aclexplode(a.attacl)
       as column_grant(grantor, grantee, privilege_type, is_grantable)
     where n.nspname = 'public' and c.relkind in ('r', 'p')
       and c.relname = any(v_expected_tables)
@@ -997,7 +997,7 @@ begin
 
     select array(
       select lower(table_grant.privilege_type)
-      from pg_catalog.aclexplode(coalesce(v_table_record.relacl, '{}'::aclitem[]))
+      from pg_catalog.aclexplode(v_table_record.relacl)
         as table_grant(grantor, grantee, privilege_type, is_grantable)
       where table_grant.grantee = v_authenticated_oid
       order by lower(table_grant.privilege_type)

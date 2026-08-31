@@ -62,6 +62,10 @@ test('service-only posture verifier fails closed on unclassified RLS, policies a
   assert.match(posture, /v_policy\.polpermissive/i);
   assert.match(posture, /v_policy\.polroles/i);
   assert.match(posture, /pg_catalog\.aclexplode/i);
+  assert.match(posture, /pg_catalog\.aclexplode\(c\.relacl\)/i);
+  assert.match(posture, /pg_catalog\.aclexplode\(a\.attacl\)/i);
+  assert.match(posture, /pg_catalog\.aclexplode\(v_table_record\.relacl\)/i);
+  assert.doesNotMatch(posture, /aclexplode\s*\(\s*coalesce/i);
   assert.match(posture, /security posture refused/i);
   assert.match(posture, /relrowsecurity\s+and\s+v_table_record\.relforcerowsecurity/i);
   assert.match(posture, /except\s+select\s+unnest\(v_expected_tables\)/i);
