@@ -1,7 +1,7 @@
 // lib/CrmStore.jsx
 import { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import _messages     from '../data/messages';
-import { deriveMitzvotBonuses } from './paymentCalc';
+import { deriveMitzvotBonuses, deriveToraniBonuses } from './paymentCalc';
 import { BASE_MEETING_QUESTIONS } from '../data/base-meetings';
 import { advanceReminderStageForReports } from './reminderSchedulerDemo';
 import { hydrateNotificationsFromSupabase } from './notificationDemo';
@@ -192,6 +192,10 @@ export function CrmProvider({ children }) {
   // הגזירה עצמה חיה ב-lib/paymentCalc.js (deriveMitzvotBonuses) כדי שסקריפטי האימות
   // יחשבו בדיוק אותו דבר — קודם היא הייתה משוכפלת בשלושה מקומות.
   const mitzvotBonuses = useMemo(() => deriveMitzvotBonuses(contacts), [contacts]);
+
+  // בונוס תורני — נגזר מ-interactions הפרסיסטנטי, לא מ-state זמני. אותו דפוס כמו
+  // mitzvotBonuses: מקור-אמת יחיד, נגזר-מחדש בכל טעינה. ראה lib/paymentCalc.js.
+  const toraniBonuses = useMemo(() => deriveToraniBonuses(interactions, contacts), [interactions, contacts]);
 
   const { currentUser, authLoading } = useAuth();
 
@@ -609,7 +613,7 @@ export function CrmProvider({ children }) {
   return (
     <CrmContext.Provider value={{
       contacts, interactions, activists, messages, baseMeetings, BASE_MEETING_QUESTIONS,
-      mitzvotBonuses, newParticipantBonuses, paymentConfig, expenses, tours,
+      mitzvotBonuses, newParticipantBonuses, toraniBonuses, paymentConfig, expenses, tours,
       addInteraction, addParticipantInteractions, updateInteraction, deleteInteraction, addContact, updateContact, deleteContact, updateMitzvot, addExpense, deleteExpense, addMessage, submitBaseMeeting, updateBaseMeetingReport, upsertBaseMeetingReports, advanceBaseMeetingReminders,
       PROJECT_NAMES,
     }}>

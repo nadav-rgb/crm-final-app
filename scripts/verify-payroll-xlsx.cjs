@@ -9,7 +9,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const fs = require('fs');
 const path = require('path');
-const { calcMonthlyPayment, deriveMitzvotBonuses } = require('../lib/paymentCalc.js');
+const { calcMonthlyPayment, deriveMitzvotBonuses, deriveToraniBonuses } = require('../lib/paymentCalc.js');
 const { buildPayrollWorkbook, buildPayrollRows } = require('../lib/payrollExcel.js');
 
 const env = Object.fromEntries(
@@ -48,6 +48,9 @@ const fail = m => { console.error(`\n❌ FAIL — ${m}`); process.exit(1); };
   // בונוס אחד לכל אירוע-עליה, גם בקפיצה של כמה רמות (דיווח מוטי גלעד, 2026-08-02).
   const mitzvotBonuses = deriveMitzvotBonuses(contacts);
 
+  // בונוס תורני — מהגזירה המשותפת ב-lib/paymentCalc.js, אותו דפוס כמו mitzvotBonuses לעיל.
+  const toraniBonuses = deriveToraniBonuses(interactions, contacts);
+
   // אותו paymentData בדיוק שעמוד /payments בונה
   const paymentData = (activists || [])
     .filter(a => a.role === 'activist')
@@ -55,7 +58,8 @@ const fail = m => { console.error(`\n❌ FAIL — ${m}`); process.exit(1); };
     .map(activist => {
       const myMitzvot = mitzvotBonuses.filter(b => Number(b.activist_id) === Number(activist.id) && b.month === monthKey);
       const myNew     = newParticipantBonuses.filter(b => Number(b.activist_id) === Number(activist.id) && b.month === monthKey);
-      const result = calcMonthlyPayment(activist.id, interactions || [], contacts || [], myMitzvot, myNew, undefined, cancelledKeys, { year, month });
+      const myTorani  = toraniBonuses.filter(b => Number(b.activist_id) === Number(activist.id) && b.month === monthKey);
+      const result = calcMonthlyPayment(activist.id, interactions || [], contacts || [], myMitzvot, myNew, undefined, cancelledKeys, { year, month }, myTorani);
       const expensesTotal = (expenses || [])
         .filter(x => Number(x.activist_id) === Number(activist.id) && x.date >= startIso && x.date < endIso)
         .reduce((s, x) => s + Number(x.amount || 0), 0);

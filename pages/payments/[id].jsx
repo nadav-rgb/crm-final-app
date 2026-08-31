@@ -16,7 +16,7 @@ export default function ActivistPaymentDetail() {
   const router = useRouter();
   const { id } = router.query;
   const activistId = Number(id);
-  const { contacts, interactions, mitzvotBonuses, newParticipantBonuses, activists, paymentConfig, expenses, tours } = useCrm();
+  const { contacts, interactions, mitzvotBonuses, newParticipantBonuses, toraniBonuses, activists, paymentConfig, expenses, tours } = useCrm();
   const { currentUser, can } = useAuth();
   const [cancelledBonuses, setCancelledBonuses] = useState([]); // שורות bonus_cancellations
 
@@ -51,7 +51,8 @@ export default function ActivistPaymentDetail() {
     if (!activist) return null;
     const myMitzvotBonuses = mitzvotBonuses.filter(b => b.activist_id === activist.id && b.month === monthKey);
     const myNewBonuses     = newParticipantBonuses.filter(b => b.activist_id === activist.id && b.month === monthKey);
-    const result = calcMonthlyPayment(activist.id, interactions, contacts, myMitzvotBonuses, myNewBonuses, paymentConfig, cancelledBonusKeys, { year, month });
+    const myToraniBonuses  = toraniBonuses.filter(b => b.activist_id === activist.id && b.month === monthKey);
+    const result = calcMonthlyPayment(activist.id, interactions, contacts, myMitzvotBonuses, myNewBonuses, paymentConfig, cancelledBonusKeys, { year, month }, myToraniBonuses);
     const expensesTotal = expenses
       .filter(x => Number(x.activist_id) === Number(activist.id) && x.date >= startIso && x.date < endIso)
       .reduce((s, x) => s + Number(x.amount || 0), 0);
@@ -62,7 +63,7 @@ export default function ActivistPaymentDetail() {
     ).length;
     const guidePay = guidedCount * (paymentConfig.TOUR_GUIDE_RATE ?? 750);
     return { ...result, expensesTotal, guidePay, guidedCount, grandTotal: result.total + expensesTotal + guidePay };
-  }, [activist, interactions, contacts, mitzvotBonuses, newParticipantBonuses, paymentConfig, expenses, tours, cancelledBonusKeys, monthKey, startIso, endIso, year, month]);
+  }, [activist, interactions, contacts, mitzvotBonuses, newParticipantBonuses, toraniBonuses, paymentConfig, expenses, tours, cancelledBonusKeys, monthKey, startIso, endIso, year, month]);
 
   async function handleCancelBonus(item) {
     if (!item.key || !activist) return;
