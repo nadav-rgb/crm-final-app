@@ -5,7 +5,7 @@ import Link from 'next/link';
 import CONFIG from '../../../data/config';
 import { useCrm } from '../../../lib/CrmStore';
 import { useAuth } from '../../../lib/AuthStore';
-import { MITZVOT_BONUS_PER_LEVEL } from '../../../lib/paymentCalc';
+import { MITZVOT_BONUS_PER_LEVEL, previewNewMitzvotBonusChanges } from '../../../lib/paymentCalc';
 import { notifyMitzvotApi } from '../../../lib/notifyApi';
 import DesktopLayout from '../../../components/DesktopLayout';
 
@@ -33,9 +33,15 @@ export default function UpdateMitzvotPage() {
     if(newVal>oldVal) acc.push({mitzva:m,from:oldVal,to:newVal,diff:newVal-oldVal});
     return acc;
   },[]);
-  // בונוס אחד לכל מצווה שעלתה, בלי קשר לגובה הקפיצה (דיווח מוטי גלעד, 2026-08-02).
-  // חייב להישאר זהה לגזירת mitzvotBonuses ב-lib/CrmStore.jsx — זה מה שנכנס לדוח בפועל.
-  const totalBonus = changes.length * MITZVOT_BONUS_PER_LEVEL;
+  // בונוס אחד לכל מצווה שעלתה, בלי קשר לגובה הקפיצה (דיווח מוטי גלעד, 2026-08-02) — ולא
+  // לכל שמירה (דיווח נוסף, 2026-08-31): מצווה שכבר עלתה החודש בשמירה קודמת (וכבר קיבלה
+  // בונוס) לא נספרת שוב רק כי היא מופיעה גם ב-changes של השמירה הזו. previewNewMitzvotBonusChanges
+  // משתמשת באותו קיבוץ כמו deriveMitzvotBonuses ב-lib/paymentCalc.js — זה מה שבאמת נכנס לדוח.
+  // מחושב פעם אחת: גם totalBonus וגם האינדיקטורים לפי-שורה למטה נגזרים מאותו מקור, כדי
+  // שהסכום הכולל לא יוכל לסטות ממה שכל שורה בנפרד טוענת (דיווח נוסף, 2026-08-31).
+  const changesWithBonus = previewNewMitzvotBonusChanges(contact, changes);
+  const earnsBonus = new Map(changesWithBonus.map(c => [c.mitzva, c.isNewBonus]));
+  const totalBonus = changesWithBonus.filter(c => c.isNewBonus).length * MITZVOT_BONUS_PER_LEVEL;
 
   async function handleSave() {
     if (saving) return;
@@ -77,7 +83,9 @@ export default function UpdateMitzvotPage() {
               <div key={mitz} style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12,paddingBottom:12,borderBottom:'0.5px solid #f0f0f0'}}>
                 <div>
                   <span style={{fontSize:14,fontWeight:diff>0?700:400,color:diff>0?'#27ae60':'#333'}}>{mitz}</span>
-                  {diff>0 && <span style={{fontSize:11,color:'#27ae60',marginRight:6}}> ↑ +{MITZVOT_BONUS_PER_LEVEL}₪</span>}
+                  {diff>0 && (earnsBonus.get(mitz)
+                    ? <span style={{fontSize:11,color:'#27ae60',marginRight:6}}> ↑ +{MITZVOT_BONUS_PER_LEVEL}₪</span>
+                    : <span style={{fontSize:11,color:'#aaa',marginRight:6}}> ↑ (בונוס כבר נרשם החודש)</span>)}
                   {diff<0 && <span style={{fontSize:11,color:'#e74c3c',marginRight:6}}> ↓</span>}
                 </div>
                 <div style={{display:'flex',alignItems:'center',gap:8}}>
@@ -94,7 +102,11 @@ export default function UpdateMitzvotPage() {
         {changes.length>0 && (
           <div style={{background:'#edfaf1',borderRadius:12,padding:'14px 16px',marginBottom:14,border:'0.5px solid #27ae60'}}>
             <div style={{fontSize:13,fontWeight:700,color:'#27ae60',marginBottom:8}}>שינויים שיירשמו:</div>
-            {changes.map(c=><div key={c.mitzva} style={{fontSize:13,color:'#27ae60',marginBottom:4}}>✓ {c.mitzva}: {c.from}→{c.to} (+{MITZVOT_BONUS_PER_LEVEL}₪)</div>)}
+            {changesWithBonus.map(c=>
+              <div key={c.mitzva} style={{fontSize:13,color:c.isNewBonus?'#27ae60':'#999',marginBottom:4}}>
+                ✓ {c.mitzva}: {c.from}→{c.to} {c.isNewBonus ? `(+${MITZVOT_BONUS_PER_LEVEL}₪)` : '(בונוס כבר נרשם החודש)'}
+              </div>
+            )}
             <div style={{fontSize:15,fontWeight:700,color:'#27ae60',marginTop:8,paddingTop:8,borderTop:'0.5px solid #b2dfcc'}}>סה"כ בונוס: {totalBonus} ₪</div>
           </div>
         )}
