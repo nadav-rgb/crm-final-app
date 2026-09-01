@@ -724,7 +724,9 @@ export function createLocalBffController({
     }
   },
   waitForExit = async (owned) => {
-    if (owned.exitCode != null) return;
+    // A child terminated by signal keeps exitCode at null. Check signalCode as
+    // well so a fast Windows termination cannot race past the exit listeners.
+    if (owned.exitCode != null || owned.signalCode != null) return;
     await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         cleanup();

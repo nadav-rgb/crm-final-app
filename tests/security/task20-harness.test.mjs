@@ -1729,6 +1729,39 @@ test('local BFF controller uses an exact loopback origin and keeps server creden
   assert.equal(listenerProbeCalls, 1);
 });
 
+test('local BFF shutdown accepts an already signal-terminated owned child', async () => {
+  const module = await import('../../scripts/security/g5-local-orchestrator.mjs');
+  const child = {
+    pid: 4244,
+    exitCode: null,
+    signalCode: null,
+    kill(signal) {
+      assert.equal(signal, 'SIGTERM');
+      this.signalCode = signal;
+      return true;
+    },
+    once() {
+      throw new Error('an already signal-terminated child must not install exit waiters');
+    },
+    off() {},
+  };
+  const controller = module.createLocalBffController({
+    repoRoot: 'C:/synthetic/repository',
+    port: 43877,
+    target: { targetUrl: `http://127.0.0.1:${localApiPort}`, stackIdentity: { verified: true } },
+    credentials: {
+      publishableKey: 'synthetic-local-publishable-key',
+      serviceRoleKey: 'synthetic-local-service-role-key',
+    },
+    spawnProcess() { return child; },
+    async probe() { return true; },
+    async probeListener() { return false; },
+  });
+  await controller.start();
+  await controller.stop();
+  assert.equal(child.signalCode, 'SIGTERM');
+});
+
 test('local BFF shutdown fails closed when TCP listener remains despite non-ready HTTP status', async () => {
   const module = await import('../../scripts/security/g5-local-orchestrator.mjs');
   let ready = false;
