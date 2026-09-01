@@ -100,5 +100,52 @@ const AUG = { year: 2026, month: 7 }; // month 0-indexed, אוגוסט = 7
     data.unpaidByReason, [{ reason: 'פחות מ-15 דקות', count: 2 }, { reason: 'חרגת ממגבלת לקוח', count: 1 }]);
 }
 
-console.log(failures === 0 ? '\nכל הבדיקות עברו.' : `\n${failures} בדיקות נכשלו.`);
-process.exit(failures === 0 ? 0 : 1);
+// ────────────────────────────────────────────────────────────────────────────
+// buildActivityWorkbook — נכתב ל-Node, נקרא בחזרה, מבנה + נוסחאות + RTL תקינים.
+// ────────────────────────────────────────────────────────────────────────────
+{
+  const { buildActivityWorkbook } = require('../lib/activityByTypeExcel.js');
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+
+  const report = calcMonthlyPayment(7, [
+    { activist_id: 7, project_id: 1, id: 1, contact_id: 1, type: 'טלפוני', quality: 'תורני', duration_minutes: 20, date: '2026-08-01' },
+  ], contacts, [], [], DEFAULTS, new Set(), AUG);
+  const data = deriveActivityByType(report, 0, 0);
+
+  (async () => {
+    const wb = await buildActivityWorkbook('בדיקה אוטומטית', 'אוגוסט', 2026, data);
+    const outPath = path.join(os.tmpdir(), 'activity-report-single-test.xlsx');
+    await wb.xlsx.writeFile(outPath);
+
+    const ExcelJS = (await import('exceljs')).default;
+    const back = new ExcelJS.Workbook();
+    await back.xlsx.readFile(outPath);
+    const ws = back.worksheets[0];
+
+    check('שם הגיליון = שם הפעיל', ws?.name, 'בדיקה אוטומטית');
+    check('הגיליון נשמר RTL', Boolean(ws?.views?.[0]?.rightToLeft), true);
+
+    // מוצא את שורת "טלפוני תורני" בטבלת הסוגים ומוודא את הערכים שלה.
+    let toraniRow = null;
+    ws.eachRow(row => { if (row.getCell(1).value === 'טלפוני תורני') toraniRow = row; });
+    check('שורת "טלפוני תורני" קיימת בגיליון', Boolean(toraniRow), true);
+    if (toraniRow) {
+      // תעריף 150 (לא 200): BASE_PRICES['טלפוני-תורני'] עודכן ב-2e1e30c (מיזוג
+      // payment-rules-overhaul) אחרי שהמפרט נכתב — ראה תיקון המקביל למעלה בקובץ.
+      check('טלפוני תורני: מספר מפגשים=1, תעריף=150, סה"כ=150',
+        [toraniRow.getCell(2).value, toraniRow.getCell(3).value, toraniRow.getCell(4).value],
+        [1, 150, 150]);
+    }
+
+    // שורת "סה"כ קשרים/מפגשים מזכים" חייבת להיות נוסחת SUM, לא ערך קפוא.
+    let totalMeetingsRow = null;
+    ws.eachRow(row => { if (row.getCell(1).value === 'סה"כ קשרים/מפגשים מזכים') totalMeetingsRow = row; });
+    check('שורת סיכום מפגשים היא נוסחת SUM',
+      Boolean(totalMeetingsRow?.getCell(4)?.value?.formula), true);
+
+    console.log(failures === 0 ? '\nכל הבדיקות עברו (כולל buildActivityWorkbook).' : `\n${failures} בדיקות נכשלו.`);
+    process.exit(failures === 0 ? 0 : 1);
+  })();
+}
