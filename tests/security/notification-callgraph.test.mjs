@@ -2,14 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { activistA, makeContext, PROJECT_A } from './fixtures.mjs';
-import { enqueueNotificationEvent } from '../../lib/security/domains/notifications.mjs';
+import {
+  enqueueInteractionNotification,
+  enqueueNotificationEvent,
+} from '../../lib/security/domains/notifications.mjs';
 
 const read = (path) => readFile(new URL(`../../${path}`, import.meta.url), 'utf8');
 const DELIVERY_ID = '90000000-0000-4000-8000-000000000001';
 
 test('I3 production notification routes use the one resource-derived event contract', async () => {
   const cases = [
-    ['pages/api/interactions/notify.js', 'interaction_created'],
     ['pages/api/base-meetings/notify.js', 'base_meeting_reported'],
     ['pages/api/tours/notify.js', 'tour_created'],
   ];
@@ -21,7 +23,48 @@ test('I3 production notification routes use the one resource-derived event contr
     assert.doesNotMatch(source, /p_(?:display_amount|title|body|recipient)/i);
   }
   const interaction = await read('pages/api/interactions/notify.js');
+  assert.match(interaction, /enqueueInteractionNotification/);
+  assert.doesNotMatch(interaction, /eventType:\s*['"]interaction_created['"]/);
   assert.doesNotMatch(interaction, /amount\s*:/i);
+});
+
+test('interaction notification kinds map to distinct opaque RPC events', async () => {
+  const calls = [];
+  const context = {
+    ...makeContext(activistA),
+    db: {
+      from(table) {
+        assert.equal(table, 'interactions');
+        const result = { data: { id: 42, project_id: PROJECT_A }, error: null };
+        const query = {
+          select: () => query,
+          eq: () => query,
+          maybeSingle: async () => result,
+        };
+        return query;
+      },
+      async rpc(name, args) {
+        calls.push([name, args]);
+        return { data: DELIVERY_ID, error: null };
+      },
+    },
+  };
+  for (const kind of ['summary', 'self_payment', 'payment']) {
+    await enqueueInteractionNotification(context, { interactionId: 42, kind }, {
+      dispatch: async () => ({ queued: 1 }),
+    });
+  }
+  assert.deepEqual(calls, [
+    ['app_enqueue_notification_event', {
+      p_event_type: 'interaction_summary', p_resource_id: '42', p_project_id: PROJECT_A,
+    }],
+    ['app_enqueue_notification_event', {
+      p_event_type: 'interaction_self_payment', p_resource_id: '42', p_project_id: PROJECT_A,
+    }],
+    ['app_enqueue_notification_event', {
+      p_event_type: 'interaction_payment', p_resource_id: '42', p_project_id: PROJECT_A,
+    }],
+  ]);
 });
 
 test('I3 migration inventories and drops legacy routines before installing an opaque outbox', async () => {
@@ -41,6 +84,13 @@ test('I3 migration inventories and drops legacy routines before installing an op
   assert.match(sql, /create or replace function public\.app_enqueue_notification_event[\s\S]*?returns uuid/i);
   assert.match(sql, /v_is_service boolean := coalesce\(auth\.role\(\) = 'service_role', false\)/i);
   assert.match(sql, /if not coalesce\(v_allowed, false\) then/i);
+  assert.match(sql, /app_private\.interaction_payment_fact\(p_resource_id,\s*v_actor\)/i);
+  assert.match(sql, /p_event_type in \('interaction_self_payment','interaction_payment'\)[\s\S]*v_payment_payable/i);
+  assert.match(sql, /p_event_type = 'interaction_self_payment' or v_payment_amount > 0/i);
+  assert.match(sql, /interaction_summary','interaction_payment'[\s\S]*pm\.role in \('head','coord'\)/i);
+  const financeSql = await read('migrations/0024_finance_security.sql');
+  assert.match(financeSql, /create or replace function app_private\.interaction_payment_fact\([\s\S]*?p_interaction_id text,[\s\S]*?p_actor uuid/i);
+  assert.match(financeSql, /order by base_amount desc,\s*i\.date asc nulls last,\s*i\.id::text asc/i);
   assert.match(sql, /create or replace function public\.app_claim_notification_delivery/i);
   assert.match(sql, /coalesce\(auth\.role\(\), ''\)\s*<>\s*'service_role'/i);
   assert.match(sql, /grant execute on function public\.app_claim_notification_delivery\(uuid\) to service_role/i);

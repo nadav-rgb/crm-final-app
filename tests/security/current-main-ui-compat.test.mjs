@@ -42,3 +42,21 @@ test('guarded comparison includes Torani bonuses and retains the operational pre
   assert.match(source, /beginOperation/);
   assert.match(source, /createGuardedSupabase/);
 });
+
+test('coordinators receive a candidate-only bonus cancellation surface without Finance read access', async () => {
+  const [auth, detail, activists, card] = await Promise.all([
+    readFile(new URL('../../lib/AuthStore.jsx', import.meta.url), 'utf8'),
+    readFile(new URL('../../pages/payments/[id].jsx', import.meta.url), 'utf8'),
+    readFile(new URL('../../pages/activists.jsx', import.meta.url), 'utf8'),
+    readFile(new URL('../../components/ActivistCard.jsx', import.meta.url), 'utf8'),
+  ]);
+  assert.match(auth, /seePayments:\s*\['finance',\s*'head',\s*'ceo'\]\.includes\(role\)/);
+  assert.match(auth, /cancelBonuses:\s*\['coord',\s*'head',\s*'ceo'\]\.includes\(role\)/);
+  assert.match(detail, /const canViewPayment = can\.seePayments/);
+  assert.match(detail, /const canCancelBonus = can\.cancelBonuses/);
+  assert.match(detail, /if \(canViewPayment\)[\s\S]*\/api\/payments\//);
+  assert.match(detail, /if \(canCancelBonus\)[\s\S]*\/api\/payments\/bonus-candidates/);
+  assert.match(detail, /canViewPayment\s*&&\s*payment/);
+  assert.match(activists, /canCancelBonuses=\{can\.cancelBonuses\}/);
+  assert.match(card, /activist\.userId[\s\S]*projectId/);
+});

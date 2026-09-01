@@ -8,9 +8,14 @@ const performanceConfig = {
   dormant: { label: 'רדום',           bg: '#f1efe8', color: '#5f5e5a' },
 };
 
-export default function ActivistCard({ activist, contactCount, interactionCount, performance, canSeeSensitive }) {
+export default function ActivistCard({
+  activist, contactCount, interactionCount, performance, canSeeSensitive,
+  canCancelBonuses = false, projectId = null,
+}) {
   const isActive = activist.status === 'active';
   const perf     = performanceConfig[performance] ?? performanceConfig.dormant;
+  const bonusHref = `/payments/${encodeURIComponent(activist.userId)}`
+    + (projectId == null ? '' : `?projectId=${encodeURIComponent(projectId)}`);
 
   return (
     <div style={{ background: '#fff', borderRadius: 12, padding: '14px 16px', border: '0.5px solid #e0e0e0', opacity: isActive ? 1 : 0.6 }}>
@@ -52,6 +57,12 @@ export default function ActivistCard({ activist, contactCount, interactionCount,
           style={{ flex: 2, display: 'block', textAlign: 'center', textDecoration: 'none' }}>
           צפייה בפרופיל ←
         </Link>
+        {canCancelBonuses && (
+          <Link href={bonusHref} className="btn"
+            style={{ flex: 1, textAlign: 'center', textDecoration: 'none', color: '#8a3b12', borderColor: '#d7a16f' }}>
+            ביטול בונוס
+          </Link>
+        )}
         {canSeeSensitive && (
           <a href={`tel:${activist.phone}`} className="btn"
             style={{ flex: 1, textAlign: 'center', textDecoration: 'none', color: '#3b6d11', borderColor: '#639922' }}>

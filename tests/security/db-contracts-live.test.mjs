@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 import { computeDeterministicFinanceExpected } from '../../scripts/security/provision-test-fixtures.mjs';
 import {
   createLocalPostgresAdapter,
+  runDirectNotificationAssertions,
   runDirectPostgresAssertions,
 } from '../../scripts/security/g5-local-orchestrator.mjs';
 import { observeG5Case } from '../../scripts/security/g5-evidence.mjs';
@@ -248,6 +249,7 @@ test('live PostgreSQL assertions prove search-path and atomic-audit behavior', l
     dockerExecutable,
   });
   let assertions;
+  let notificationAssertions;
   try {
     assertions = await runDirectPostgresAssertions({
       database,
@@ -255,6 +257,16 @@ test('live PostgreSQL assertions prove search-path and atomic-audit behavior', l
       projectId: resources.projectA,
       expectedRows: financeExpected.byActor.ceoAal2ProjectA.length,
       period: resources.period,
+    });
+    notificationAssertions = await runDirectNotificationAssertions({
+      database,
+      actorId: resources.actorIds.activistA1,
+      headId: resources.actorIds.headA,
+      coordinatorId: resources.actorIds.coordA,
+      projectId: resources.projectA,
+      zeroRateInteractionId: resources.interactionA,
+      positiveInteractionId: resources.interactionPositivePayment,
+      ineligibleInteractionId: resources.interactionIneligiblePayment,
     });
   } catch (error) {
     if (/search-path/i.test(error?.message ?? '')) failSafeCheckpoint('postgres-search-path');
@@ -266,6 +278,11 @@ test('live PostgreSQL assertions prove search-path and atomic-audit behavior', l
       searchPathHijack: 'pass',
       financeAuditFailure: 'pass',
       unauditedRowsReturned: 0,
+    });
+    assert.deepEqual(notificationAssertions, {
+      zeroRateSelfOnly: 'pass',
+      positiveManagementOnly: 'pass',
+      persistedFactDenials: 'pass',
     });
   } catch {
     failSafeCheckpoint('postgres-result-shape');

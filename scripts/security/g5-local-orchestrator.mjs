@@ -1396,6 +1396,86 @@ rollback;`);
   };
 }
 
+export async function runDirectNotificationAssertions({
+  database,
+  actorId,
+  headId,
+  coordinatorId,
+  projectId,
+  zeroRateInteractionId,
+  positiveInteractionId,
+  ineligibleInteractionId,
+}) {
+  if (typeof database?.execute !== 'function'
+    || [actorId, headId, coordinatorId].some((value) => !UUID.test(value ?? ''))
+    || !Number.isSafeInteger(projectId) || projectId < 1
+    || [zeroRateInteractionId, positiveInteractionId, ineligibleInteractionId]
+      .some((value) => !/^[A-Za-z0-9_-]{1,128}$/.test(String(value ?? '')))) {
+    throw new Error('PostgreSQL notification assertion refused invalid deterministic fixture scope');
+  }
+  const claims = JSON.stringify({ sub: actorId, aal: 'aal1', role: 'authenticated' });
+  const result = await database.execute(`begin;
+set local role authenticated;
+do $g5$
+declare
+  v_self uuid;
+  v_management uuid;
+  v_zero_management_denied boolean := false;
+  v_ineligible_self_denied boolean := false;
+begin
+  perform set_config('request.jwt.claims', '${claims}', true);
+  select public.app_enqueue_notification_event(
+    'interaction_self_payment', '${zeroRateInteractionId}', ${projectId}
+  ) into v_self;
+  begin
+    perform public.app_enqueue_notification_event(
+      'interaction_payment', '${zeroRateInteractionId}', ${projectId}
+    );
+  exception when others then
+    v_zero_management_denied := true;
+  end;
+  begin
+    perform public.app_enqueue_notification_event(
+      'interaction_self_payment', '${ineligibleInteractionId}', ${projectId}
+    );
+  exception when others then
+    v_ineligible_self_denied := true;
+  end;
+  select public.app_enqueue_notification_event(
+    'interaction_payment', '${positiveInteractionId}', ${projectId}
+  ) into v_management;
+  perform set_config('g5.notification_self_delivery', v_self::text, true);
+  perform set_config('g5.notification_management_delivery', v_management::text, true);
+  perform set_config('g5.notification_denials',
+    case when v_zero_management_denied and v_ineligible_self_denied then 'pass' else 'fail' end,
+    true
+  );
+end $g5$;
+reset role;
+select case when
+  current_setting('g5.notification_denials', true) = 'pass'
+  and (
+    select coalesce(array_agg(o.recipient_user_id order by o.recipient_user_id), '{}'::uuid[])
+    from app_private.notification_delivery_outbox o
+    where o.delivery_id = current_setting('g5.notification_self_delivery', true)::uuid
+  ) = array['${actorId}'::uuid]
+  and (
+    select coalesce(array_agg(o.recipient_user_id order by o.recipient_user_id), '{}'::uuid[])
+    from app_private.notification_delivery_outbox o
+    where o.delivery_id = current_setting('g5.notification_management_delivery', true)::uuid
+  ) = (
+    select array_agg(v order by v) from unnest(array['${headId}'::uuid,'${coordinatorId}'::uuid]) v
+  )
+  then 'pass' else 'fail' end;
+rollback;`);
+  if (result !== 'pass') throw new Error('PostgreSQL notification recipient assertion failed');
+  return {
+    zeroRateSelfOnly: 'pass',
+    positiveManagementOnly: 'pass',
+    persistedFactDenials: 'pass',
+  };
+}
+
 function sanitizeInventory(inventory) {
   if (!inventory || Object.keys(inventory).length !== INVENTORY_KEYS.length) {
     throw new Error('G5 inventory refused incomplete sanitized counts');

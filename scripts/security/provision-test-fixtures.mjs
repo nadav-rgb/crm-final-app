@@ -114,6 +114,10 @@ const MIGRATION_VERIFICATIONS = Object.freeze({
       then 'pass' else 'fail' end`),
   ]),
   '0024': Object.freeze([
+    migrationCheck('0024', 'interaction-payment-fact-private', `select case when
+      to_regprocedure('app_private.interaction_payment_fact(text,uuid)') is not null
+      and not has_function_privilege('authenticated','app_private.interaction_payment_fact(text,uuid)','execute')
+      then 'pass' else 'fail' end`),
     migrationCheck('0024', 'finance-scope-narrows-only', `select case when
       to_regprocedure('public.app_finance_summary(text,integer,uuid)') is not null
       and has_function_privilege('authenticated','public.app_finance_summary(text,integer,uuid)','execute')
@@ -270,6 +274,9 @@ export function buildLegacyFixtureRows(runId, actorIds) {
   const contactToraniStreak = 910007;
   const contactCancelledStreak = 910008;
   const contactShort = 910009;
+  const contactFriendlyEndOfMonth = 910010;
+  const contactFriendlyDerivedAnchor = 910011;
+  const contactReassignedTorani = 910012;
   const meetingA = `security-${runId}-meeting-a`;
   const meetingB = `security-${runId}-meeting-b`;
   const tourA = `security-${runId}-tour-a`;
@@ -320,11 +327,18 @@ export function buildLegacyFixtureRows(runId, actorIds) {
         [contactToraniStreak, '2026-06-01'],
         [contactCancelledStreak, '2026-06-01'],
         [contactShort, '2026-08-01'],
+        [contactFriendlyEndOfMonth, '2026-05-31'],
+        [contactFriendlyDerivedAnchor, null],
       ].map(([id, joined_at]) => ({
         id, project_id: projectA, activist_id: codes.activistA1,
         name: `Synthetic Finance Contact ${id}`, high_potential: false,
         mitzvot_history: [], joined_at, source: 'internal', security_run_id: runId,
       })),
+      {
+        id: contactReassignedTorani, project_id: projectA, activist_id: codes.activistA2,
+        name: 'Synthetic Reassigned Torani Contact', high_potential: false,
+        mitzvot_history: [], joined_at: '2026-06-01', source: 'internal', security_run_id: runId,
+      },
     ],
     interactions: [
       {
@@ -356,10 +370,21 @@ export function buildLegacyFixtureRows(runId, actorIds) {
         [920014, contactCancelledStreak, 'וידאו', 'תורני', '2026-07-11'],
         [920015, contactCancelledStreak, 'וידאו', 'תורני', '2026-08-11'],
         [920016, contactShort, 'קצרצר', 'ידידותי', '2026-08-05'],
+        [920017, contactFriendlyEndOfMonth, 'וידאו', 'ידידותי', '2026-08-01'],
+        [920019, contactFriendlyDerivedAnchor, 'וידאו', 'ידידותי', '2026-08-01'],
+        [920020, contactReassignedTorani, 'טלפוני', 'תורני', '2026-06-10'],
+        [920021, contactReassignedTorani, 'טלפוני', 'תורני', '2026-07-10'],
+        [920022, contactReassignedTorani, 'טלפוני', 'תורני', '2026-08-10'],
       ].map(([id, contact_id, type, quality, date]) => ({
         id, contact_id, project_id: projectA, activist_id: codes.activistA1,
         type, quality, duration_minutes: 20, date, participants: {}, security_run_id: runId,
       })),
+      {
+        id: 920018, contact_id: contactFriendlyDerivedAnchor, project_id: projectA,
+        activist_id: codes.activistA1, type: 'פרונטלי', quality: 'ידידותי',
+        duration_minutes: 20, date: '2026-05-31',
+        participants: { derived_from: 920000 }, security_run_id: runId,
+      },
     ],
     base_meeting_reports: [
       { id: randomUUID(), project_id: projectA, activist_id: codes.activistA1, security_run_id: runId },
@@ -674,6 +699,8 @@ export async function provisionLegacyDatabase({
     contactB: rowsByTable.contacts[2].id,
     interactionA: rowsByTable.interactions[0].id,
     interactionB: rowsByTable.interactions[2].id,
+    interactionPositivePayment: rowsByTable.interactions.find((row) => row.id === 920012)?.id,
+    interactionIneligiblePayment: rowsByTable.interactions.find((row) => row.id === 920016)?.id,
     baseMeetingReportA: rowsByTable.base_meeting_reports[0].id,
     baseMeetingReportB: rowsByTable.base_meeting_reports[1].id,
     meetingA: rowsByTable.meeting_houses[0].id,

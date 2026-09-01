@@ -220,6 +220,8 @@ test('coordinator bonus workflow resolves the target through the scoped director
     eq: () => chain(result),
     gte: () => chain(result),
     lt: () => chain(result),
+    order: () => chain(result),
+    range: async () => result,
     maybeSingle: async () => result,
     then: (resolve, reject) => Promise.resolve(result).then(resolve, reject),
   });
@@ -253,6 +255,105 @@ test('coordinator bonus workflow resolves the target through the scoped director
     name: 'app_project_directory', args: { p_project_id: PROJECT_A },
   }]);
   assert.equal(tableReads.includes('profiles'), false);
+});
+
+function cappedDb(rowsByTable, calls = []) {
+  function chain(table, state = { filters: [], inFilter: null, range: null }) {
+    const query = {
+      select() { return query; },
+      eq(column, value) { state.filters.push([column, value]); return query; },
+      like(column, value) { state.like = [column, value]; return query; },
+      in(column, values) { state.inFilter = [column, values]; return query; },
+      order(column, options) { state.order = [column, options]; return query; },
+      range(from, to) { state.range = [from, to]; calls.push([table, from, to]); return query; },
+      async maybeSingle() {
+        const rows = filtered();
+        return { data: rows[0] ?? null, error: null };
+      },
+      then(resolve, reject) {
+        const rows = filtered();
+        const [from, to] = state.range ?? [0, 999];
+        return Promise.resolve({ data: rows.slice(from, to + 1), error: null }).then(resolve, reject);
+      },
+    };
+    function filtered() {
+      let rows = [...(rowsByTable[table] ?? [])];
+      for (const [column, value] of state.filters) rows = rows.filter((row) => row[column] === value);
+      if (state.inFilter) {
+        const [column, values] = state.inFilter;
+        const allowed = new Set(values.map(String));
+        rows = rows.filter((row) => allowed.has(String(row[column])));
+      }
+      if (state.order) rows.sort((left, right) => String(left[state.order[0]]).localeCompare(String(right[state.order[0]])));
+      return rows;
+    }
+    return query;
+  }
+  return {
+    from: (table) => chain(table),
+    rpc: async (name) => {
+      assert.equal(name, 'app_project_directory');
+      return { data: [{ user_id: activistA.userId, activist_code: 7001 }], error: null };
+    },
+  };
+}
+
+test('bonus eligibility paginates complete contact and cancellation histories past the PostgREST cap', async () => {
+  const contacts = Array.from({ length: 1001 }, (_, index) => ({
+    id: `contact_${String(index).padStart(4, '0')}`,
+    project_id: PROJECT_A,
+    assigned_user_id: activistA.userId,
+    activist_id: 7001,
+    joined_at: '2026-08-03',
+    source: index === 1000 ? 'external' : 'internal',
+    referred_by: null,
+    mitzvot_history: [],
+  }));
+  const calls = [];
+  const result = await listBonusCandidates({ ...makeContext(coordA), db: cappedDb({
+    contacts,
+    interactions: [],
+    payment_config: [{ id: 1,
+      bonus_loyalty_4: 40, bonus_loyalty_6: 60, bonus_mitzvot_level: 5,
+      bonus_new_participant: 7, min_duration_minutes: 15,
+    }],
+    bonus_cancellations: [],
+  }, calls) }, {
+    period: '2026-08', projectId: PROJECT_A, userId: activistA.userId,
+  });
+  assert.deepEqual(result.map((candidate) => candidate.key), [
+    '7001|בונוס-חדש|contact_1000|2026-7',
+  ]);
+  assert.ok(calls.some(([table, from]) => table === 'contacts' && from >= 1000));
+  assert.ok(calls.some(([table]) => table === 'bonus_cancellations'));
+});
+
+test('bonus eligibility paginates complete interaction history past the PostgREST cap', async () => {
+  const contact = {
+    id: 'history_contact', project_id: PROJECT_A, assigned_user_id: activistA.userId,
+    activist_id: 7001, joined_at: '2026-01-01', source: 'internal', referred_by: null,
+    mitzvot_history: [],
+  };
+  const interactions = Array.from({ length: 1001 }, (_, index) => ({
+    id: String(index).padStart(4, '0'), contact_id: contact.id, project_id: PROJECT_A,
+    actor_user_id: activistA.userId, type: index >= 997 ? 'וידאו' : 'טלפוני',
+    quality: index >= 997 ? 'תורני' : 'ידידותי', duration_minutes: 20,
+    date: index >= 997 ? `2026-08-${String(index - 996).padStart(2, '0')}` : '2026-07-01',
+    participants: {},
+  }));
+  const calls = [];
+  const result = await listBonusCandidates({ ...makeContext(coordA), db: cappedDb({
+    contacts: [contact], interactions,
+    payment_config: [{ id: 1,
+      bonus_loyalty_4: 40, bonus_loyalty_6: 60, bonus_mitzvot_level: 5,
+      bonus_new_participant: 7, min_duration_minutes: 15,
+    }],
+    bonus_cancellations: [],
+  }, calls) }, {
+    period: '2026-08', projectId: PROJECT_A, userId: activistA.userId,
+  });
+  assert.equal(result.some((candidate) => candidate.type === 'בונוס-לימוד-4'), true);
+  assert.ok(calls.some(([table, from]) => table === 'interactions' && from >= 1000));
 });
 
 test('bonus candidates match the legacy key contract and expose no contact PII', () => {
@@ -323,6 +424,46 @@ test('bonus candidate totals stay in parity with the existing payment engine fix
   assert.equal(candidates.reduce((sum, item) => sum + item.amount, 0), engineBonusTotal);
 });
 
+test('historical Torani earning remains attributed to the earning actor after contact reassignment', () => {
+  const contactId = '10000000-0000-4000-8000-000000000099';
+  const candidates = buildBonusCandidates({
+    activistCode: 7001,
+    contacts: [{
+      id: contactId, project_id: PROJECT_A, assigned_user_id: activistB.userId,
+      activist_id: 7002, joined_at: '2026-08-01', source: 'external',
+      referred_by: null, mitzvot_history: [],
+    }],
+    interactions: ['2026-06-01', '2026-07-01', '2026-08-01'].map((date, index) => ({
+      id: index + 1, contact_id: contactId, project_id: PROJECT_A,
+      actor_user_id: activistA.userId, type: 'טלפוני', quality: 'תורני',
+      duration_minutes: 20, date, participants: {},
+    })),
+    config: {
+      bonus_loyalty_4: 40, bonus_loyalty_6: 60, bonus_mitzvot_level: 5,
+      bonus_new_participant: 7, min_duration_minutes: 15,
+    },
+    period: '2026-08',
+  });
+  assert.deepEqual(candidates, [{
+    key: `7001|בונוס-תורני|${contactId}|2026-7`, type: 'בונוס-תורני', amount: 1000,
+  }]);
+});
+
+test('Finance SQL uses calendar ordinals, derived earliest history, and historical Torani beneficiaries', async () => {
+  const sql = await readFile(new URL('../../migrations/0024_finance_security.sql', import.meta.url), 'utf8');
+  assert.doesNotMatch(sql, /extract\(year from age\(/i);
+  assert.match(sql, /extract\(year from v_interaction\.date\).*12[\s\S]*extract\(month from v_interaction\.date\)[\s\S]*v_interaction\.anchor_date/i);
+  const anchorStart = sql.indexOf('coalesce(', sql.indexOf('-- Same allocation order'));
+  const anchor = sql.slice(anchorStart, sql.indexOf('as anchor_date', anchorStart));
+  assert.doesNotMatch(anchor, /participants[\s\S]*derived_from|project_id in \(1, 2\)/i);
+  const summaryTorani = sql.slice(sql.indexOf('-- One-time Torani bonus'), sql.indexOf('select coalesce(sum(e.amount)', sql.indexOf('-- One-time Torani bonus')));
+  assert.doesNotMatch(summaryTorani, /assigned_user_id\s*=\s*v_target\.target_user_id/i);
+  assert.match(summaryTorani, /c\.project_id\s*=\s*any\(v_effective_projects\)/i);
+  const cancellationTorani = sql.slice(sql.indexOf("elsif v_bonus_type = 'בונוס-תורני'"), sql.indexOf('if coalesce(v_amount', sql.indexOf("elsif v_bonus_type = 'בונוס-תורני'")));
+  assert.match(cancellationTorani, /i\.actor_user_id\s*=\s*v_beneficiary_user_id/i);
+  assert.match(sql, /beneficiary_user_id[\s\S]*v_beneficiary_user_id/i);
+});
+
 test('bonus cancellation derives all authority fields and rejects a forged resource', () => {
   const contact = {
     id: '10000000-0000-4000-8000-000000000001', project_id: PROJECT_A,
@@ -333,7 +474,7 @@ test('bonus cancellation derives all authority fields and rejects a forged resou
   };
   assert.deepEqual(
     bonusCancellationCommand(makeContext(headA), { bonusKey: candidate.key }, {
-      contact, candidate, actorActivistCode: 9001,
+      contact, candidate, beneficiaryUserId: activistA.userId, actorActivistCode: 9001,
     }),
     {
       bonus_key: candidate.key,
@@ -354,19 +495,20 @@ test('bonus cancellation derives all authority fields and rejects a forged resou
   );
   assert.throws(
     () => bonusCancellationCommand(makeContext(headA), { bonusKey: candidate.key }, {
-      contact: { ...contact, project_id: PROJECT_B }, candidate, actorActivistCode: 9001,
+      contact: { ...contact, project_id: PROJECT_B }, candidate,
+      beneficiaryUserId: activistA.userId, actorActivistCode: 9001,
     }),
     hasCode('NOT_FOUND'),
   );
   assert.throws(
     () => bonusCancellationCommand(makeContext(activistA), { bonusKey: candidate.key }, {
-      contact, candidate, actorActivistCode: 7001,
+      contact, candidate, beneficiaryUserId: activistA.userId, actorActivistCode: 7001,
     }),
     hasCode('CAPABILITY_DENIED'),
   );
   assert.throws(
     () => bonusCancellationCommand({ ...makeContext(ceo), aal: 1 }, { bonusKey: candidate.key }, {
-      contact, candidate, actorActivistCode: 9002,
+      contact, candidate, beneficiaryUserId: activistA.userId, actorActivistCode: 9002,
     }),
     hasCode('MFA_REQUIRED'),
   );

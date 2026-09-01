@@ -83,6 +83,8 @@ export default function ActivistsPage() {
                 interactionCount={interactionsLast30(activist.id, interactions)}
                 performance={getActivistPerformance(activist.id, contacts, interactions)}
                 canSeeSensitive={can.seeSensitiveData}
+                canCancelBonuses={can.cancelBonuses}
+                projectId={filterProject}
               />
             ))
           }
@@ -101,6 +103,8 @@ export default function ActivistsPage() {
                 interactionCount={interactionsLast30(activist.id, interactions)}
                 performance={getActivistPerformance(activist.id, contacts, interactions)}
                 canSeeSensitive={can.seeSensitiveData}
+                canCancelBonuses={can.cancelBonuses}
+                projectId={filterProject}
                 last={idx === filtered.length - 1}
               />
             ))
@@ -112,7 +116,10 @@ export default function ActivistsPage() {
 }
 
 // ── שורת רשימה ───────────────────────────────────────────────
-function ActivistListRow({ activist, contactCount, interactionCount, performance, canSeeSensitive, last }) {
+function ActivistListRow({
+  activist, contactCount, interactionCount, performance, canSeeSensitive,
+  canCancelBonuses, projectId, last,
+}) {
   const isActive = activist.status === 'active';
   const perf = performanceConfig[performance] ?? performanceConfig.dormant;
 
@@ -166,6 +173,15 @@ function ActivistListRow({ activist, contactCount, interactionCount, performance
             style={{ textDecoration: 'none', fontSize: 12, padding: '6px 12px', color: '#3b6d11', borderColor: '#639922' }}>
             📞
           </a>
+        )}
+        {canCancelBonuses && (
+          <Link
+            href={`/payments/${encodeURIComponent(activist.userId)}${projectId == null ? '' : `?projectId=${encodeURIComponent(projectId)}`}`}
+            className="btn"
+            style={{ textDecoration: 'none', fontSize: 12, padding: '6px 12px', color: '#8a3b12', borderColor: '#d7a16f' }}
+          >
+            ביטול בונוס
+          </Link>
         )}
         <Link href={`/activists/${activist.id}`} className="btn btn-primary"
           style={{ textDecoration: 'none', fontSize: 12, padding: '6px 20px', minWidth: 80, textAlign: 'center' }}>

@@ -267,8 +267,8 @@ test('legacy fixture rows exercise owner backfills for both tenants using exact 
   const fixture = buildLegacyFixtureRows(runId, actorIds);
   assert.deepEqual(fixture.projects.map((row) => row.id), [1, 2]);
   assert.equal(fixture.profiles.length, 10);
-  assert.equal(fixture.contacts.length, 9);
-  assert.equal(fixture.interactions.length, 16);
+  assert.equal(fixture.contacts.length, 12);
+  assert.equal(fixture.interactions.length, 22);
   assert.equal(fixture.bonus_cancellations.length, 2);
   assert.equal(fixture.meeting_reminders.length >= 2, true);
   assert.equal(fixture.tours.length, 3);
@@ -407,25 +407,25 @@ test('finance parity is computed in-process from the deterministic fixture and e
       user_id: actorIds.activistA1,
       name: 'Synthetic activistA1',
       period: '2026-08',
-      activity_total: 586,
-      bonus_total: 1012,
+      activity_total: 736,
+      bonus_total: 2012,
       tour_total: 0,
       expense_total: 17,
-      grand_total: 1615,
+      grand_total: 2765,
       activity_by_type: activityByType({
         'phone-friendly': 1,
-        'phone-torani': 1,
+        'phone-torani': 2,
         'video-torani': 2,
         'frontal-friendly': 2,
       }),
       bonus_by_type: [
         { type: 'בונוס-מצוות', count: 1, total: 5 },
         { type: 'בונוס-חדש', count: 1, total: 7 },
-        { type: 'בונוס-תורני', count: 1, total: 1000 },
+        { type: 'בונוס-תורני', count: 2, total: 2000 },
       ],
       unpaid_by_reason: [
         { reason: 'friendly-frontal-cap', label: 'חריגה ממכסת ידידותי-פרונטלי', count: 1 },
-        { reason: 'friendly-window', label: 'קשר ידידותי מעבר לחלון הזכאות', count: 1 },
+        { reason: 'friendly-window', label: 'קשר ידידותי מעבר לחלון הזכאות', count: 3 },
         { reason: 'short-contact', label: 'קשר קצרצר — אינו מזכה בתשלום', count: 1 },
         { reason: 'torani-transition', label: 'הלקוח כבר עבר לקשר תורני', count: 1 },
       ],
@@ -630,7 +630,7 @@ test('local lifecycle executes reset proof, migrations, rollback, live flows and
   assert.ok(trace.indexOf('provision') < trace.indexOf('live-evidence'));
   assert.ok(trace.indexOf('live-evidence') < trace.indexOf('cleanup'));
   assert.equal(result.lifecycleEvidence.inventories.length, 19);
-  assert.equal(result.lifecycleEvidence.checks.length, 47);
+  assert.equal(result.lifecycleEvidence.checks.length, 49);
   assert.deepEqual(result.lifecycleEvidence.inventories[0], {
     stage: 'legacy-before-reset-proof',
     migrationId: null,

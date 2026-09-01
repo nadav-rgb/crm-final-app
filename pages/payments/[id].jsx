@@ -16,7 +16,7 @@ function routePeriod(query) {
 
 export default function ActivistPaymentDetail() {
   const router = useRouter();
-  const { currentUser, can, apiFetch } = useAuth();
+  const { can, apiFetch } = useAuth();
   const [payment, setPayment] = useState(null);
   const [bonuses, setBonuses] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -30,9 +30,10 @@ export default function ActivistPaymentDetail() {
   const { year, month } = routePeriod(router.query);
   const period = `${year}-${String(month + 1).padStart(2, '0')}`;
   const currentMonthName = MONTH_NAMES[month];
-  const canView = can.seePayments;
-  const canCancelBonus = ['head', 'ceo'].includes(currentUser?.role);
-  const backHref = `/payments?y=${year}&m=${month}`;
+  const canViewPayment = can.seePayments;
+  const canCancelBonus = can.cancelBonuses;
+  const canAccess = canViewPayment || canCancelBonus;
+  const backHref = canViewPayment ? `/payments?y=${year}&m=${month}` : '/activists';
 
   const queryString = useMemo(() => {
     const query = new URLSearchParams({ period });
@@ -45,10 +46,14 @@ export default function ActivistPaymentDetail() {
   );
 
   const load = useCallback(async () => {
-    if (!router.isReady || !canView || !userId) return;
+    if (!router.isReady || !canAccess || !userId) return;
     setLoading(true);
     try {
-      const paymentResult = await apiFetch(`/api/payments/${encodeURIComponent(userId)}?${queryString}`, { method: 'GET' });
+      let nextPayment = null;
+      if (canViewPayment) {
+        const paymentResult = await apiFetch(`/api/payments/${encodeURIComponent(userId)}?${queryString}`, { method: 'GET' });
+        nextPayment = paymentResult.payment;
+      }
       let candidates = [];
       if (canCancelBonus) {
         const bonusQuery = new URLSearchParams({ period, userId });
@@ -56,7 +61,7 @@ export default function ActivistPaymentDetail() {
         const bonusResult = await apiFetch(`/api/payments/bonus-candidates?${bonusQuery}`, { method: 'GET' });
         candidates = bonusResult.bonuses || [];
       }
-      setPayment(paymentResult.payment);
+      setPayment(nextPayment);
       setBonuses(candidates);
       setLoadError('');
     } catch {
@@ -66,7 +71,7 @@ export default function ActivistPaymentDetail() {
     } finally {
       setLoading(false);
     }
-  }, [apiFetch, canCancelBonus, canView, period, projectNarrowing, queryString, router.isReady, userId]);
+  }, [apiFetch, canAccess, canCancelBonus, canViewPayment, period, projectNarrowing, queryString, router.isReady, userId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -84,7 +89,7 @@ export default function ActivistPaymentDetail() {
     }
   }
 
-  if (!canView) return (
+  if (!canAccess) return (
     <DesktopLayout title="פירוט תשלום פעיל" backHref={backHref} backLabel="← חזרה לתשלומים">
       <div style={{ textAlign:'center', padding:60, color:'#aaa' }}>
         <div style={{ fontSize:48, marginBottom:12 }}>🔒</div>
@@ -99,7 +104,7 @@ export default function ActivistPaymentDetail() {
     </DesktopLayout>
   );
 
-  if (!payment) return (
+  if (canViewPayment && !payment) return (
     <DesktopLayout title="פירוט תשלום פעיל" backHref={backHref} backLabel="← חזרה לתשלומים">
       <div role="alert" style={{ textAlign:'center', padding:60, color:'#a63230' }}>
         {loadError || 'פירוט התשלום לא נמצא.'}
@@ -107,29 +112,29 @@ export default function ActivistPaymentDetail() {
     </DesktopLayout>
   );
 
-  const totals = [
+  const totals = payment ? [
     ['פעילות מזכה', payment.activityTotal, '#6c5ce7'],
     ['בונוסים', payment.bonusTotal, '#8e5bb7'],
     ['הדרכת סיורים', payment.tourTotal, '#1b6ca8'],
     ['החזר הוצאות', payment.expenseTotal, '#1f7a45'],
-  ];
+  ] : [];
 
   return (
     <DesktopLayout
-      title={`פירוט תשלום — ${payment.name}`}
-      subtitle={`${currentMonthName} ${year} · נתונים מצרפיים`}
+      title={payment ? `פירוט תשלום — ${payment.name}` : 'ביטול בונוסים לפעיל'}
+      subtitle={payment ? `${currentMonthName} ${year} · נתונים מצרפיים` : `${currentMonthName} ${year} · מועמדים בלבד`}
       backHref={backHref}
-      backLabel="← חזרה לתשלומים"
+      backLabel={canViewPayment ? '← חזרה לתשלומים' : '← חזרה לפעילים'}
     >
       <div style={{ maxWidth: 640 }}>
-        <div style={{ background:'linear-gradient(135deg,#6c5ce7,#a29bfe)', borderRadius:16, padding:'20px 24px', marginBottom:20, color:'#fff' }}>
+        {canViewPayment && payment && <div style={{ background:'linear-gradient(135deg,#6c5ce7,#a29bfe)', borderRadius:16, padding:'20px 24px', marginBottom:20, color:'#fff' }}>
           <div style={{ fontSize:13, opacity:0.85, marginBottom:4 }}>סה"כ לתשלום {currentMonthName} {year}</div>
           <div style={{ fontSize:36, fontWeight:700 }}>{Number(payment.grandTotal).toLocaleString()} ₪</div>
-        </div>
+        </div>}
 
         {loadError && <div role="alert" style={{ color:'#a63230', marginBottom:14 }}>{loadError}</div>}
 
-        <div style={{ background:'#fffaf5', borderRadius:16, padding:'20px', border:'0.5px solid rgba(108,92,231,0.2)', marginBottom:20 }}>
+        {canViewPayment && payment && <div style={{ background:'#fffaf5', borderRadius:16, padding:'20px', border:'0.5px solid rgba(108,92,231,0.2)', marginBottom:20 }}>
           <div style={{ fontSize:15, fontWeight:700, marginBottom:12 }}>פירוט מצרפי</div>
           {totals.map(([label, amount, color]) => (
             <div key={label} style={{ display:'flex', justifyContent:'space-between', padding:'9px 0', borderBottom:'0.5px solid #f0f0f0', fontSize:13.5 }}>
@@ -137,7 +142,7 @@ export default function ActivistPaymentDetail() {
               <span style={{ fontWeight:700, color }}>{Number(amount).toLocaleString()} ₪</span>
             </div>
           ))}
-        </div>
+        </div>}
 
         {activityData && (
           <div style={{ background:'#fff', borderRadius:16, padding:'20px', border:'0.5px solid rgba(108,92,231,0.16)', marginBottom:20 }}>

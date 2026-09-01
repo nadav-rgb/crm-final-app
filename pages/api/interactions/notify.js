@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { secureHandler } from '../../../lib/security/api-handler.mjs';
 import { SecurityError } from '../../../lib/security/errors.mjs';
 import { getInteraction } from '../../../lib/security/domains/interactions.mjs';
-import { enqueueNotificationEvent } from '../../../lib/security/domains/notifications.mjs';
+import { enqueueInteractionNotification } from '../../../lib/security/domains/notifications.mjs';
 import { requireContactsBff } from '../../../lib/security/domains/route-support.mjs';
 
 const schema = z.object({
@@ -17,8 +17,8 @@ const handler = secureHandler({ method: 'POST', schema, maxBytes: 1_024, resourc
     if (input.kind === 'self_payment' && interaction.actor_user_id !== context.userId) {
       throw new SecurityError(403, 'CAPABILITY_DENIED', 'Access is denied');
     }
-    return enqueueNotificationEvent(context, {
-      eventType: 'interaction_created', resourceId: interaction.id,
+    return enqueueInteractionNotification(context, {
+      interactionId: interaction.id, kind: input.kind,
     });
   });
 

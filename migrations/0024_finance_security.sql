@@ -11,6 +11,173 @@ set rate_phone_friendly = 0,
     rate_video_torani = 200
 where id = 1;
 
+-- Persisted-fact classifier used by the notification RPC. It replays the same
+-- deterministic monthly allocation rules as app_finance_summary and never
+-- accepts an amount or recipient assertion from the browser.
+create or replace function app_private.interaction_payment_fact(
+  p_interaction_id text,
+  p_actor uuid
+) returns table (payable boolean, amount numeric)
+language plpgsql security definer
+set search_path = pg_catalog, public, app_private
+as $$
+declare
+  v_cfg public.payment_config%rowtype;
+  v_target_date date;
+  v_start date;
+  v_end date;
+  v_interaction record;
+  v_phone_count integer := 0;
+  v_frontal_count integer := 0;
+  v_multi_count integer := 0;
+  v_contact_phone jsonb := '{}'::jsonb;
+  v_contact_frontal jsonb := '{}'::jsonb;
+  v_contact_friendly_frontal jsonb := '{}'::jsonb;
+  v_contact_key text;
+  v_contact_phone_count integer;
+  v_contact_frontal_count integer;
+  v_contact_friendly_frontal_count integer;
+  v_recognized boolean;
+  v_payable boolean;
+begin
+  if p_actor is null or nullif(btrim(p_interaction_id), '') is null then
+    return query select false, 0::numeric;
+    return;
+  end if;
+  select i.date into v_target_date
+  from public.interactions i
+  where i.id::text = p_interaction_id
+    and i.actor_user_id = p_actor
+    and i.project_id in (1, 2)
+    and not (coalesce(i.participants, '{}'::jsonb) ? 'derived_from');
+  if not found then
+    return query select false, 0::numeric;
+    return;
+  end if;
+  v_start := date_trunc('month', v_target_date::timestamp)::date;
+  v_end := (v_start + interval '1 month')::date;
+  select * into v_cfg from public.payment_config where id = 1;
+  if not found then
+    raise exception 'payment configuration unavailable' using errcode = '55000';
+  end if;
+
+  for v_interaction in
+    select i.id, i.contact_id, i.type, i.quality,
+           coalesce(i.duration_minutes, 0) as duration_minutes, i.date,
+           coalesce(c.high_potential, false) as is_high_potential,
+           coalesce(
+             c.joined_at,
+             (
+               select min(h.date)
+               from public.interactions h
+               where h.actor_user_id = p_actor and h.contact_id = i.contact_id
+             ),
+             i.date
+           ) as anchor_date,
+           (
+             select min(h.date)
+             from public.interactions h
+             where h.actor_user_id = p_actor
+               and h.contact_id = i.contact_id
+               and h.project_id in (1, 2)
+               and h.quality = 'תורני'
+               and coalesce(h.duration_minutes, 0) >= v_cfg.min_duration_minutes
+               and not (coalesce(h.participants, '{}'::jsonb) ? 'derived_from')
+           ) as first_torani_date,
+           case
+             when i.type = 'טלפוני' and i.quality = 'ידידותי' then v_cfg.rate_phone_friendly
+             when i.type = 'טלפוני' and i.quality = 'תורני' then v_cfg.rate_phone_torani
+             when i.type = 'וידאו' and i.quality = 'ידידותי' then v_cfg.rate_video_friendly
+             when i.type = 'וידאו' and i.quality = 'תורני' then v_cfg.rate_video_torani
+             when i.type = 'פרונטלי' and i.quality = 'ידידותי' then v_cfg.rate_frontal_friendly
+             when i.type = 'פרונטלי' and i.quality = 'תורני' then v_cfg.rate_frontal_torani
+             when i.type = 'פרונטלי' and i.quality = 'רב משתתפים' then v_cfg.rate_multi
+             when i.type = 'אירוח שבת' then v_cfg.rate_shabbat_hosting
+             else null
+           end as base_amount
+    from public.interactions i
+    left join public.contacts c on c.id = i.contact_id
+    where i.actor_user_id = p_actor
+      and i.project_id in (1, 2)
+      and i.date >= v_start and i.date < v_end
+      and not (coalesce(i.participants, '{}'::jsonb) ? 'derived_from')
+    order by base_amount desc, i.date asc nulls last, i.id::text asc
+  loop
+    v_contact_key := coalesce(v_interaction.contact_id::text, '');
+    v_contact_phone_count := coalesce((v_contact_phone ->> v_contact_key)::integer, 0);
+    v_contact_frontal_count := coalesce((v_contact_frontal ->> v_contact_key)::integer, 0);
+    v_contact_friendly_frontal_count := coalesce((v_contact_friendly_frontal ->> v_contact_key)::integer, 0);
+    v_recognized := v_interaction.base_amount is not null;
+    v_payable := false;
+
+    if v_interaction.type = 'קצרצר'
+      or v_interaction.duration_minutes < v_cfg.min_duration_minutes then
+      v_payable := false;
+    elsif v_interaction.quality = 'ידידותי'
+      and (((extract(year from v_interaction.date)::integer * 12)
+        + extract(month from v_interaction.date)::integer)
+        - ((extract(year from v_interaction.anchor_date)::integer * 12)
+        + extract(month from v_interaction.anchor_date)::integer)) >= 3 then
+      v_payable := false;
+    elsif v_interaction.quality = 'ידידותי'
+      and v_interaction.first_torani_date is not null
+      and v_interaction.first_torani_date <= v_interaction.date then
+      v_payable := false;
+    elsif not v_recognized then
+      v_payable := false;
+    elsif v_interaction.type = 'אירוח שבת' then
+      v_payable := true;
+    elsif v_interaction.type = 'פרונטלי' and v_interaction.quality = 'רב משתתפים' then
+      v_payable := v_multi_count < v_cfg.cap_multi;
+    elsif v_interaction.type = 'פרונטלי' and v_interaction.quality = 'ידידותי'
+      and v_contact_friendly_frontal_count >= 2 then
+      v_payable := false;
+    elsif v_interaction.type in ('טלפוני','וידאו') then
+      v_payable := v_phone_count < v_cfg.cap_phone
+        and v_contact_phone_count < case when v_interaction.is_high_potential
+          then v_cfg.cap_contact_phone_high else v_cfg.cap_contact_phone_regular end;
+    elsif v_interaction.type = 'פרונטלי' then
+      v_payable := v_frontal_count < v_cfg.cap_frontal
+        and v_contact_frontal_count < case when v_interaction.is_high_potential
+          then v_cfg.cap_contact_frontal_high else v_cfg.cap_contact_frontal_regular end;
+    end if;
+
+    if v_payable then
+      if v_interaction.type in ('טלפוני','וידאו') then
+        v_phone_count := v_phone_count + 1;
+        v_contact_phone := jsonb_set(
+          v_contact_phone, array[v_contact_key], to_jsonb(v_contact_phone_count + 1), true
+        );
+      elsif v_interaction.type = 'פרונטלי' and v_interaction.quality = 'רב משתתפים' then
+        v_multi_count := v_multi_count + 1;
+      elsif v_interaction.type = 'פרונטלי' then
+        v_frontal_count := v_frontal_count + 1;
+        v_contact_frontal := jsonb_set(
+          v_contact_frontal, array[v_contact_key], to_jsonb(v_contact_frontal_count + 1), true
+        );
+        if v_interaction.quality = 'ידידותי' then
+          v_contact_friendly_frontal := jsonb_set(
+            v_contact_friendly_frontal,
+            array[v_contact_key],
+            to_jsonb(v_contact_friendly_frontal_count + 1),
+            true
+          );
+        end if;
+      end if;
+    end if;
+
+    if v_interaction.id::text = p_interaction_id then
+      return query select v_payable,
+        case when v_payable then coalesce(v_interaction.base_amount, 0) else 0 end::numeric;
+      return;
+    end if;
+  end loop;
+  return query select false, 0::numeric;
+end $$;
+
+alter function app_private.interaction_payment_fact(text,uuid) owner to postgres;
+revoke all on function app_private.interaction_payment_fact(text,uuid) from public, anon, authenticated;
+
 create or replace function public.app_finance_summary(
   p_period text,
   p_project_id integer default null,
@@ -208,8 +375,6 @@ begin
                  from public.interactions h
                  where h.actor_user_id = v_target.target_user_id
                    and h.contact_id = i.contact_id
-                   and h.project_id in (1, 2)
-                   and not (coalesce(h.participants, '{}'::jsonb) ? 'derived_from')
                ),
                i.date
              ) as anchor_date,
@@ -269,8 +434,10 @@ begin
       elsif v_interaction.duration_minutes < v_cfg.min_duration_minutes then
         v_unpaid_reason := 'min-duration';
       elsif v_interaction.quality = 'ידידותי'
-        and ((extract(year from age(v_interaction.date, v_interaction.anchor_date))::integer * 12)
-          + extract(month from age(v_interaction.date, v_interaction.anchor_date))::integer) >= 3 then
+        and (((extract(year from v_interaction.date)::integer * 12)
+          + extract(month from v_interaction.date)::integer)
+          - ((extract(year from v_interaction.anchor_date)::integer * 12)
+          + extract(month from v_interaction.anchor_date)::integer)) >= 3 then
         v_unpaid_reason := 'friendly-window';
       elsif v_interaction.quality = 'ידידותי'
         and v_interaction.first_torani_date is not null
@@ -420,7 +587,8 @@ begin
       from public.interactions i
       join public.contacts c on c.id = i.contact_id
       where i.actor_user_id = v_target.target_user_id
-        and c.assigned_user_id = v_target.target_user_id
+        and c.project_id = i.project_id
+        and c.project_id = any(v_effective_projects)
         and i.project_id = any(v_effective_projects)
         and i.project_id in (1, 2)
         and i.quality = 'תורני'
@@ -565,6 +733,7 @@ declare
   v_actor_code integer;
   v_actor_global_role text;
   v_contact public.contacts%rowtype;
+  v_beneficiary_user_id uuid;
   v_cfg public.payment_config%rowtype;
   v_learning_count integer := 0;
   v_amount numeric := 0;
@@ -597,8 +766,6 @@ begin
   select c.* into v_contact
   from public.contacts c
   where c.id::text = v_contact_id
-    and c.activist_id = v_activist_code
-    and c.assigned_user_id is not null
   for update;
   if not found then
     return false;
@@ -630,17 +797,20 @@ begin
     return false;
   end if;
 
-  if not exists (
-    select 1
+  select p.id into v_beneficiary_user_id
     from public.project_memberships pm
     join public.profiles p on p.id = pm.user_id
-    where pm.user_id = v_contact.assigned_user_id
-      and pm.project_id = v_contact.project_id
+    where pm.project_id = v_contact.project_id
       and pm.status = 'active'
       and pm.role = 'activist'
       and p.disabled_at is null
-      and p.activist_code = v_contact.activist_id
-  ) then
+      and p.activist_code = v_activist_code;
+  if not found then
+    return false;
+  end if;
+  if v_bonus_type in ('בונוס-מצוות','בונוס-חדש')
+    and (v_contact.activist_id <> v_activist_code
+      or v_contact.assigned_user_id is distinct from v_beneficiary_user_id) then
     return false;
   end if;
 
@@ -652,7 +822,7 @@ begin
   if v_bonus_type in ('בונוס-לימוד-4','בונוס-לימוד-6') then
     select count(*)::integer into v_learning_count
     from public.interactions i
-    where i.actor_user_id = v_contact.assigned_user_id
+    where i.actor_user_id = v_beneficiary_user_id
       and i.project_id = v_contact.project_id
       and i.contact_id::text = v_contact_id
       and i.date >= v_start and i.date < v_end
@@ -683,7 +853,7 @@ begin
     with torani_months as (
       select distinct date_trunc('month', i.date::timestamp)::date as month_start
       from public.interactions i
-      where i.actor_user_id = v_contact.assigned_user_id
+      where i.actor_user_id = v_beneficiary_user_id
         and i.project_id = v_contact.project_id
         and i.project_id in (1, 2)
         and i.contact_id::text = v_contact_id
@@ -718,8 +888,8 @@ begin
     bonus_key, activist_id, project_id, "desc", amount, cancelled_by,
     beneficiary_user_id, cancelled_by_user_id
   ) values (
-    p_bonus_key, v_contact.activist_id, v_contact.project_id, v_bonus_type, v_amount, v_actor_code,
-    v_contact.assigned_user_id, v_actor
+    p_bonus_key, v_activist_code, v_contact.project_id, v_bonus_type, v_amount, v_actor_code,
+    v_beneficiary_user_id, v_actor
   );
   return true;
 end $$;

@@ -124,6 +124,7 @@ export function AuthProvider({ children }) {
     callContact: role === 'activist',
     seeActivists: role !== 'activist' && role !== 'finance',
     seePayments: ['finance', 'head', 'ceo'].includes(role),
+    cancelBonuses: ['coord', 'head', 'ceo'].includes(role),
     seeMeetingHouses: ['ceo', 'head', 'coord', 'finance'].includes(role),
     seeMeetingHouseResults: ['ceo', 'head', 'coord'].includes(role),
     ownProjectId: currentUser?.project_id ?? null,

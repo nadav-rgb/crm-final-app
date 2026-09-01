@@ -22,6 +22,8 @@ revoke all on function public.app_cancel_bonus(text) from public, anon, authenti
 drop function if exists public.app_cancel_bonus(text);
 revoke all on function public.app_finance_summary(text,integer,uuid) from public, anon, authenticated;
 drop function if exists public.app_finance_summary(text,integer,uuid);
+revoke all on function app_private.interaction_payment_fact(text,uuid) from public, anon, authenticated;
+drop function if exists app_private.interaction_payment_fact(text,uuid);
 
 -- 0023: restore legacy compatibility columns before their NOT NULL constraints.
 revoke all on function public.app_claim_notification_delivery(uuid) from public, anon, authenticated, service_role;

@@ -93,10 +93,13 @@ declare
   v_reminder_type text;
   v_next_action_date date;
   v_contact_active boolean;
+  v_payment_payable boolean := false;
+  v_payment_amount numeric := 0;
 begin
   if (v_actor is null and not v_is_service) or p_event_type not in (
     'meeting_house_assigned','tour_created','tour_updated','tour_cancelled','tour_reported',
-    'interaction_created','base_meeting_reported','mitzvot_updated','self_test',
+    'interaction_created','interaction_summary','interaction_self_payment','interaction_payment',
+    'base_meeting_reported','mitzvot_updated','self_test',
     'base_report_reminder','missing_report','next_action_due','tour_sheet_sync'
   ) or nullif(btrim(p_resource_id), '') is null then
     raise exception 'invalid notification event' using errcode = '22023';
@@ -156,14 +159,26 @@ begin
       v_allowed := v_project_id is not null and v_is_manager;
     end if;
     v_url := '/tours?tour=' || p_resource_id;
-  elsif p_event_type = 'interaction_created' then
+  elsif p_event_type in (
+    'interaction_created','interaction_summary','interaction_self_payment','interaction_payment'
+  ) then
     select i.project_id, i.actor_user_id into v_project_id, v_actor_user_id
     from public.interactions i where i.id::text = p_resource_id;
     v_is_manager := public.app_is_ceo()
       or public.app_has_project_role(v_project_id, array['head','coord']);
-    v_allowed := v_project_id is not null and (
-      v_is_manager or (v_actor_user_id = v_actor and public.app_has_active_membership(v_project_id))
-    );
+    if p_event_type in ('interaction_self_payment','interaction_payment') then
+      select fact.payable, fact.amount into v_payment_payable, v_payment_amount
+      from app_private.interaction_payment_fact(p_resource_id, v_actor) fact;
+      v_allowed := v_project_id is not null
+        and v_actor_user_id = v_actor
+        and public.app_has_active_membership(v_project_id)
+        and coalesce(v_payment_payable, false)
+        and (p_event_type = 'interaction_self_payment' or v_payment_amount > 0);
+    else
+      v_allowed := v_project_id is not null and (
+        v_is_manager or (v_actor_user_id = v_actor and public.app_has_active_membership(v_project_id))
+      );
+    end if;
   elsif p_event_type = 'base_meeting_reported' then
     select r.project_id, r.actor_user_id into v_project_id, v_actor_user_id
     from public.base_meeting_reports r where r.id::text = p_resource_id;
@@ -223,11 +238,13 @@ begin
 
   with candidates(user_id) as (
     select v_actor
+    where p_event_type not in ('interaction_summary','interaction_payment')
     union
     select pm.user_id from public.project_memberships pm
     where p_event_type in (
         'meeting_house_assigned','tour_created','tour_updated','tour_cancelled','tour_reported',
-        'interaction_created','base_meeting_reported','mitzvot_updated','missing_report','tour_sheet_sync'
+        'interaction_created','interaction_summary','interaction_payment',
+        'base_meeting_reported','mitzvot_updated','missing_report','tour_sheet_sync'
       ) and pm.project_id = v_project_id
       and pm.status = 'active' and pm.role in ('head','coord')
     union
@@ -241,7 +258,9 @@ begin
       case when p_event_type = 'meeting_house_assigned'
         then v_assigned_user_ids else '{}'::uuid[] end
     ) recipient
-    union select v_actor_user_id where p_event_type in ('interaction_created','base_meeting_reported')
+    union select v_actor_user_id where p_event_type in (
+      'interaction_created','interaction_self_payment','base_meeting_reported'
+    )
     union select v_assigned_user_id where p_event_type in (
       'mitzvot_updated','base_report_reminder','next_action_due'
     )
