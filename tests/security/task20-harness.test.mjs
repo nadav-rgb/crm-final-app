@@ -270,7 +270,10 @@ test('legacy fixture rows exercise owner backfills for both tenants using exact 
   assert.equal(fixture.contacts.length, 3);
   assert.equal(fixture.interactions.length >= 3, true);
   assert.equal(fixture.meeting_reminders.length >= 2, true);
-  assert.equal(fixture.tours.length >= 2, true);
+  assert.equal(fixture.tours.length, 3);
+  assert.equal(fixture.tours[0].date.startsWith('2026-08'), true);
+  assert.equal(fixture.tours[2].date.startsWith('2026-09'), true);
+  assert.notEqual(fixture.tours[0].id, fixture.tours[2].id);
   for (const [table, rows] of Object.entries(fixture)) {
     for (const row of rows) {
       assert.equal(row.security_run_id, runId, `${table} row is not exact-run tagged`);
@@ -312,6 +315,9 @@ test('legacy provisioner accepts one prebuilt exact fixture for registry parity'
   assert.equal(inserted.get('contacts'), rowsByTable.contacts);
   assert.equal(provisioned.activistA, actorIds.activistA1);
   assert.equal(provisioned.activistB, actorIds.activistB1);
+  assert.equal(provisioned.tourA, rowsByTable.tours[0].id);
+  assert.equal(provisioned.tourAssignedA, rowsByTable.tours[2].id);
+  assert.notEqual(provisioned.tourA, provisioned.tourAssignedA);
 });
 
 test('legacy schema cache readiness retries reads only and never retries a mutation', async () => {

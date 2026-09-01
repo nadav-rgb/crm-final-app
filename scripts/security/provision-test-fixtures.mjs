@@ -268,6 +268,7 @@ export function buildLegacyFixtureRows(runId, actorIds) {
   const meetingB = `security-${runId}-meeting-b`;
   const tourA = `security-${runId}-tour-a`;
   const tourB = `security-${runId}-tour-b`;
+  const tourReportA = `security-${runId}-tour-report-a`;
 
   return Object.freeze({
     projects: [
@@ -351,6 +352,12 @@ export function buildLegacyFixtureRows(runId, actorIds) {
         date: '2026-08-21', start_time: '11:00:00', guide_name: 'Synthetic activistB1',
         guide_activist_id: codes.activistB1, host_activist_id: null,
         assigned_activists: [codes.activistB1], status: 'upcoming', security_run_id: runId,
+      },
+      {
+        id: tourReportA, project_id: projectA, tour_number: 'SYN-REPORT-A', settlement: 'Synthetic A',
+        date: '2026-09-20', start_time: '12:00:00', guide_name: 'Synthetic activistA1',
+        guide_activist_id: codes.activistA1, host_activist_id: null,
+        assigned_activists: [codes.activistA1], status: 'upcoming', security_run_id: runId,
       },
     ],
     expenses: [
@@ -561,7 +568,8 @@ export async function provisionLegacyDatabase({
     meetingB: rowsByTable.meeting_houses[1].id,
     meetingReminderA: rowsByTable.meeting_reminders[0].id,
     meetingReminderB: rowsByTable.meeting_reminders[1].id,
-    tourAssignedA: rowsByTable.tours[0].id,
+    tourA: rowsByTable.tours[0].id,
+    tourAssignedA: rowsByTable.tours[2].id,
     tourB: rowsByTable.tours[1].id,
     expenseA: rowsByTable.expenses[0].id,
     expenseB: rowsByTable.expenses[1].id,
