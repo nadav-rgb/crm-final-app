@@ -112,7 +112,12 @@ const AUG = { year: 2026, month: 7 }; // month 0-indexed, אוגוסט = 7
   const report = calcMonthlyPayment(7, [
     { activist_id: 7, project_id: 1, id: 1, contact_id: 1, type: 'טלפוני', quality: 'תורני', duration_minutes: 20, date: '2026-08-01' },
   ], contacts, [], [], DEFAULTS, new Set(), AUG);
-  const data = deriveActivityByType(report, 0, 0);
+  // מוסיפים בונוס ישירות ל-breakdown (כמו בתרחיש "קיבוץ תוספות" למעלה בקובץ) + הוצאות,
+  // כדי ש-additions.length > 0 ותיבדק ענף "עם תוספות" של נוסחת "סה"כ לתשלום" — בדיוק
+  // הענף שבו נמצאה (ותוקנה) ספירה כפולה של D{firstTypeRow} ב-lib/activityByTypeExcel.js
+  // (ראה task-3-report.md). בלי תוספות, התרחיש בודק רק את הענף הפשוט בלי SUM כפולה.
+  report.breakdown.push({ type: 'בונוס-חדש', contactId: 2, contactName: 'דנה לוי', amount: 250, desc: 'הביא משתתף חדש' });
+  const data = deriveActivityByType(report, 300, 0); // expensesTotal=300 → גם שורת "החזר הוצאות"
 
   (async () => {
     const wb = await buildActivityWorkbook('בדיקה אוטומטית', 'אוגוסט', 2026, data);
@@ -144,6 +149,34 @@ const AUG = { year: 2026, month: 7 }; // month 0-indexed, אוגוסט = 7
     ws.eachRow(row => { if (row.getCell(1).value === 'סה"כ קשרים/מפגשים מזכים') totalMeetingsRow = row; });
     check('שורת סיכום מפגשים היא נוסחת SUM',
       Boolean(totalMeetingsRow?.getCell(4)?.value?.formula), true);
+
+    // שורת "סה"כ לתשלום" — כאן בדיוק היה הבאג המקורי (ספירה כפולה של D{firstTypeRow}
+    // כשיש תוספות). שתי בדיקות, לא רק Boolean(...formula) כמו למעלה:
+    //   (א) צורת הנוסחה: "SUM(...)+SUM(...)" בדיוק — לא ערך/תא בודד לפני ה-SUM הראשון.
+    //       הנוסחה הבאגית המקורית "D3+SUM(D3:D10)+SUM(D14:D15)" הייתה נכשלת בתבנית הזו
+    //       כי היא לא מתחילה ב-SUM.
+    //   (ב) חישוב ידני: קוראים את שני טווחי ה-SUM שהנוסחה מפנה אליהם מהתאים שבאמת
+    //       נכתבו לקובץ (בדיוק כמו שאקסל היה מחשב), ומוודאים שהתוצאה שווה ל-data.grandTotal.
+    //       exceljs לא מחשב נוסחאות בעצמו — קריאה חוזרת מחזירה רק את מחרוזת הנוסחה,
+    //       ולכן זו הדרך היחידה לוודא בפועל שהיא מסתכמת נכון בלי אקסל אמיתי.
+    let grandRow = null;
+    ws.eachRow(row => { if (String(row.getCell(1).value || '').startsWith('סה"כ לתשלום')) grandRow = row; });
+    check('שורת "סה"כ לתשלום" קיימת בגיליון', Boolean(grandRow), true);
+    if (grandRow) {
+      const grandFormula = grandRow.getCell(4).value?.formula || '';
+      check('סה"כ לתשלום: הנוסחה בצורת SUM(...)+SUM(...) בדיוק — לא תא בודד לפני ה-SUM (הבאג שתוקן)',
+        /^SUM\(D\d+:D\d+\)\+SUM\(D\d+:D\d+\)$/.test(grandFormula), true);
+
+      let computed = 0;
+      for (const [, from, to] of grandFormula.matchAll(/D(\d+):D(\d+)/g)) {
+        for (let rn = Number(from); rn <= Number(to); rn++) {
+          const v = ws.getCell(`D${rn}`).value;
+          computed += typeof v === 'number' ? v : 0;
+        }
+      }
+      check('סה"כ לתשלום: חישוב ידני של טווחי הנוסחה בפועל = data.grandTotal (150 מפגש + 250 בונוס + 300 הוצאות = 700)',
+        computed, data.grandTotal);
+    }
 
     console.log(failures === 0 ? '\nכל הבדיקות עברו (כולל buildActivityWorkbook).' : `\n${failures} בדיקות נכשלו.`);
     process.exit(failures === 0 ? 0 : 1);
