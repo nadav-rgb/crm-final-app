@@ -38,20 +38,20 @@ const AUG = { year: 2026, month: 7 }; // month 0-indexed, אוגוסט = 7
     'טלפוני ידידותי', 'טלפוני תורני', 'זום ידידותי', 'זום תורני',
     'פרונטלי ידידותי', 'פרונטלי תורני', 'פרונטלי רב משתתפים', 'אירוח שבת',
   ]);
-  check('טלפוני ידידותי: 1 מפגש, תעריף 150, סה"כ 150',
-    data.typeRows[0], { label: 'טלפוני ידידותי', count: 1, rate: 150, total: 150 });
-  check('טלפוני תורני: 2 מפגשים (השלישי לא זוכה), תעריף 200, סה"כ 400',
-    data.typeRows[1], { label: 'טלפוני תורני', count: 2, rate: 200, total: 400 });
+  check('טלפוני ידידותי: 1 מפגש, תעריף 0, סה"כ 0',
+    data.typeRows[0], { label: 'טלפוני ידידותי', count: 1, rate: 0, total: 0 });
+  check('טלפוני תורני: 2 מפגשים (השלישי לא זוכה), תעריף 150, סה"כ 300',
+    data.typeRows[1], { label: 'טלפוני תורני', count: 2, rate: 150, total: 300 });
   check('זום תורני מוצג בתווית "זום", לא "וידאו"',
-    data.typeRows[3], { label: 'זום תורני', count: 1, rate: 250, total: 250 });
+    data.typeRows[3], { label: 'זום תורני', count: 1, rate: 200, total: 200 });
   check('פרונטלי רב משתתפים: 0 מפגשים, תעריף מוצג, סה"כ 0',
     data.typeRows[6], { label: 'פרונטלי רב משתתפים', count: 0, rate: 300, total: 0 });
-  check('meetingsTotal = סכום כל שורות הסוג', data.meetingsTotal, 150 + 400 + 250);
+  check('meetingsTotal = סכום כל שורות הסוג', data.meetingsTotal, 0 + 300 + 200);
   check('grandTotal = meetingsTotal כשאין בונוסים/הוצאות', data.grandTotal, data.meetingsTotal);
   check('מפגש שלא זוכה מופיע ב-unpaidByReason', data.unpaidByReason, [{ reason: 'פחות מ-15 דקות', count: 1 }]);
   check('detailByType["טלפוני תורני"] כולל שם + סכום + הערת-משך',
     data.detailByType['טלפוני תורני'],
-    [{ name: 'יוסי כהן', amount: 200, note: "20 ד'" }, { name: 'דנה לוי', amount: 200, note: "20 ד'" }]);
+    [{ name: 'יוסי כהן', amount: 150, note: "20 ד'" }, { name: 'דנה לוי', amount: 150, note: "20 ד'" }]);
   check('detailByType["פרונטלי רב משתתפים"] ריק כשאין מפגשים', data.detailByType['פרונטלי רב משתתפים'], []);
 }
 
