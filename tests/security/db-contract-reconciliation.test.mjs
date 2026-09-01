@@ -111,6 +111,7 @@ test('0023 derives tenant and recipients from event-specific resources', async (
 test('0024 finance summary narrows scope and returns only the approved projection', async () => {
   const sql = await read('migrations/0024_finance_security.sql');
   const fn = functionDefinition(sql, 'app_finance_summary');
+  const cancelFn = functionDefinition(sql, 'app_cancel_bonus');
 
   assert.match(fn, /p_period\s+text[\s\S]*p_project_id\s+integer[\s\S]*p_user_id\s+uuid/i);
   assert.match(fn, /p_period\s*!~\s*'\^\\d\{4\}-\(0\[1-9\]\|1\[0-2\]\)\$'/i);
@@ -134,6 +135,21 @@ test('0024 finance summary narrows scope and returns only the approved projectio
   assert.doesNotMatch(sql, /alter\s+table\s+public\.expenses/i);
   assert.match(sql, /revoke all on function public\.app_finance_summary\(text,integer,uuid\) from public, anon, authenticated/i);
   assert.match(sql, /grant execute on function public\.app_finance_summary\(text,integer,uuid\) to authenticated/i);
+
+  assert.match(cancelFn, /auth\.uid\(\)/i);
+  assert.match(cancelFn, /regexp_split_to_array\(p_bonus_key,\s*'\\\|'\)/i);
+  assert.match(cancelFn, /from\s+public\.contacts[\s\S]*for\s+update/i);
+  assert.match(cancelFn, /assigned_user_id[\s\S]*activist_id[\s\S]*project_id/i);
+  assert.match(cancelFn, /pm\.role\s+in\s*\('head',\s*'coord'\)/i);
+  assert.match(cancelFn, /global_role\s*=\s*'ceo'[\s\S]*'aal2'/i);
+  assert.match(cancelFn, /'בונוס-לימוד-4'[\s\S]*'בונוס-לימוד-6'[\s\S]*'בונוס-מצוות'[\s\S]*'בונוס-חדש'/i);
+  assert.match(cancelFn, /from\s+public\.interactions/i);
+  assert.match(cancelFn, /jsonb_array_elements\(coalesce\(v_contact\.mitzvot_history/i);
+  assert.match(cancelFn, /v_contact\.joined_at[\s\S]*v_contact\.source[\s\S]*v_contact\.referred_by/i);
+  assert.match(cancelFn, /insert\s+into\s+public\.bonus_cancellations[\s\S]*bonus_key[\s\S]*beneficiary_user_id[\s\S]*cancelled_by_user_id/i);
+  assert.doesNotMatch(cancelFn, /p_(?:project|beneficiary|activist|actor|cancelled_by|amount|desc)(?:_id)?\b/i);
+  assert.match(sql, /revoke all on function public\.app_cancel_bonus\(text\) from public, anon, authenticated/i);
+  assert.match(sql, /grant execute on function public\.app_cancel_bonus\(text\) to authenticated/i);
 });
 
 test('official G5 chain and reverse rollback cover every migration exactly once', async () => {
@@ -157,5 +173,6 @@ test('official G5 chain and reverse rollback cover every migration exactly once'
   assert.match(runbook, /cross-project|filter forgery/i);
   assert.match(rollback, /rollback refused:[\s\S]*(?:idempotency|cancelled_at)/i);
   assert.match(rollback, /rollback refused:[\s\S]*(?:reported_by_user_id|cancellation_reason)/i);
+  assert.match(rollback, /drop function if exists public\.app_cancel_bonus\(text\)/i);
   assert.doesNotMatch(rollback, /\bcascade\b/i);
 });

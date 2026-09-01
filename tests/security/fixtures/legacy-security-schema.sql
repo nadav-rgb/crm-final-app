@@ -134,7 +134,9 @@ create table public.bonus_cancellations (
   project_id integer not null references public.projects(id),
   activist_id integer,
   cancelled_by integer,
-  bonus_key text not null,
+  bonus_key text not null unique,
+  "desc" text,
+  amount numeric,
   security_run_id uuid
 );
 

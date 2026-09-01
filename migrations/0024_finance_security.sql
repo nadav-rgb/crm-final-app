@@ -332,4 +332,162 @@ alter function public.app_finance_summary(text,integer,uuid) owner to postgres;
 revoke all on function public.app_finance_summary(text,integer,uuid) from public, anon, authenticated;
 grant execute on function public.app_finance_summary(text,integer,uuid) to authenticated;
 
+-- A cancellation is valid only while the exact derived candidate exists. The
+-- caller supplies the opaque key; tenant, beneficiary, actor, type and amount
+-- are recomputed under this owner-controlled boundary.
+create or replace function public.app_cancel_bonus(p_bonus_key text)
+returns boolean
+language plpgsql security definer
+set search_path = pg_catalog, public, app_private
+as $$
+declare
+  v_actor uuid := auth.uid();
+  v_aal text := coalesce(auth.jwt() ->> 'aal', 'aal1');
+  v_parts text[];
+  v_activist_code integer;
+  v_bonus_type text;
+  v_contact_id text;
+  v_year integer;
+  v_zero_month integer;
+  v_start date;
+  v_end date;
+  v_actor_code integer;
+  v_actor_global_role text;
+  v_contact public.contacts%rowtype;
+  v_cfg public.payment_config%rowtype;
+  v_learning_count integer := 0;
+  v_amount numeric := 0;
+begin
+  if v_actor is null or p_bonus_key is null or length(p_bonus_key) > 512 then
+    return false;
+  end if;
+
+  v_parts := regexp_split_to_array(p_bonus_key, '\|');
+  if cardinality(v_parts) <> 4
+    or v_parts[1] !~ '^[1-9][0-9]{0,9}$'
+    or v_parts[1]::numeric > 2147483647
+    or v_parts[2] not in ('בונוס-לימוד-4','בונוס-לימוד-6','בונוס-מצוות','בונוס-חדש')
+    or v_parts[3] !~ '^[A-Za-z0-9_-]{1,128}$'
+    or v_parts[4] !~ '^\d{4}-\d{1,2}$' then
+    return false;
+  end if;
+
+  v_activist_code := v_parts[1]::integer;
+  v_bonus_type := v_parts[2];
+  v_contact_id := v_parts[3];
+  v_year := split_part(v_parts[4], '-', 1)::integer;
+  v_zero_month := split_part(v_parts[4], '-', 2)::integer;
+  if v_year < 1 or v_year > 9999 or v_zero_month < 0 or v_zero_month > 11 then
+    return false;
+  end if;
+  v_start := make_date(v_year, v_zero_month + 1, 1);
+  v_end := (v_start + interval '1 month')::date;
+
+  select c.* into v_contact
+  from public.contacts c
+  where c.id::text = v_contact_id
+    and c.activist_id = v_activist_code
+    and c.assigned_user_id is not null
+  for update;
+  if not found then
+    return false;
+  end if;
+
+  select p.activist_code, p.global_role
+    into v_actor_code, v_actor_global_role
+  from public.profiles p
+  where p.id = v_actor and p.disabled_at is null;
+  if not found then
+    return false;
+  end if;
+  if v_actor_code is null then
+    raise exception 'bonus cancellation identity mapping unavailable' using errcode = '55000';
+  end if;
+
+  if not (
+    (v_actor_global_role = 'ceo' and v_aal = 'aal2')
+    or exists (
+      select 1
+      from public.project_memberships pm
+      where pm.user_id = v_actor
+        and pm.project_id = v_contact.project_id
+        and pm.status = 'active'
+        and pm.role in ('head','coord')
+        and (pm.role = 'coord' or v_aal = 'aal2')
+    )
+  ) then
+    return false;
+  end if;
+
+  if not exists (
+    select 1
+    from public.project_memberships pm
+    join public.profiles p on p.id = pm.user_id
+    where pm.user_id = v_contact.assigned_user_id
+      and pm.project_id = v_contact.project_id
+      and pm.status = 'active'
+      and pm.role = 'activist'
+      and p.disabled_at is null
+      and p.activist_code = v_contact.activist_id
+  ) then
+    return false;
+  end if;
+
+  select * into v_cfg from public.payment_config where id = 1;
+  if not found then
+    raise exception 'payment configuration unavailable' using errcode = '55000';
+  end if;
+
+  if v_bonus_type in ('בונוס-לימוד-4','בונוס-לימוד-6') then
+    select count(*)::integer into v_learning_count
+    from public.interactions i
+    where i.actor_user_id = v_contact.assigned_user_id
+      and i.project_id = v_contact.project_id
+      and i.contact_id::text = v_contact_id
+      and i.date >= v_start and i.date < v_end
+      and not (coalesce(i.participants, '{}'::jsonb) ? 'derived_from')
+      and i.quality = 'תורני'
+      and i.type in ('פרונטלי','וידאו')
+      and coalesce(i.duration_minutes, 0) >= v_cfg.min_duration_minutes;
+    if v_bonus_type = 'בונוס-לימוד-6' and v_learning_count >= 6 then
+      v_amount := v_cfg.bonus_loyalty_6;
+    elsif v_bonus_type = 'בונוס-לימוד-4' and v_learning_count between 4 and 5 then
+      v_amount := v_cfg.bonus_loyalty_4;
+    end if;
+  elsif v_bonus_type = 'בונוס-מצוות' then
+    select count(*)::numeric * v_cfg.bonus_mitzvot_level into v_amount
+    from jsonb_array_elements(coalesce(v_contact.mitzvot_history, '[]'::jsonb)) h
+    where nullif(h ->> 'mitzva', '') is not null
+      and (case when coalesce(h ->> 'to', '') ~ '^-?\d+(?:\.\d+)?$' then (h ->> 'to')::numeric else 0 end)
+        > (case when coalesce(h ->> 'from', '') ~ '^-?\d+(?:\.\d+)?$' then (h ->> 'from')::numeric else 0 end)
+      and (case when coalesce(h ->> 'date', '') ~ '^\d{4}-\d{2}-\d{2}'
+           then left(h ->> 'date', 10)::date else current_date end) >= v_start
+      and (case when coalesce(h ->> 'date', '') ~ '^\d{4}-\d{2}-\d{2}'
+           then left(h ->> 'date', 10)::date else current_date end) < v_end;
+  elsif v_bonus_type = 'בונוס-חדש'
+    and v_contact.joined_at >= v_start and v_contact.joined_at < v_end
+    and (v_contact.source = 'external' or v_contact.referred_by is not null) then
+    v_amount := v_cfg.bonus_new_participant;
+  end if;
+
+  if coalesce(v_amount, 0) <= 0 then
+    return false;
+  end if;
+
+  insert into public.bonus_cancellations (
+    bonus_key, activist_id, project_id, "desc", amount, cancelled_by,
+    beneficiary_user_id, cancelled_by_user_id
+  ) values (
+    p_bonus_key, v_contact.activist_id, v_contact.project_id, v_bonus_type, v_amount, v_actor_code,
+    v_contact.assigned_user_id, v_actor
+  );
+  return true;
+end $$;
+
+comment on function public.app_cancel_bonus(text) is
+  'Owner: postgres. Authenticated execution only. Recomputes the exact derived bonus candidate before inserting a cancellation marker.';
+alter function public.app_cancel_bonus(text) owner to postgres;
+revoke all on function public.app_cancel_bonus(text) from public, anon, authenticated;
+grant execute on function public.app_cancel_bonus(text) to authenticated;
+
 commit;

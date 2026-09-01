@@ -13,6 +13,8 @@ end $$;
 
 -- 0024: finance projection. Redacted audit rows may remain until app_private is
 -- removed with 0018; no business row depends on this function pre-cutover.
+revoke all on function public.app_cancel_bonus(text) from public, anon, authenticated;
+drop function if exists public.app_cancel_bonus(text);
 revoke all on function public.app_finance_summary(text,integer,uuid) from public, anon, authenticated;
 drop function if exists public.app_finance_summary(text,integer,uuid);
 

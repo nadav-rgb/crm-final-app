@@ -841,6 +841,15 @@ test('direct JWT rejects old/new-authorized authority transfers and legacy UUID 
       cancelled_by: resources.actorCodes.coordA,
       bonus_key: `${resources.actorCodes.activistB1}|בונוס-חדש|${resources.contactB}|2026-7`,
     }).select('id')],
+    ['bonus-cancellations:same-project-future-key', clients.coordA.from('bonus_cancellations').insert({
+      security_run_id: resources.securityRunId,
+      project_id: resources.projectA,
+      beneficiary_user_id: resources.actorIds.activistA2,
+      activist_id: resources.actorCodes.activistA2,
+      cancelled_by_user_id: resources.actorIds.coordA,
+      cancelled_by: resources.actorCodes.coordA,
+      bonus_key: `${resources.actorCodes.activistA2}|בונוס-חדש|${resources.contactA2}|2099-0`,
+    }).select('id')],
   ];
   const unexpectedSuccesses = [];
   for (const [label, mutation] of managerInsertAttacks) {
@@ -848,6 +857,31 @@ test('direct JWT rejects old/new-authorized authority transfers and legacy UUID 
     if (!error && data?.length) unexpectedSuccesses.push(label);
   }
   assert.deepEqual(unexpectedSuccesses, [], 'manager direct inserts bypassed row-derived authority');
+
+  const futureBonusKey = `${resources.actorCodes.activistA1}|בונוס-חדש|${resources.contactA}|2099-0`;
+  const futureCancellation = await clients.coordA.rpc('app_cancel_bonus', { p_bonus_key: futureBonusKey });
+  assert.ifError(futureCancellation.error);
+  assert.equal(futureCancellation.data, false, 'nonexistent future bonus candidate was cancellable');
+  const futureRows = await clients.coordA.from('bonus_cancellations').select('bonus_key').eq('bonus_key', futureBonusKey);
+  assert.ifError(futureRows.error);
+  assert.deepEqual(futureRows.data, []);
+
+  const validBonusKey = `${resources.actorCodes.activistA1}|בונוס-חדש|${resources.contactA}|2026-7`;
+  let validCancellationCreated = false;
+  try {
+    const validCancellation = await clients.coordA.rpc('app_cancel_bonus', { p_bonus_key: validBonusKey });
+    assert.ifError(validCancellation.error);
+    assert.equal(validCancellation.data, true, 'derived bonus candidate cancellation failed');
+    validCancellationCreated = true;
+
+    const duplicateCancellation = await clients.coordA.rpc('app_cancel_bonus', { p_bonus_key: validBonusKey });
+    assert.equal(duplicateCancellation.error?.code, '23505', 'duplicate cancellation did not fail closed');
+  } finally {
+    const cleanup = await clients.ceoAal2.from('bonus_cancellations')
+      .delete().eq('bonus_key', validBonusKey).select('bonus_key');
+    assert.ifError(cleanup.error);
+    if (validCancellationCreated) assert.equal(cleanup.data?.length, 1, 'exact RPC fixture cleanup failed');
+  }
 
   await expectDirectDenied(
     clients.ceoAal2.from('contacts').insert({

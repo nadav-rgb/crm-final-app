@@ -151,6 +151,7 @@ test('C1 direct grants cannot transfer authority or bypass protected workflows',
   const rpcSql = await readFile('migrations/0020_security_rpcs.sql', 'utf8');
   const meetingSql = await readFile('migrations/0021_meetings_security.sql', 'utf8');
   const tourSql = await readFile('migrations/0022_tours_security.sql', 'utf8');
+  const financeSql = await readFile('migrations/0024_finance_security.sql', 'utf8');
   const rollbackSql = await readFile('migrations/rollback/0018-0024-pre-cutover.sql', 'utf8');
 
   for (const table of [
@@ -221,10 +222,17 @@ test('C1 direct grants cannot transfer authority or bypass protected workflows',
   for (const functionName of ['app_assign_tour', 'app_cancel_tour', 'app_delete_tour']) {
     assert.match(tourSql, new RegExp(`create or replace function public\\.${functionName}\\b`, 'i'));
   }
+  assert.match(financeSql, /create or replace function public\.app_cancel_bonus\b/i);
+  assert.match(sql, /grant select, delete on public\.bonus_cancellations to authenticated/i);
+  assert.doesNotMatch(
+    sql,
+    /grant\s+(?:select\s*,\s*)?insert(?:\s*,\s*delete)?\s+on\s+public\.bonus_cancellations\s+to\s+authenticated/i,
+    'bonus cancellations must be created only through the candidate-validating RPC',
+  );
   for (const functionName of [
     'app_reassign_contact', 'app_soft_delete_contact', 'app_link_contact_tour', 'app_delete_interaction',
     'app_delete_expense', 'app_review_feedback', 'app_assign_meeting_house',
-    'app_assign_tour', 'app_cancel_tour', 'app_delete_tour',
+    'app_assign_tour', 'app_cancel_tour', 'app_delete_tour', 'app_cancel_bonus',
   ]) {
     assert.match(
       rollbackSql,

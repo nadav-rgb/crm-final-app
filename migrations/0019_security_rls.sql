@@ -227,7 +227,9 @@ grant select, insert, delete on public.meeting_houses to authenticated;
 grant select, insert on public.meeting_reminders to authenticated;
 grant select, insert on public.tours to authenticated;
 grant select, insert on public.expenses to authenticated;
-grant select, insert, delete on public.bonus_cancellations to authenticated;
+-- Cancellation markers are derived financial state. Authenticated callers may
+-- inspect or CEO-delete rows, but creation is restricted to app_cancel_bonus().
+grant select, delete on public.bonus_cancellations to authenticated;
 grant select, insert on public.payment_config to authenticated;
 grant select, delete on public.notifications to authenticated;
 grant update (read) on public.notifications to authenticated;
@@ -937,7 +939,7 @@ declare
     'meeting_reminders', jsonb_build_array('insert','select'),
     'tours', jsonb_build_array('insert','select'),
     'expenses', jsonb_build_array('insert','select'),
-    'bonus_cancellations', jsonb_build_array('delete','insert','select'),
+    'bonus_cancellations', jsonb_build_array('delete','select'),
     'payment_config', jsonb_build_array('insert','select'),
     'notifications', jsonb_build_array('delete','select'),
     'notification_reads', jsonb_build_array('delete','insert','select'),

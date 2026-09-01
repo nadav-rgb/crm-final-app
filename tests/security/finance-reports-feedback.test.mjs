@@ -439,6 +439,13 @@ test('finance report and feedback business routes use secure handlers without ad
     assert.match(source, /secureHandler/);
     assert.doesNotMatch(source, /getSupabaseAdmin|Authorization\s*:|\.auth\.getUser/);
   }
+  const financeDomain = await readFile(new URL('../../lib/security/domains/finance.mjs', import.meta.url), 'utf8');
+  assert.match(financeDomain, /\.rpc\(['"]app_cancel_bonus['"]/);
+  assert.doesNotMatch(
+    financeDomain,
+    /\.from\(['"]bonus_cancellations['"]\)\.insert\(/,
+    'the BFF must not retain direct cancellation INSERT authority',
+  );
 });
 
 test('browser finance and feedback pages contain no direct Supabase CRUD or bearer helper', async () => {
