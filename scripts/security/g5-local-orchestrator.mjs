@@ -82,6 +82,9 @@ const SAFE_LIVE_CHECKPOINTS = Object.freeze([
   'finance-deny-head-aal1',
   'finance-deny-ceo-aal1',
   'finance-deny-coordinator',
+  'postgres-search-path',
+  'postgres-finance-audit',
+  'postgres-result-shape',
   ...SAFE_FINANCE_ALLOWED_ACTORS.flatMap((actor) => [
     `finance-allow-${actor}-rpc`,
     `finance-allow-${actor}-projection`,

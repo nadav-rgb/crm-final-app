@@ -245,17 +245,28 @@ test('live PostgreSQL assertions prove search-path and atomic-audit behavior', l
     target: target.safety,
     dockerExecutable,
   });
-  const assertions = await runDirectPostgresAssertions({
-    database,
-    actorId: resources.actorIds.ceo,
-    projectId: resources.projectA,
-    expectedRows: financeExpected.byActor.ceoAal2ProjectA.length,
-    period: resources.period,
-  });
-  assert.deepEqual(assertions, {
-    searchPathHijack: 'pass',
-    financeAuditFailure: 'pass',
-    unauditedRowsReturned: 0,
-  });
+  let assertions;
+  try {
+    assertions = await runDirectPostgresAssertions({
+      database,
+      actorId: resources.actorIds.ceo,
+      projectId: resources.projectA,
+      expectedRows: financeExpected.byActor.ceoAal2ProjectA.length,
+      period: resources.period,
+    });
+  } catch (error) {
+    if (/search-path/i.test(error?.message ?? '')) failSafeCheckpoint('postgres-search-path');
+    if (/finance audit/i.test(error?.message ?? '')) failSafeCheckpoint('postgres-finance-audit');
+    failSafeCheckpoint('postgres-result-shape');
+  }
+  try {
+    assert.deepEqual(assertions, {
+      searchPathHijack: 'pass',
+      financeAuditFailure: 'pass',
+      unauditedRowsReturned: 0,
+    });
+  } catch {
+    failSafeCheckpoint('postgres-result-shape');
+  }
   observeG5CaseInTest(t, 'SEC-041', 'pass');
 });
