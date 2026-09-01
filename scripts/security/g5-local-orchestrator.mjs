@@ -1348,9 +1348,6 @@ rollback;`);
   let financeAuditFailure;
   try {
     financeAuditFailure = await database.execute(`begin;
-create temporary table g5_atomic_result (value text not null);
-grant usage on schema pg_temp to authenticated;
-grant insert on pg_temp.g5_atomic_result to authenticated;
 create or replace function pg_temp.g5_block_finance_audit() returns trigger language plpgsql as $$
 begin raise exception 'synthetic audit failure'; end $$;
 create trigger g5_block_finance_audit before insert on app_private.audit_events
@@ -1365,12 +1362,12 @@ begin
   exception when others then
     v_failed := true;
   end;
-  insert into pg_temp.g5_atomic_result(value)
-  values (case when v_failed and v_rows = -1 then 'pass' else 'fail' end);
+  perform set_config('g5.atomic_result',
+    case when v_failed and v_rows = -1 then 'pass' else 'fail' end, true);
 end $g5$;
 reset role;
 drop trigger g5_block_finance_audit on app_private.audit_events;
-select value from pg_temp.g5_atomic_result;
+select current_setting('g5.atomic_result', true);
 rollback;`);
   } catch {
     throw new Error('PostgreSQL finance audit command failed');
