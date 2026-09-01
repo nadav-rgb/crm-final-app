@@ -24,6 +24,22 @@ function addDaysIso(iso, days) {
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
 }
 
+// שלושה מצבים לתצוגת-תשלום, לא שניים: payable ו"מזכה בסכום" הפסיקו להיות נרדפים מאז
+// שטלפוני-ידידותי הפך ל-0 ₪ (Task 1, 2026-08-31) — payable:true,amount:0 הוא מצב תקין
+// (הקשר נספר במכסות, פשוט בתעריף אפס), לא הצלחה (✓ ירוק, "מזכה בתשלום") ולא דחייה
+// (✗ אפור). באנר "✓ קשר מזכה בתשלום — 0 ₪" הוא סתירה פנימית (ביקורת קוד, 2026-09-01).
+// מרוכז כאן כי שלוש נקודות תצוגה (payableCheck פעמיים, savedResult פעם אחת) חייבות
+// להסכים על אותה החלטה בדיוק — בדיוק כמו contactContext (buildContactContext, ר'
+// lib/paymentCalc.js) שהופק לפונקציה משותפת מאותה סיבה. הצבע הכחול הוא ה-"info" הקיים
+// כבר בפלטת האפליקציה (lib/design-tokens.js: action.info / status['קשר מתמשך']) —
+// לא צבע חדש.
+function paymentBannerText(result) {
+  if (!result) return null;
+  if (!result.payable) return { symbol: '✗', text: result.reason || 'לא מזכה בתשלום', bg: '#f5f5f5', color: '#888' };
+  if (result.amount > 0) return { symbol: '✓', text: `קשר מזכה בתשלום — ${result.amount} ₪`, bg: '#edfaf1', color: '#27ae60' };
+  return { symbol: 'ℹ', text: 'קשר נרשם — ללא תשלום (0 ₪)', bg: '#ebf5fb', color: '#2980b9' };
+}
+
 const EMPTY = {
   type: '', quality: '', outcome: 'חיובי', date: TODAY,
   long_enough: null,
@@ -147,6 +163,9 @@ export default function AddInteractionPage() {
         contactContext
       )
     : null;
+  // תצוגת-הבאנר (סמל/טקסט/צבע) עבור payableCheck — ר' paymentBannerText למעלה. משמש בשני
+  // הבאנרים (שבת + משך-זמן) שמציגים payableCheck חי בזמן מילוי הטופס.
+  const payableCheckBanner = paymentBannerText(payableCheck);
 
   // דיווח קיים שנראה זהה לזה שבטופס: אותו לקוח, אותו תאריך, אותו סוג/איכות ואותו תיאור.
   // התיאור הוא שדה חובה וטקסט חופשי — שני דיווחים אמיתיים על אותו לקוח באותו יום כמעט
@@ -498,6 +517,10 @@ export default function AddInteractionPage() {
     </div>
   ) : null;
 
+  // תצוגת-הבאנר עבור savedResult (מסך ההצלחה) — אותה החלטה בדיוק כמו payableCheckBanner
+  // למעלה (ר' paymentBannerText), על התוצאה שננעלה לפני השמירה.
+  const savedResultBanner = paymentBannerText(savedResult);
+
   if (success) return (
     <DesktopLayout title="קשר נוסף בהצלחה">
       {toastEl}
@@ -506,11 +529,9 @@ export default function AddInteractionPage() {
         <h2 style={{ marginBottom: 8 }}>הקשר תועד!</h2>
         {/* savedResult ולא payableCheck: אחרי השמירה הקשר החדש כבר ב-store, ו-payableCheck
             היה סופר אותו כ"קשר קודם" מול עצמו ומדווח חריגה על מפגש ששולם. */}
-        {isAchdut && savedResult && (
-          <div style={{ fontSize: 14, color: savedResult.payable ? '#27ae60' : '#888', marginBottom: 8, fontWeight: 700 }}>
-            {savedResult.payable
-              ? `✓ קשר מזכה בתשלום — ${savedResult.amount} ₪`
-              : `✗ ${savedResult.reason || 'קשר זה אינו מזכה בתשלום'}`}
+        {isAchdut && savedResultBanner && (
+          <div style={{ fontSize: 14, color: savedResultBanner.color, marginBottom: 8, fontWeight: 700 }}>
+            {savedResultBanner.symbol} {savedResultBanner.text}
           </div>
         )}
         <p style={{ fontSize: 14, color: '#aaa', marginBottom: 28 }}>הקשר עם {contact.name} נשמר.</p>
@@ -656,11 +677,9 @@ export default function AddInteractionPage() {
               placeholder="מספר הלקוחות שהתארחו אצלך" value={form.participant_count}
               onChange={e => set('participant_count', e.target.value)} />
             {errors.participant_count && <span className="error-msg">{errors.participant_count}</span>}
-            {payableCheck && (
-              <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 10, fontSize: 13, fontWeight: 700, background: payableCheck.payable ? '#edfaf1' : '#f5f5f5', color: payableCheck.payable ? '#27ae60' : '#888' }}>
-                {payableCheck.payable
-                  ? `✓ קשר מזכה בתשלום — ${payableCheck.amount} ₪`
-                  : `✗ ${payableCheck.reason || 'לא מזכה בתשלום'}`}
+            {payableCheckBanner && (
+              <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 10, fontSize: 13, fontWeight: 700, background: payableCheckBanner.bg, color: payableCheckBanner.color }}>
+                {payableCheckBanner.symbol} {payableCheckBanner.text}
               </div>
             )}
           </div>
@@ -687,11 +706,9 @@ export default function AddInteractionPage() {
               ))}
             </div>
             {errors.long_enough && <span className="error-msg">{errors.long_enough}</span>}
-            {payableCheck && (
-              <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 10, fontSize: 13, fontWeight: 700, background: payableCheck.payable ? '#edfaf1' : '#f5f5f5', color: payableCheck.payable ? '#27ae60' : '#888' }}>
-                {payableCheck.payable
-                  ? `✓ קשר מזכה בתשלום — ${payableCheck.amount} ₪`
-                  : `✗ ${payableCheck.reason || 'לא מזכה בתשלום'}`}
+            {payableCheckBanner && (
+              <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 10, fontSize: 13, fontWeight: 700, background: payableCheckBanner.bg, color: payableCheckBanner.color }}>
+                {payableCheckBanner.symbol} {payableCheckBanner.text}
               </div>
             )}
           </div>
