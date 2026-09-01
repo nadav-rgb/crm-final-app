@@ -6,8 +6,8 @@ import { G5_CASE_MANIFEST, G5_REQUIRED_LIVE_TESTS } from '../../scripts/security
 
 const reportPath = 'SECURITY_HARDENING_REPORT.md';
 const readReport = () => readFile(reportPath, 'utf8');
-const permittedVerdict = ['READY', 'FOR', 'SECURITY', 'REVIEW'].join(' ');
-const prohibitedNegativeVerdict = 'NOT READY FOR REAL SENSITIVE DATA';
+const permittedVerdict = ['READY', 'TO', 'ENTER', 'STAGING'].join(' ');
+const prohibitedNegativeVerdict = ['NOT', 'READY', 'TO', 'ENTER', 'STAGING'].join(' ');
 const prohibitedAbsoluteClaim = ['100%', 'secure'].join(' ');
 
 const requiredHeadings = [
