@@ -6,7 +6,7 @@ Branch: `security/hardening-p0`
 
 Starting checkpoint: `5340d9763ce27d396bbc79bf33f342933bedceb8`
 
-G5 source/test checkpoint before this report update: `0c6a9ce3703b3b3c71aa475aa803be16024a3a85`
+G5 source/test checkpoint before this report update: `69b027156a8f7f675b9d7f60edf490f114f8f305`
 
 This is a time-bound engineering evidence record. It is not authorization to merge, deploy, use
 real sensitive data, or apply these migrations to Production.
@@ -14,7 +14,7 @@ Static contract evidence and live database proof are reported separately.
 
 ## Executive Summary
 
-A fresh disposable local Supabase project, `mekarvim-security-g5-045d7fa0b448`, was created solely
+A fresh disposable local Supabase project, `mekarvim-security-g5-f358e8022ba8`, was created solely
 for CRM Mekarvim G5. Its identity, dedicated ports, exact container labels and loopback-only
 listeners were proven before any destructive reset. No existing database was reused.
 No remote Supabase environment was contacted. Production is untouched.
@@ -35,8 +35,8 @@ anonymous leaks `0`; 17/17 RLS enabled and forced.
 The disposable project was then stopped and removed. The final project-scoped proof was:
 Containers `0`; volumes `0`; networks `0`; listeners `0`. Read-only before/after fingerprints for
 the excluded `mekusharim` and `shabbat-hosting` stacks matched. All 18/18 excluded container metadata records matched.
-Neither excluded stack was stopped, restarted, queried, migrated, cleaned or
-otherwise mutated.
+Only read-only Docker metadata was inspected. Neither excluded stack was stopped or restarted, and
+no container exec, database query, network request, migration, cleanup or mutation targeted either stack.
 
 G6 was rerun from a clean install: baseline 51/51, security 324 pass plus 19 explicit local-live
 gates and zero failures, focused finance/PDF/Excel 32/32, production Webpack build, HTTP/CSP,
@@ -91,7 +91,7 @@ non-blocking build and Gradle warnings are recorded below as maintenance risks.
 - Finance, notification, tour, reminder, governance and reporting projections are allowlisted.
 - G5 infrastructure now creates an exact disposable project, enforces loopback Docker publishing,
   measures evidence, performs exact cleanup and proves project-scoped destruction.
-- The G5 RED-to-GREEN sequence added 35 commits after the requested starting checkpoint, covering
+- The G5 RED-to-GREEN sequence added 36 implementation/test commits after the requested starting checkpoint, covering
   entrypoint ownership, loopback binding, migration/posture correctness, TOTP, Finance isolation and
   audit atomicity. Each real defect was committed before recreating and rerunning the disposable DB.
 
@@ -182,16 +182,19 @@ The exact dedicated listeners were API `56321`; DB `56322`; Studio `56323`; Mail
 pooler-disabled reservation `56329`; edge-inspector reservation `56342`; local BFF `56343`.
 Published listeners were loopback-only on `127.0.0.1`.
 
-The identity inventory found nine exact-project containers:
-`supabase_auth_mekarvim-security-g5-045d7fa0b448`,
-`supabase_db_mekarvim-security-g5-045d7fa0b448`,
-`supabase_inbucket_mekarvim-security-g5-045d7fa0b448`,
-`supabase_kong_mekarvim-security-g5-045d7fa0b448`,
-`supabase_pg_meta_mekarvim-security-g5-045d7fa0b448`,
-`realtime-dev.supabase_realtime_mekarvim-security-g5-045d7fa0b448`,
-`supabase_rest_mekarvim-security-g5-045d7fa0b448`,
-`supabase_storage_mekarvim-security-g5-045d7fa0b448`, and
-`supabase_studio_mekarvim-security-g5-045d7fa0b448`.
+The identity inventory found twelve exact-project containers:
+`supabase_analytics_mekarvim-security-g5-f358e8022ba8`,
+`supabase_auth_mekarvim-security-g5-f358e8022ba8`,
+`supabase_db_mekarvim-security-g5-f358e8022ba8`,
+`supabase_edge_runtime_mekarvim-security-g5-f358e8022ba8`,
+`supabase_inbucket_mekarvim-security-g5-f358e8022ba8`,
+`supabase_kong_mekarvim-security-g5-f358e8022ba8`,
+`supabase_pg_meta_mekarvim-security-g5-f358e8022ba8`,
+`supabase_realtime_mekarvim-security-g5-f358e8022ba8`,
+`supabase_rest_mekarvim-security-g5-f358e8022ba8`,
+`supabase_storage_mekarvim-security-g5-f358e8022ba8`,
+`supabase_studio_mekarvim-security-g5-f358e8022ba8`, and
+`supabase_vector_mekarvim-security-g5-f358e8022ba8`.
 
 ## Negative / Adversarial Tests
 
