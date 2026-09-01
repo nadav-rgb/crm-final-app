@@ -387,12 +387,44 @@ const JULY = { year: 2026, month: 6 }; // month 0-indexed
   check('בלי joined_at, עם היסטוריה — עוגן = הקשר המוקדם ביותר (יוני), חודש 4 (אוקטובר) לא מזכה',
     calc(mkFriendly('2026-10-15'), [], false, [], DEFAULTS, ctx(null, history)).payable, false);
 
-  // מעבר לתורני מנתק זכאות ידידותי, גם בתוך חלון 3 החודשים.
-  const toraniHistory = [{ date: '2026-08-10', quality: 'תורני' }];
+  // מעבר לתורני מנתק זכאות ידידותי, גם בתוך חלון 3 החודשים. project_id+duration_minutes
+  // חייבים להיות תקינים (countsForPayment + MIN_DUR — ר' ביקורת קוד 2026-09-01 למטה):
+  // בלעדיהם זה לא "קשר תורני" אמיתי לצורך הכלל הזה, בדיוק כמו ב-deriveToraniBonuses.
+  const toraniHistory = [{ date: '2026-08-10', quality: 'תורני', type: 'פרונטלי', project_id: 1, duration_minutes: 60 }];
   check('קשר ידידותי אחרי קשר תורני (גם בתוך החלון) לא מזכה',
     calc(mkFriendly('2026-08-20'), [], false, [], DEFAULTS, ctx('2026-08-01', toraniHistory)).payable, false);
   check('קשר ידידותי *לפני* הקשר התורני הראשון כן מזכה',
     calc(mkFriendly('2026-08-05'), [], false, [], DEFAULTS, ctx('2026-08-01', toraniHistory)).payable, true);
+
+  // ביקורת קוד (2026-09-01) — כלל מעבר-לתורני כאן (firstToraniDate) חייב להסכים עם
+  // deriveToraniBonuses על "האם הלקוח עבר לתורני": שניהם דורשים countsForPayment+MIN_DUR,
+  // לא רק quality==='תורני'. בלי זה, קשר תורני קצרצר (5 דקות) — שלא מזכה כלום בעצמו
+  // ולא תורם לרצף-הבונוס — עדיין ניתק לצמיתות את זכאות-הידידותי של הלקוח: נזק בלי
+  // תועלת מקבילה. רגרסיה: קשר תורני 5 דקות ואז קשר ידידותי, באותו חודש — הידידותי
+  // חייב להישאר מזכה (בתוך חלון 3 החודשים).
+  const shortTorani = { activist_id: 7, project_id: 1, id: 1000, contact_id: 1, type: 'טלפוני', quality: 'תורני', duration_minutes: 5, date: '2026-08-05' };
+  const friendlyLater = { type: 'פרונטלי', quality: 'ידידותי', duration_minutes: 60, date: '2026-08-20' };
+
+  const shortResult = calcInteractionPayment(friendlyLater, [], false, [], DEFAULTS,
+    { joinedAt: '2026-08-01', allInteractionsWithContact: [shortTorani] });
+  check('קשר תורני קצרצר (5 דקות, מתחת ל-MIN_DURATION) לא מנתק זכאות-ידידותי',
+    [shortResult.payable, shortResult.amount], [true, 250]);
+
+  // לשם ניגוד: אותו תרחיש, אבל התורני עומד ב-MIN_DURATION — כן מנתק (מוודא שהבדיקה
+  // למעלה לא "עוברת ממילא" בלי קשר לתיקון).
+  const realTorani = { ...shortTorani, id: 1001, duration_minutes: 60 };
+  const realResult = calcInteractionPayment(friendlyLater, [], false, [], DEFAULTS,
+    { joinedAt: '2026-08-01', allInteractionsWithContact: [realTorani] });
+  check('לשם ניגוד: קשר תורני תקין (60 דקות) כן מנתק זכאות-ידידותי',
+    realResult.payable, false);
+
+  // תורני "אמיתי" באורכו (60 דקות) אבל בפרויקט שאינו בתשלום — countsForPayment דוחה
+  // אותו, ולכן גם הוא לא אמור לנתק זכאות-ידידותי (מראה ש-countsForPayment מוחל, לא רק MIN_DUR).
+  const wrongProjectTorani = { ...realTorani, id: 1002, project_id: 99 };
+  const wrongProjectResult = calcInteractionPayment(friendlyLater, [], false, [], DEFAULTS,
+    { joinedAt: '2026-08-01', allInteractionsWithContact: [wrongProjectTorani] });
+  check('תורני בפרויקט שאינו בתשלום (countsForPayment=false) לא מנתק זכאות-ידידותי',
+    wrongProjectResult.payable, true);
 
   // בלי contactContext — התנהגות ישנה, בלי הגבלה (תאימות לאחור).
   check('בלי contactContext (null) — קשר ידידותי בחודש 5 עדיין מזכה (תאימות לאחור)',
