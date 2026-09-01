@@ -660,6 +660,132 @@ end $$;
 revoke all on function public.app_project_members_are_active(integer,uuid[]) from public, anon;
 grant execute on function public.app_project_members_are_active(integer,uuid[]) to authenticated;
 
+-- INSERT checks must derive authority from the authenticated identity and the
+-- referenced rows. RLS role checks alone are insufficient because a manager
+-- could otherwise supply an owner, actor, contact, house, assignee or initial
+-- workflow state from outside the row project. Service-role migration/fixture
+-- writes have no auth.uid() and remain outside this authenticated-user guard.
+create or replace function app_private.enforce_insert_authority()
+returns trigger
+language plpgsql security definer
+set search_path = pg_catalog, public, app_private
+as $$
+declare
+  v_actor uuid := auth.uid();
+  v_row jsonb := to_jsonb(new);
+  v_house_id text;
+begin
+  if v_actor is null then
+    return new;
+  end if;
+
+  case tg_table_name
+    when 'contacts' then
+      if new.assigned_user_id is null or not (
+        (new.assigned_user_id = v_actor
+          and public.app_has_project_role(new.project_id, array['activist']))
+        or public.app_project_members_are_active(new.project_id, array[new.assigned_user_id])
+      ) then
+        raise exception 'invalid contact insert authority' using errcode = '42501';
+      end if;
+
+    when 'interactions' then
+      if new.actor_user_id is distinct from v_actor or not exists (
+        select 1 from public.contacts c
+        where c.id::text = new.contact_id::text and c.project_id = new.project_id
+      ) then
+        raise exception 'invalid interaction insert authority' using errcode = '42501';
+      end if;
+
+    when 'base_meeting_reports' then
+      if new.actor_user_id is distinct from v_actor then
+        raise exception 'invalid base report insert authority' using errcode = '42501';
+      end if;
+      v_house_id := coalesce(v_row ->> 'house_id', v_row ->> 'meeting_house_id');
+      if (v_row ? 'house_id' or v_row ? 'meeting_house_id') and (
+        v_house_id is null or not exists (
+          select 1 from public.meeting_houses h
+          where h.id::text = v_house_id and h.project_id = new.project_id
+        )
+      ) then
+        raise exception 'invalid base report house authority' using errcode = '42501';
+      end if;
+
+    when 'meeting_houses' then
+      if not public.app_project_members_are_active(new.project_id, new.assigned_user_ids) then
+        raise exception 'invalid meeting house insert authority' using errcode = '42501';
+      end if;
+
+    when 'meeting_reminders' then
+      if new.recipient_user_id is distinct from v_actor or not exists (
+        select 1 from public.base_meeting_reports r
+        where r.id::text = new.meeting_id::text
+          and r.project_id = new.project_id
+          and r.actor_user_id = new.recipient_user_id
+      ) then
+        raise exception 'invalid meeting reminder insert authority' using errcode = '42501';
+      end if;
+
+    when 'tours' then
+      if not public.app_project_members_are_active(new.project_id, new.assigned_user_ids)
+        or (new.guide_user_id is not null and not
+          public.app_project_members_are_active(new.project_id, array[new.guide_user_id]))
+        or (new.host_user_id is not null and not
+          public.app_project_members_are_active(new.project_id, array[new.host_user_id]))
+        or v_row ->> 'status' is distinct from 'upcoming'
+        or v_row ->> 'report' is not null
+        or v_row ->> 'reported_by_user_id' is not null
+        or v_row ->> 'reported_at' is not null
+        or v_row ->> 'cancellation_reason' is not null
+        or v_row ->> 'cancelled_at' is not null then
+        raise exception 'invalid tour insert authority' using errcode = '42501';
+      end if;
+
+    when 'expenses' then
+      if new.actor_user_id is distinct from v_actor then
+        raise exception 'invalid expense insert authority' using errcode = '42501';
+      end if;
+
+    when 'bonus_cancellations' then
+      if new.cancelled_by_user_id is distinct from v_actor
+        or new.beneficiary_user_id is null
+        or not public.app_project_members_are_active(
+          new.project_id, array[new.beneficiary_user_id]
+        )
+        or split_part(new.bonus_key, '|', 1) is distinct from new.activist_id::text then
+        raise exception 'invalid bonus cancellation insert authority' using errcode = '42501';
+      end if;
+  end case;
+
+  return new;
+end $$;
+revoke all on function app_private.enforce_insert_authority() from public, anon, authenticated;
+
+drop trigger if exists validate_contacts_insert_authority on public.contacts;
+create trigger validate_contacts_insert_authority before insert on public.contacts for each row
+  execute function app_private.enforce_insert_authority();
+drop trigger if exists validate_interactions_insert_authority on public.interactions;
+create trigger validate_interactions_insert_authority before insert on public.interactions for each row
+  execute function app_private.enforce_insert_authority();
+drop trigger if exists validate_base_meeting_reports_insert_authority on public.base_meeting_reports;
+create trigger validate_base_meeting_reports_insert_authority before insert on public.base_meeting_reports for each row
+  execute function app_private.enforce_insert_authority();
+drop trigger if exists validate_meeting_houses_insert_authority on public.meeting_houses;
+create trigger validate_meeting_houses_insert_authority before insert on public.meeting_houses for each row
+  execute function app_private.enforce_insert_authority();
+drop trigger if exists validate_meeting_reminders_insert_authority on public.meeting_reminders;
+create trigger validate_meeting_reminders_insert_authority before insert on public.meeting_reminders for each row
+  execute function app_private.enforce_insert_authority();
+drop trigger if exists validate_tours_insert_authority on public.tours;
+create trigger validate_tours_insert_authority before insert on public.tours for each row
+  execute function app_private.enforce_insert_authority();
+drop trigger if exists validate_expenses_insert_authority on public.expenses;
+create trigger validate_expenses_insert_authority before insert on public.expenses for each row
+  execute function app_private.enforce_insert_authority();
+drop trigger if exists validate_bonus_cancellations_insert_authority on public.bonus_cancellations;
+create trigger validate_bonus_cancellations_insert_authority before insert on public.bonus_cancellations for each row
+  execute function app_private.enforce_insert_authority();
+
 drop function if exists public.app_notification_recipients(integer);
 
 create or replace function app_private.audit_row_change()

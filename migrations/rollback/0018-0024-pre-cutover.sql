@@ -168,6 +168,15 @@ drop trigger if exists enforce_push_subscriptions_immutable_authority on public.
 drop trigger if exists enforce_fcm_tokens_immutable_authority on public.fcm_tokens;
 drop trigger if exists enforce_feedback_reports_immutable_authority on public.feedback_reports;
 
+drop trigger if exists validate_contacts_insert_authority on public.contacts;
+drop trigger if exists validate_interactions_insert_authority on public.interactions;
+drop trigger if exists validate_base_meeting_reports_insert_authority on public.base_meeting_reports;
+drop trigger if exists validate_meeting_houses_insert_authority on public.meeting_houses;
+drop trigger if exists validate_meeting_reminders_insert_authority on public.meeting_reminders;
+drop trigger if exists validate_tours_insert_authority on public.tours;
+drop trigger if exists validate_expenses_insert_authority on public.expenses;
+drop trigger if exists validate_bonus_cancellations_insert_authority on public.bonus_cancellations;
+
 drop trigger if exists sync_contacts_identity on public.contacts;
 drop trigger if exists sync_interactions_identity on public.interactions;
 drop trigger if exists sync_base_meeting_reports_identity on public.base_meeting_reports;
@@ -197,6 +206,7 @@ drop function if exists public.app_has_active_membership(integer);
 drop function if exists public.app_is_ceo();
 drop function if exists public.app_user_active();
 drop function if exists app_private.audit_row_change();
+drop function if exists app_private.enforce_insert_authority();
 drop function if exists app_private.enforce_immutable_columns();
 drop function if exists app_private.sync_meeting_reminder_identity();
 drop function if exists app_private.sync_identity_array_pair();

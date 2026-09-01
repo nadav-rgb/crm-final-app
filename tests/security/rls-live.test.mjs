@@ -786,6 +786,69 @@ test('direct JWT rejects old/new-authorized authority transfers and legacy UUID 
     );
   }
 
+  const marker = `g5-${resources.securityRunId}-forged-insert`;
+  const managerInsertAttacks = [
+    ['contacts:cross-project-assignee', clients.coordA.from('contacts').insert({
+      security_run_id: resources.securityRunId,
+      project_id: resources.projectA,
+      assigned_user_id: resources.actorIds.activistB1,
+      activist_id: resources.actorCodes.activistB1,
+      name: 'Synthetic forged assignee',
+    }).select('id')],
+    ['interactions:forged-actor-contact', clients.coordA.from('interactions').insert({
+      security_run_id: resources.securityRunId,
+      project_id: resources.projectA,
+      contact_id: resources.contactB,
+      actor_user_id: resources.actorIds.activistB1,
+      activist_id: resources.actorCodes.activistB1,
+      type: 'synthetic',
+      date: '2026-08-18',
+      participants: {},
+    }).select('id')],
+    ['base-meeting-reports:forged-actor', clients.coordA.from('base_meeting_reports').insert({
+      security_run_id: resources.securityRunId,
+      project_id: resources.projectA,
+      actor_user_id: resources.actorIds.activistB1,
+      activist_id: resources.actorCodes.activistB1,
+    }).select('id')],
+    ['meeting-houses:cross-project-assignee', clients.coordA.from('meeting_houses').insert({
+      security_run_id: resources.securityRunId,
+      id: `${marker}-house`,
+      project_id: resources.projectA,
+      assigned_user_ids: [resources.actorIds.activistB1],
+      assigned_activists: [resources.actorCodes.activistB1],
+    }).select('id')],
+    ['tours:forged-assignee-state', clients.coordA.from('tours').insert({
+      security_run_id: resources.securityRunId,
+      id: `${marker}-tour`,
+      project_id: resources.projectA,
+      tour_number: 'G5-FORGED',
+      settlement: 'Synthetic',
+      guide_name: 'Synthetic',
+      guide_user_id: resources.actorIds.activistB1,
+      guide_activist_id: resources.actorCodes.activistB1,
+      assigned_user_ids: [resources.actorIds.activistB1],
+      assigned_activists: [resources.actorCodes.activistB1],
+      status: 'completed',
+      report: { notes: 'forged' },
+    }).select('id')],
+    ['bonus-cancellations:cross-project-beneficiary', clients.coordA.from('bonus_cancellations').insert({
+      security_run_id: resources.securityRunId,
+      project_id: resources.projectA,
+      beneficiary_user_id: resources.actorIds.activistB1,
+      activist_id: resources.actorCodes.activistB1,
+      cancelled_by_user_id: resources.actorIds.coordA,
+      cancelled_by: resources.actorCodes.coordA,
+      bonus_key: `${resources.actorCodes.activistB1}|בונוס-חדש|${resources.contactB}|2026-7`,
+    }).select('id')],
+  ];
+  const unexpectedSuccesses = [];
+  for (const [label, mutation] of managerInsertAttacks) {
+    const { data, error } = await mutation;
+    if (!error && data?.length) unexpectedSuccesses.push(label);
+  }
+  assert.deepEqual(unexpectedSuccesses, [], 'manager direct inserts bypassed row-derived authority');
+
   await expectDirectDenied(
     clients.ceoAal2.from('contacts').insert({
       ...directInsertPayload('contacts', resources),

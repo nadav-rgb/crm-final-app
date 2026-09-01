@@ -242,6 +242,38 @@ test('C1 direct grants cannot transfer authority or bypass protected workflows',
   }
 });
 
+test('authenticated inserts derive actors and validate every referenced project authority', async () => {
+  const sql = await readFile(migrationPath, 'utf8');
+  const rollbackSql = await readFile('migrations/rollback/0018-0024-pre-cutover.sql', 'utf8');
+  const validator = sql.match(
+    /create or replace function app_private\.enforce_insert_authority\(\)[\s\S]*?\$\$;/i,
+  )?.[0] ?? '';
+
+  assert.match(validator, /auth\.uid\(\)/i, 'insert authority must derive the authenticated actor');
+  for (const table of [
+    'contacts', 'interactions', 'base_meeting_reports', 'meeting_houses',
+    'meeting_reminders', 'tours', 'expenses', 'bonus_cancellations',
+  ]) {
+    assert.match(validator, new RegExp(`when\\s+'${table}'`, 'i'), `${table} insert validation is missing`);
+    assert.match(
+      sql,
+      new RegExp(`create trigger validate_${table}_insert_authority\\s+before insert on public\\.${table}`, 'i'),
+      `${table} insert validator trigger is missing`,
+    );
+    assert.match(
+      rollbackSql,
+      new RegExp(`drop trigger if exists validate_${table}_insert_authority on public\\.${table}`, 'i'),
+      `rollback must remove ${table} insert validation`,
+    );
+  }
+  assert.match(validator, /app_project_members_are_active/i);
+  assert.match(validator, /contact_id/i);
+  assert.match(validator, /house_id/i);
+  assert.match(validator, /status[\s\S]*upcoming/i);
+  assert.match(validator, /beneficiary_user_id/i);
+  assert.match(rollbackSql, /drop function if exists app_private\.enforce_insert_authority\(\)/i);
+});
+
 test('pre-cutover rollback removes RLS policies before dependent helpers', async () => {
   const rollback = await readFile('migrations/rollback/0018-0024-pre-cutover.sql', 'utf8');
   const policyCleanup = rollback.search(/select tablename, policyname from pg_policies/i);
