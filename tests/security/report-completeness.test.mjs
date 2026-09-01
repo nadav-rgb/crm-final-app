@@ -147,17 +147,17 @@ test('report keeps deterministic evidence distinct from measured live proof', as
 test('G5 closeout records exact disposable identity and destruction proof', async () => {
   const report = await readReport();
   for (const pattern of [
-    /mekarvim-security-g5-9de4fb3f09e2/,
-    /API `56321`; DB `56322`; Studio `56323`; Mail `56324`/,
+    /mekarvim-security-g5-f513a76122c5/,
+    /API `60321`; DB `60322`; Studio `60323`; Mail `60324`/,
     /loopback-only.*127\.0\.0\.1/i,
     /twelve exact-project containers/i,
-    /supabase_analytics_mekarvim-security-g5-9de4fb3f09e2/,
-    /supabase_edge_runtime_mekarvim-security-g5-9de4fb3f09e2/,
-    /supabase_realtime_mekarvim-security-g5-9de4fb3f09e2/,
-    /supabase_vector_mekarvim-security-g5-9de4fb3f09e2/,
+    /supabase_analytics_mekarvim-security-g5-f513a76122c5/,
+    /supabase_edge_runtime_mekarvim-security-g5-f513a76122c5/,
+    /supabase_realtime_mekarvim-security-g5-f513a76122c5/,
+    /supabase_vector_mekarvim-security-g5-f513a76122c5/,
     /18\/18 excluded container metadata records matched/i,
     /Containers `0`; volumes `0`; networks `0`; listeners `0`/,
-    /47\/47 migration checks passed/,
+    /49\/49 migration checks passed/,
     /48\/48 exact cases matched expected outcomes/,
     /anonymous leaks `0`; 17\/17 RLS enabled and forced/,
   ]) assert.match(report, pattern);
@@ -165,7 +165,7 @@ test('G5 closeout records exact disposable identity and destruction proof', asyn
   for (const forbidden of [
     /G5.*BLOCKED/i,
     /live UNVERIFIED/i,
-    /0\.0\.0\.0:5632[1-9]/,
+    /0\.0\.0\.0:6032[1-9]/,
   ]) assert.doesNotMatch(report, forbidden);
 });
 
@@ -206,18 +206,19 @@ test('test evidence names every required command with exact status and bounded r
 
   const required = [
     ['`npm ci`', /^PASS \(exit 0\)$/, /packages installed; .* audited; 0 vulnerabilities/],
-    ['`npm run test:baseline`', /^PASS \(exit 0\)$/, /51 total; 51 pass; 0 skip; 0 fail/],
-    ['`npm run verify:interaction-report`', /^PASS \(exit 0\)$/, /27 total; 27 pass; 0 skip; 0 fail/],
-    ['`node scripts/verify-payment-order.cjs`', /^PASS \(exit 0\)$/, /24 total; 24 pass; 0 skip; 0 fail/],
+    ['`npm run test:baseline`', /^PASS \(exit 0\)$/, /124 total; 124 pass; 0 skip; 0 fail/],
+    ['`npm run verify:interaction-report`', /^PASS \(exit 0\)$/, /31 total; 31 pass; 0 skip; 0 fail/],
+    ['`node scripts/verify-payment-order.cjs`', /^PASS \(exit 0\)$/, /93 total; 93 pass; 0 skip; 0 fail/],
+    ['`node scripts/verify-activity-report.cjs`', /^PASS \(exit 0\)$/, /64 total; 64 pass; 0 skip; 0 fail/],
     [
       '`npm run test:security`',
       /^PASS \(exit 0\)$/,
-      new RegExp(`344 total; 325 pass; ${G5_REQUIRED_LIVE_TESTS.length} explicit live skips; 0 fail`),
+      new RegExp(`369 total; 350 pass; ${G5_REQUIRED_LIVE_TESTS.length} explicit live skips; 0 fail`),
     ],
     [
       '`node --test tests/security/finance-reports-feedback.test.mjs tests/security/jspdf-compatibility.test.mjs tests/security/exceljs-uuid-compatibility.test.mjs`',
       /^PASS \(exit 0\)$/,
-      /32 total; 32 pass; 0 skip; 0 fail/,
+      /36 total; 36 pass; 0 skip; 0 fail/,
     ],
     [
       '`npm run test:security -- tests/security/report-completeness.test.mjs`',

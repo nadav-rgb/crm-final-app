@@ -8,23 +8,23 @@ rewrite. No Production system was contacted while preparing it.
 
 ## Current Security Status
 
-- Reviewed security branch: `security/hardening-p0`.
-- Security implementation review HEAD: `75bda2ad3a4a56ba102f03d6e7d18bb2946ddb19`.
-- Proven fork commit and current `main` merge-base:
+- Integration branch: `security/integrate-current-main`.
+- Unchanged hardened base: `0153a8acb242d25ee259c2c626bb86c9899d6a95`.
+- Integrated implementation review HEAD: `e148ce7f4f92d138cdda049e4e2462f0960ba387`.
+- Proven fork and merge-base:
   `72b9196f22812e5dc2452efe33f1fbbf23f3dd4c`.
-- Current local and remote target: `main` / `origin/main` at
-  `69b4040a993689c63990f3064e58c321254836c5`; verified with `git ls-remote`.
-- Review range at the implementation checkpoint: 97 branch commits, 243 changed files, 30,422
-  insertions and 9,302 deletions.
-- Target divergence since the fork: 36 `main` commits versus 97 security-branch commits.
-- Final G5/G6 source/test checkpoint: `75bda2ad3a4a56ba102f03d6e7d18bb2946ddb19`.
-  The independent review found an authenticated manager INSERT authority gap. A focused regression
-  went RED, migration 0019 and the reverse script were fixed in `9d6aea5`, the focused test went
-  GREEN, and the complete disposable G5 lifecycle was recreated. The same reviewer then found that
-  same-project future bonus keys could still be pre-seeded. A second focused regression went RED;
-  direct table INSERT was revoked and the candidate-recomputing RPC was added in `75bda2a`; focused
-  tests went GREEN; and G5 plus G6 were rerun from that exact commit.
-- G5: 19/19 live tests, 48/48 adversarial evidence cases, 47/47 migration checks, 17/17
+- Pinned current-main input: `69b4040a993689c63990f3064e58c321254836c5`; it is an ancestor
+  of the integrated HEAD.
+- Integration first-parent commits: `1211a78`, `10a10bb`, `238296f`, `8254c9a`, `b85f29b`,
+  `8be993f`, `3271489`, `dd06012`, and `e148ce7`.
+- All 13 known conflicts were resolved. The three modify/delete resolutions retained the hardened
+  deletion of the legacy payment module and generated PDF/XLSX artifacts while porting business
+  behavior into server-owned replacements.
+- The integration-delta review reported five Important defects. Commit `e148ce7` closed all five
+  with RED-to-GREEN regressions covering complete Finance pagination, SQL/JS calendar parity,
+  historical Torani attribution, Coordinator candidate-only cancellation, and notification kinds.
+- Final G5/G6 source/test checkpoint: `e148ce7f4f92d138cdda049e4e2462f0960ba387`.
+- G5: 19/19 live tests, 48/48 adversarial evidence cases, 49/49 migration checks, 17/17
   classified tables with enabled and forced RLS, exact fixture cleanup, and disposable-stack
   teardown at 0 containers / 0 volumes / 0 networks / 0 listeners.
 - The claims in `SECURITY_HARDENING_REPORT.md` match the fresh deterministic verification below.
@@ -33,17 +33,18 @@ rewrite. No Production system was contacted while preparing it.
 
 ## Final Verification
 
-The security-critical migration change required and received a fresh G5 run. G6 was then rerun from
-scratch from the same implementation checkpoint plus evidence-only documentation updates.
+The integration changes received a fresh G5 run. G6 was then rerun from a clean detached worktree
+at the exact implementation checkpoint before evidence-only documentation updates.
 
 | Verification | Result | Exact evidence |
 | --- | --- | --- |
 | `npm ci` | PASS | 277 packages added; 278 audited; 0 vulnerabilities |
-| Fresh disposable G5 | PASS | Project `mekarvim-security-g5-9de4fb3f09e2`; 19/19 live tests; 48/48 evidence cases; 47/47 migration checks; cleanup and destruction exact |
-| `npm run test:security` | PASS | 344 total; 325 pass; 19 explicit isolated-live skips; 0 fail |
+| Fresh disposable G5 | PASS | Project `mekarvim-security-g5-f513a76122c5`; 19/19 live tests; 48/48 evidence cases; 49/49 migration checks; cleanup and destruction exact |
+| `npm run test:security` | PASS | 369 total; 350 pass; 19 explicit isolated-live skips; 0 fail |
 | G5 correspondence for the 19 skips | PASS | The same 19 gated tests ran live in G5: 19 pass; 0 skip; 0 fail |
-| `npm run test:baseline` | PASS | 51/51: Interaction Report 27/27 plus Payments 24/24 |
-| Finance/PDF/Excel focused tests | PASS | 32/32; 0 fail |
+| `npm run test:baseline` | PASS | 124/124: Interaction Report 31/31 plus Payments 93/93 |
+| Activity report/workbook verification | PASS | 64/64; 0 fail |
+| Finance/PDF/Excel focused tests | PASS | 36/36; 0 fail |
 | `npm run build` | PASS | Next.js 16.3.3 Webpack production build compiled successfully |
 | HTTP/CSP verifier | PASS | Exact 200/401/403/404/500; five distinct CSP nonces; required headers |
 | HTTP process cleanup | PASS | 0 listeners on `127.0.0.1:43877` after stopping the owned process |
@@ -55,6 +56,7 @@ scratch from the same implementation checkpoint plus evidence-only documentation
 | Capacitor Android sync | PASS | Pinned CLI generated the ignored bridge files required by a clean worktree |
 | Android debug/unit build | PASS | 169 actionable tasks; 169 executed; BUILD SUCCESSFUL |
 | Android release guard | EXPECTED FAIL | Missing `android/keystore.properties`; no debug-signing fallback |
+| Privileged operational entrypoints | PASS | Seven of seven failed closed without target acknowledgement; no data operation |
 | `git diff --check` | PASS | No whitespace errors before documentation commit |
 
 Warnings that did not fail verification are tracked under Known Residual Risks; they are not
@@ -62,67 +64,21 @@ silently converted into PASS claims.
 
 ## Merge Readiness
 
-### Ancestry and target
+### Completed integration
 
-The branch reflog records creation from `HEAD` at `72b9196…`. That commit is also the current
-`git merge-base security/hardening-p0 main`. The historical branch name attached to `HEAD` at the
-creation instant is not retained by Git, but ancestry proves the fork commit and `main` is the
-current local and remote integration target.
+The branch was created from hardened HEAD `0153a8a`, and merge commit `10a10bb` incorporated the
+pinned current-main SHA. The merge retained explicit parentage for review and rollback. All conflict
+groups were resolved with current business behavior behind opaque same-origin sessions, server-
+derived tenant/actor authority, field-minimized DTOs, audited RPCs and forced RLS.
 
-### Conflict simulation
+Finance parity now covers friendly calendar windows, per-contact and monthly caps, non-payable
+`קצרצר`, Torani transitions and streak bonuses, cancellation keys/beneficiaries, reassignment,
+activity/unpaid calculations, and RTL/formula-safe exports. Large histories paginate beyond the
+PostgREST row cap. The browser never receives raw contact or religious-history Finance inputs.
 
-`git merge-tree --write-tree --messages main security/hardening-p0` exited 1 with 13 conflicts:
-
-- Content: `lib/AuthStore.jsx`, `lib/CrmStore.jsx`, `lib/notificationDemo.js`,
-  `pages/contact/add-interaction/[id].jsx`, `pages/my-dashboard.jsx`, `pages/payments.jsx`,
-  `pages/payments/[id].jsx`, `scripts/compare-payment-impact.cjs`,
-  `scripts/verify-month-report.cjs`, and `scripts/verify-payroll-xlsx.cjs`.
-- Modify/delete: `lib/paymentConfig.js`, `reports/דו״ח-קשרים-אחדות-יהודית.pdf`, and
-  `reports/דו״ח-קשרים-אחדות-יהודית.xlsx`.
-
-Conflict risk is **HIGH** because authentication/client authority and payment logic are both in the
-conflict set. The generated PDF/XLSX conflict must be resolved in favor of keeping generated reports
-out of Git; a requested live report is regenerated locally under the repository's report workflow.
-
-The current target also contains Finance behavior not represented by the isolated hardened branch:
-friendly eligibility windows, a friendly-frontal cap, non-payable `קצרצר`, transition-to-Torani,
-the three-month `בונוס-תורני`, and activity-by-type/unpaid export rows. Migration 0024 currently
-projects the older aggregate model, and the hardened cancellation parser does not accept
-`בונוס-תורני`. This is a deterministic integration blocker: the target rules must be ported through
-the server-owned Finance projection and cancellation/export paths, then SQL-versus-JS parity and
-PDF/Excel verification must be rerun on the integrated candidate.
-
-No accidental build output, signing material, secret, `.next` output, APK/AAB, or G5 runtime artifact
-was added by the security range. Added files top out below 100 KiB. The two legacy `0002_*` migration
-prefixes already existed at the fork; security migrations `0018` through `0024` are unique and
-strictly sequential. No security-blocking TODO/FIXME/debug statement or temporary enabled external
-integration was found.
-
-### Exact merge strategy
-
-Do not rebase 97 commits and do not squash away the security evidence history. Resolve the target
-divergence once in a dedicated integration branch and preserve a merge commit:
-
-1. Re-run `git ls-remote origin refs/heads/main`; abort if it no longer equals the reviewed target.
-2. Create an annotated rollback tag on the target SHA and another on the reviewed security SHA.
-   Suggested names: `pre-security-hardening-main-20260901` and
-   `security-hardening-reviewed-20260901`.
-3. Create `integration/security-hardening-p0-staging` from `security/hardening-p0`.
-4. Merge the pinned target SHA `69b4040a993689c63990f3064e58c321254836c5` with `--no-ff`.
-5. Resolve all 13 conflicts once. Preserve opaque BFF sessions, no browser Supabase authority,
-   server-derived tenant/owner fields, and fail-closed integrations. Port the target's newer payment
-   rules and report calculations through the hardened server/domain boundary. Keep
-   `lib/paymentConfig.js` deleted unless its newer business constants are moved into an approved
-   server-safe module. Keep generated report binaries untracked.
-6. Review every auto-merged target change, not only conflict markers. Run the complete verification
-   matrix from this document.
-7. Because the resolution necessarily changes Auth/CRM/payment security-critical paths, create a
-   fresh disposable G5 stack and repeat migrations 0018-0024, all 19 live tests, cleanup, and G6.
-8. Only after a clean integration review, create an annotated staging-candidate tag and open the
-   integration branch for merge into `main`. Do not fast-forward an unreviewed conflict resolution.
-
-The current branch is therefore evidence-complete in isolation but is not yet an integrated staging
-candidate against current `main`.
+The integration range contains no generated report binary, signing material, secret, APK/AAB or G5
+runtime evidence. The two legacy `0002_*` prefixes still predate the hardening chain; migrations
+0018 through 0024 remain the sole sequential security chain and were replayed live.
 
 ## Staging Checklist
 
@@ -131,8 +87,9 @@ invent credentials. `BLOCKER` means the staging candidate must not be deployed u
 
 | Item | Status | Required staging action and proof |
 | --- | --- | --- |
-| Resolve current `main` divergence | BLOCKER | Resolve the 13 conflicts on the integration branch, review auto-merges, rerun G5/G6, and tag the verified candidate |
-| Reconcile target Finance rules | BLOCKER | Port current `main` eligibility/cap/non-payable/Torani rules and activity/unpaid exports into the hardened server projection; update cancellation validation; prove SQL-versus-JS and PDF/Excel parity |
+| Resolve current `main` divergence | READY | Pinned target is integrated; all 13 conflicts are resolved and G5/G6 were rerun |
+| Reconcile target Finance rules | READY | Eligibility, caps, קצרצר, Torani, cancellation, activity/unpaid exports and SQL-versus-JS parity are proven |
+| Final independent integration review | PENDING | Review the integrated implementation and evidence-only report update; close any deterministic Critical/Important finding before staging |
 | Core server environment | REQUIRES CONFIG | Set exact HTTPS `APP_ORIGIN`; staging `SUPABASE_URL`, publishable and service-role keys server-side; 32+ character session pepper; one 32-byte base64url token key; key version `1`; same-origin reset callback; BFF auth and contacts flags `true` |
 | Supabase Auth project settings | REQUIRES OWNER ACTION | Record Site URL, allowed redirect list, email/reset configuration, JWT/refresh settings and signup policy; use only the staging project |
 | MFA/TOTP | REQUIRES OWNER ACTION | Enable TOTP enroll and verify in staging; prove Head/CEO AAL1 denial, enrollment/challenge, AAL2 success, session rotation and factor reset with synthetic users |
@@ -156,14 +113,14 @@ candidate. Production execution requires a separate owner-approved change window
 
 | Migration | SHA-256 |
 | --- | --- |
-| `0018_security_foundation.sql` | `6B3CC9126A45EFB8E632E49B40DD7908DFCACB1480E48DD092918F13381CC954` |
-| `0019_security_rls.sql` | `3717F40671783F4EA21D5E6B00F376C1A1C060D607F535EC8B7937C0D5797A4A` |
-| `0020_security_rpcs.sql` | `D0BFDB753A3E60083660409E088559B30F8B44284D015B0DD9E605E82EA54F23` |
-| `0021_meetings_security.sql` | `458F0406B5E9FBEE8AE3B68CD48C9EC9BDBA2881FA10BEDB5E722C2A2CEBEF3E` |
-| `0022_tours_security.sql` | `405516128815C6F8C6CED6D54BD10DD251F9C9880B2320FEE3850B1DB41A6C04` |
-| `0023_notifications_security.sql` | `B64756E61D53A678000900E2AFF5D88C2B41FDE17E2C92A99328FB4F36FEC1EB` |
-| `0024_finance_security.sql` | `585326A564CD8D55F8B1496605001F7F844372B7DE1F9F5C714D7BADEF3BC7B1` |
-| Pre-cutover reverse script | `D1F2DA33EA65DB1CCDC562BC357DA3729ADCBFDFEF86830C74959DDEF46E81C8` |
+| `0018_security_foundation.sql` | `2582A8852D70B174D7012B837ADBDEDD37BE162DF044566C556CC9D8588B981B` |
+| `0019_security_rls.sql` | `D3FD11EE7BB77156556F3F7E7D2BF8682D53E28D70030124890FB473B18A2727` |
+| `0020_security_rpcs.sql` | `05D7548646A94D3676FD5451ECD702AA963447D9DABD2941F7070F886D59D879` |
+| `0021_meetings_security.sql` | `3D2E433D25D74FB1F03F85A7175F63E233CD00B3F02F6808DE31D971CA91215E` |
+| `0022_tours_security.sql` | `A9FE77350DD1E1932C0A979E6D793D0B394874EF950AF0403FD3EA8C94504169` |
+| `0023_notifications_security.sql` | `FD13797D2B4F6558B15F907C09B8E743540B3056FF20B7C850C1753BA2B50D3A` |
+| `0024_finance_security.sql` | `53C312649446ECB159B50F0A6894D3D6D00D3A484CBFE38ECDC3DE1FD442591C` |
+| Pre-cutover reverse script | `9484260E8436BD83E3EF4181E55713CE9893CFDC051155B7192CB8C77B338B11` |
 
 ### Common preflight and execution contract
 
@@ -354,10 +311,10 @@ automatically from a successful migration.
 
 ### Source and integration
 
-- Before integration, create annotated tags on the exact target and reviewed security SHAs. Do not
-  move or overwrite tags.
-- If conflict resolution fails review, delete only the disposable integration branch and return to
-  the immutable reviewed security tag; do not rewrite `security/hardening-p0`.
+- Preserve hardened commit `0153a8a` and pinned current-main commit `69b4040` as immutable rollback
+  references. Do not move or overwrite them.
+- If the integrated candidate fails review, abandon only `security/integrate-current-main` and
+  return to the unchanged hardened reference; do not rewrite `security/hardening-p0`.
 - If a merged candidate must be backed out, create a normal revert of the merge commit with
   `git revert -m 1`; never reset or force-push shared history.
 - Disable an unsafe staging BFF path fail-closed; never restore client-only auth, browser service
@@ -378,10 +335,6 @@ automatically from a successful migration.
 
 ## Known Residual Risks
 
-- Thirteen unresolved conflicts separate the reviewed security branch from current `main`; the
-  combined code has not been built, G5-tested or independently reviewed.
-- Current `main` Finance rules and export requirements are not yet represented by migration 0024 and
-  the hardened Finance/cancellation boundary; parity of the integrated behavior is therefore unproven.
 - G5 used a repository-derived legacy schema fixture because the complete Production schema export
   is not in the repository. Production preflight must reconcile the real catalog and mappings.
 - The two pre-existing `0002_*` filenames are a legacy numbering ambiguity. Both are recorded as
@@ -401,9 +354,6 @@ NOT READY TO ENTER STAGING
 
 Exact blockers:
 
-1. Resolve the 13 `main` integration conflicts and review all automatic merges without weakening
-   the hardened BFF/RLS/authority model.
-2. Reconcile current `main` Finance eligibility, cap, non-payable, Torani bonus/cancellation and
-   activity/unpaid export behavior through the hardened server projection, then prove parity.
-3. Rerun the complete independent security review, fresh G5 disposable LIVE workflow and G6 from the
-   resolved integration commit; only that verified commit may be tagged as the staging candidate.
+1. Complete the final independent review of the integrated implementation and evidence-only report
+   update. Any deterministic Critical or Important finding must receive RED-to-GREEN closure before
+   this verdict can change.

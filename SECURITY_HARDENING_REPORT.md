@@ -2,11 +2,17 @@
 
 Evidence date: 2026-09-01 (Asia/Jerusalem)
 
-Branch: `security/hardening-p0`
+Branch: `security/integrate-current-main`
 
 Starting checkpoint: `5340d9763ce27d396bbc79bf33f342933bedceb8`
 
-G5/G6 source and test checkpoint before this report update: `75bda2ad3a4a56ba102f03d6e7d18bb2946ddb19`
+Hardened base: `0153a8acb242d25ee259c2c626bb86c9899d6a95`
+
+Pinned current-main input: `69b4040a993689c63990f3064e58c321254836c5`
+
+Merge base: `72b9196f22812e5dc2452efe33f1fbbf23f3dd4c`
+
+Integrated G5/G6 source and test checkpoint: `e148ce7f4f92d138cdda049e4e2462f0960ba387`
 
 This is a time-bound engineering evidence record. It is not authorization to merge, deploy, use
 real sensitive data, or apply these migrations to Production.
@@ -14,14 +20,14 @@ Static contract evidence and live database proof are reported separately.
 
 ## Executive Summary
 
-A fresh disposable local Supabase project, `mekarvim-security-g5-9de4fb3f09e2`, was created solely
+A fresh disposable local Supabase project, `mekarvim-security-g5-f513a76122c5`, was created solely
 for CRM Mekarvim G5. Its identity, dedicated ports, exact container labels and loopback-only
 listeners were proven before any destructive reset. No existing database was reused.
 No remote Supabase environment was contacted. Production is untouched.
 
 Migrations 0018 through 0024 were applied sequentially with a catalog snapshot and verification
-after each step, then rolled back, reapplied, and verified again. All 47 migration checks passed.
-The measured chain result was: 47/47 migration checks passed.
+after each step, then rolled back, reapplied, and verified again. All 49 migration checks passed.
+The measured chain result was: 49/49 migration checks passed.
 The measured harness manifest contains 48 exact unique SEC IDs.
 Database-backed G5 evidence: 48/48 exact cases matched expected outcomes. All 19 previously gated LIVE tests executed against
 the isolated project: 19 live tests; 19 pass; 0 skip; 0 fail.
@@ -38,8 +44,13 @@ the excluded `mekusharim` and `shabbat-hosting` stacks matched. All 18/18 exclud
 Only read-only Docker metadata was inspected. Neither excluded stack was stopped or restarted, and
 no container exec, database query, network request, migration, cleanup or mutation targeted either stack.
 
-G6 was rerun from a clean install: baseline 51/51, security 325 pass plus 19 explicit local-live
-gates and zero failures, focused finance/PDF/Excel 32/32, production Webpack build, HTTP/CSP,
+The pinned current-main commit was merged into the hardened base in a dedicated branch. All 13
+known conflicts were resolved by retaining current business behavior behind the hardened BFF/RBAC/
+RLS boundary. Generated report binaries and deleted insecure browser paths were not restored.
+
+G6 was rerun from detached commit `e148ce7`: baseline 124/124, security 350 pass plus 19 explicit
+local-live gates and zero failures, activity verification 64/64, focused finance/PDF/Excel 36/36,
+production Webpack build, HTTP/CSP,
 Android debug, secret scans, bundle scan and dependency audits all passed. The 19 deterministic
 suite skips are environment gates whose corresponding live tests were measured separately in G5.
 
@@ -72,12 +83,19 @@ G5 database/runtime evidence. It does not remove the remaining operational contr
 | `I9` | Privileged scripts could initialize secrets or remote clients before target proof. | `9407592` | Operational preflight and exact G5 identity guard | ADDRESSED | Operator target selection remains an operational control. |
 | `I10` | G5 evidence could overcount or omit direct-JWT matrix cases. | `b2108b6` and G5 harness fixes | 48 unique measured cases with observed outcomes | ADDRESSED | Evidence manifest is time-bound to this G5 run. |
 | `I11` | The report overstated evidence boundaries and lacked exact command contracts. | `de92300` and this update | Report-completeness contract | ADDRESSED | Report evidence remains time-bound. |
-| `M1` | Posture verification tolerated incomplete grants, policies and table posture. | `7463d9e`, `180c90f` | 47 migration checks and final 17/17 forced-RLS probe | ADDRESSED | Catalog evidence is time-bound to G5. |
+| `M1` | Posture verification tolerated incomplete grants, policies and table posture. | `7463d9e`, `180c90f`, `e148ce7` | 49 migration checks and final 17/17 forced-RLS probe | ADDRESSED | Catalog evidence is time-bound to G5. |
 | `M2` | Caller-controlled forwarding data could fragment rate-limit identity. | `06530d7` | Trusted-client and live shared-bucket tests | ADDRESSED | Trusted-proxy runtime configuration remains operator-controlled. |
 | `M3` | Reminder ownership and reads preserved identity ambiguity and excess projection. | `74450ac` | Compatibility suite and live reminder boundaries | ADDRESSED | Evidence is time-bound to G5. |
 
 No open deterministic Critical, High, Moderate or Low dependency finding was observed. Remaining
 non-blocking build and Gradle warnings are recorded below as maintenance risks.
+
+The integration-delta review found five Important issues: unpaginated Finance history, SQL/JS
+friendly-window and anchor mismatch, reassigned Torani actor loss, an unreachable Coordinator
+cancellation UI, and collapsed notification event semantics. Commit `e148ce7` fixed all five with
+RED-to-GREEN regressions. The fixes paginate complete histories, use calendar month ordinals,
+preserve historical earning actors, expose only candidate-scoped Coordinator cancellation, and
+derive self/management notification recipients from persisted payment facts.
 
 ## Changes
 
@@ -89,11 +107,13 @@ non-blocking build and Gradle warnings are recorded below as maintenance risks.
   actor-derived, resource-derived RPCs with fixed search paths.
 - Audit storage is private, append-only through controlled functions and redacted.
 - Finance, notification, tour, reminder, governance and reporting projections are allowlisted.
+- Current-main short-contact, friendly-window/cap, Torani, Torani-bonus/cancellation, activity,
+  unpaid and export behavior now executes through the hardened server-owned Finance boundary.
 - G5 infrastructure now creates an exact disposable project, enforces loopback Docker publishing,
   measures evidence, performs exact cleanup and proves project-scoped destruction.
-- The closeout sequence added 42 implementation, test and evidence/report commits after the requested starting checkpoint, covering
-  entrypoint ownership, loopback binding, migration/posture correctness, TOTP, Finance isolation and
-  audit atomicity. Each real defect was committed before recreating and rerunning the disposable DB.
+- The integration branch preserves the hardened base as a rollback reference and records the pinned
+  current-main merge plus separate Auth, Finance, Activities, reports/exports, UI and review-fix
+  commits. Each deterministic integration defect received regression coverage before the final G5.
 
 ## Authentication & Session
 
@@ -152,11 +172,12 @@ approved posture verifier.
 | Command | Status | Exact result |
 | --- | --- | --- |
 | `npm ci` | PASS (exit 0) | 277 packages installed; 278 audited; 0 vulnerabilities |
-| `npm run test:baseline` | PASS (exit 0) | 51 total; 51 pass; 0 skip; 0 fail |
-| `npm run verify:interaction-report` | PASS (exit 0) | 27 total; 27 pass; 0 skip; 0 fail |
-| `node scripts/verify-payment-order.cjs` | PASS (exit 0) | 24 total; 24 pass; 0 skip; 0 fail |
-| `npm run test:security` | PASS (exit 0) | 344 total; 325 pass; 19 explicit live skips; 0 fail |
-| `node --test tests/security/finance-reports-feedback.test.mjs tests/security/jspdf-compatibility.test.mjs tests/security/exceljs-uuid-compatibility.test.mjs` | PASS (exit 0) | 32 total; 32 pass; 0 skip; 0 fail |
+| `npm run test:baseline` | PASS (exit 0) | 124 total; 124 pass; 0 skip; 0 fail |
+| `npm run verify:interaction-report` | PASS (exit 0) | 31 total; 31 pass; 0 skip; 0 fail |
+| `node scripts/verify-payment-order.cjs` | PASS (exit 0) | 93 total; 93 pass; 0 skip; 0 fail |
+| `node scripts/verify-activity-report.cjs` | PASS (exit 0) | 64 total; 64 pass; 0 skip; 0 fail |
+| `npm run test:security` | PASS (exit 0) | 369 total; 350 pass; 19 explicit live skips; 0 fail |
+| `node --test tests/security/finance-reports-feedback.test.mjs tests/security/jspdf-compatibility.test.mjs tests/security/exceljs-uuid-compatibility.test.mjs` | PASS (exit 0) | 36 total; 36 pass; 0 skip; 0 fail |
 | `npm run test:security -- tests/security/report-completeness.test.mjs` | PASS (exit 0) | 8 total; 8 pass; 0 skip; 0 fail |
 | `npm run build` | PASS (exit 0) | Next.js 16.3.3 Webpack production build; compiled successfully |
 | `node .superpowers/sdd/2026-08-27-security-hardening/start-g4-http.mjs` | PASS (owned process started) | Next.js ready on 127.0.0.1:43877 |
@@ -169,33 +190,34 @@ approved posture verifier.
 | `npm audit --json` | PASS (exit 0) | 0 Critical; 0 High; 0 Moderate; 0 Low; 0 total; 310 dependencies in metadata |
 | `npm audit --omit=dev --json` | PASS (exit 0) | 0 Critical; 0 High; 0 Moderate; 0 Low; 0 total; 310 dependencies in metadata |
 | `node --test tests/security/android-hardening.test.mjs` | PASS (exit 0) | 6 total; 6 pass; 0 skip; 0 fail |
-| `npx cap sync android` | PASS (exit 0) | Generated the ignored pinned Capacitor bridge files required by a clean detached worktree |
+| `npx --no-install cap sync android` | PASS (exit 0) | Generated the ignored pinned Capacitor bridge files required by a clean detached worktree |
 | `$taskAndroidSdk=Join-Path $env:LOCALAPPDATA 'Android\Sdk'; if (-not (Test-Path -LiteralPath $taskAndroidSdk)) { throw 'Android SDK unavailable' }; $env:ANDROID_HOME=$taskAndroidSdk; $env:ANDROID_SDK_ROOT=$taskAndroidSdk; android\gradlew.bat -p android testDebugUnitTest assembleDebug` | PASS (exit 0) | BUILD SUCCESSFUL in 13s; 169 actionable tasks; 169 executed |
 | `$taskAndroidSdk=Join-Path $env:LOCALAPPDATA 'Android\Sdk'; if (Test-Path -LiteralPath 'android\keystore.properties') { throw 'keystore.properties unexpectedly exists' }; $env:ANDROID_HOME=$taskAndroidSdk; $env:ANDROID_SDK_ROOT=$taskAndroidSdk; android\gradlew.bat -p android assembleRelease` | EXPECTED FAIL (exit 1) | Release signing configuration missing: android/keystore.properties; assertion PASS |
-| `node scripts/security/g5-local-orchestrator.mjs` | PASS (exit 0) | 19 live tests; 19 pass; 0 skip; 0 fail; 48/48 evidence cases; 47/47 migration checks; cleanup clean |
+| `node scripts/security/g5-local-orchestrator.mjs` | PASS (exit 0) | 19 live tests; 19 pass; 0 skip; 0 fail; 48/48 evidence cases; 49/49 migration checks; cleanup clean |
+| Seven privileged operational scripts without target acknowledgements | PASS (fail-closed) | All seven exited 1 before environment loading or any data operation |
 | `node scripts/verify-month-report.cjs <year> <month>` | NOT RUN | Inspection only: `.env.local`; privileged Supabase; person-level output; no approved isolated source |
 | `node scripts/verify-payroll-xlsx.cjs <year> <month>` | NOT RUN | Inspection only: `.env.local`; privileged Supabase; person/payroll output; no approved isolated source |
 | `git diff --check` | PASS (exit 0) | 0 whitespace errors; checked before each final report commit |
 | `git status --short --branch` | PASS (exit 0) | tracked tree clean after the final-report commit |
 
 G5 used pinned Supabase CLI `2.115.0`.
-The exact dedicated listeners were API `56321`; DB `56322`; Studio `56323`; Mail `56324`; shadow `56320`; SMTP `56325`; POP3 `56326`; analytics `56327`;
-pooler-disabled reservation `56329`; edge-inspector reservation `56342`; local BFF `56343`.
+The exact dedicated listeners were API `60321`; DB `60322`; Studio `60323`; Mail `60324`; shadow `60320`; SMTP `60325`; POP3 `60326`; analytics `60327`;
+pooler-disabled reservation `60329`; edge-inspector reservation `60342`; local BFF `60343`.
 Published listeners were loopback-only on `127.0.0.1`.
 
 The identity inventory found twelve exact-project containers:
-`supabase_analytics_mekarvim-security-g5-9de4fb3f09e2`,
-`supabase_auth_mekarvim-security-g5-9de4fb3f09e2`,
-`supabase_db_mekarvim-security-g5-9de4fb3f09e2`,
-`supabase_edge_runtime_mekarvim-security-g5-9de4fb3f09e2`,
-`supabase_inbucket_mekarvim-security-g5-9de4fb3f09e2`,
-`supabase_kong_mekarvim-security-g5-9de4fb3f09e2`,
-`supabase_pg_meta_mekarvim-security-g5-9de4fb3f09e2`,
-`supabase_realtime_mekarvim-security-g5-9de4fb3f09e2`,
-`supabase_rest_mekarvim-security-g5-9de4fb3f09e2`,
-`supabase_storage_mekarvim-security-g5-9de4fb3f09e2`,
-`supabase_studio_mekarvim-security-g5-9de4fb3f09e2`, and
-`supabase_vector_mekarvim-security-g5-9de4fb3f09e2`.
+`supabase_analytics_mekarvim-security-g5-f513a76122c5`,
+`supabase_auth_mekarvim-security-g5-f513a76122c5`,
+`supabase_db_mekarvim-security-g5-f513a76122c5`,
+`supabase_edge_runtime_mekarvim-security-g5-f513a76122c5`,
+`supabase_inbucket_mekarvim-security-g5-f513a76122c5`,
+`supabase_kong_mekarvim-security-g5-f513a76122c5`,
+`supabase_pg_meta_mekarvim-security-g5-f513a76122c5`,
+`supabase_realtime_mekarvim-security-g5-f513a76122c5`,
+`supabase_rest_mekarvim-security-g5-f513a76122c5`,
+`supabase_storage_mekarvim-security-g5-f513a76122c5`,
+`supabase_studio_mekarvim-security-g5-f513a76122c5`, and
+`supabase_vector_mekarvim-security-g5-f513a76122c5`.
 
 ## Negative / Adversarial Tests
 
@@ -271,8 +293,9 @@ release signing, remote migration and real-data use remain prohibited and were n
 
 The G5 sequence proved its reverse rollback before a clean final forward application. The disposable
 database was then fixture-cleaned and destroyed, so no G5 database state remains to roll back.
-Source rollback remains commit-scoped on `security/hardening-p0`; no force push, history rewrite,
-merge to `main` or Production deployment occurred.
+Source rollback remains commit-scoped: `0153a8a` is the unchanged hardened reference and the
+integration commits can be reverted normally on `security/integrate-current-main`. No force push,
+history rewrite, merge to `main` or Production deployment occurred.
 
 ## Final Verdict
 
