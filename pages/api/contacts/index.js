@@ -1,7 +1,7 @@
 import { parseJson } from '../../../lib/security/http.mjs';
 import { secureHandler } from '../../../lib/security/api-handler.mjs';
 import { contactCreateSchema } from '../../../lib/security/schemas.mjs';
-import { createContact, listContacts } from '../../../lib/security/domains/contacts.mjs';
+import { createContact, listContactsPage } from '../../../lib/security/domains/contacts.mjs';
 import { activeMemberLookup, requireContactsBff } from '../../../lib/security/domains/route-support.mjs';
 
 const handler = secureHandler({
@@ -10,7 +10,13 @@ const handler = secureHandler({
   resourceType: 'contact',
 }, async (context, input, req) => {
   requireContactsBff();
-  if (req.method === 'GET') return { contacts: await listContacts(context) };
+  if (req.method === 'GET') {
+    const page = await listContactsPage(context, {
+      cursor: Array.isArray(req.query?.cursor) ? undefined : req.query?.cursor,
+      limit: Array.isArray(req.query?.limit) ? undefined : req.query?.limit,
+    });
+    return { contacts: page.items, nextCursor: page.nextCursor };
+  }
   const contact = await createContact(context, input, { isActiveMember: activeMemberLookup(context) });
   return { status: 201, payload: { contact } };
 });

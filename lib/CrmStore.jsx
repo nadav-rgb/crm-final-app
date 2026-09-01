@@ -1,6 +1,6 @@
 // lib/CrmStore.jsx
 import { createContext, useCallback, useContext, useState, useEffect, useMemo } from 'react';
-import { deriveMitzvotBonuses } from './paymentCalc';
+import { deriveMitzvotBonuses, deriveToraniBonuses } from './paymentCalc';
 import { BASE_MEETING_QUESTIONS } from '../data/base-meeting-questions';
 import { hydrateNotificationsFromSupabase } from './notificationDemo';
 import { fetchToursFromSupabase } from './toursSupabase';
@@ -157,11 +157,34 @@ async function insertContactViaApi(apiFetch, contact) {
   }
 }
 
+const API_PAGE_LIMIT = 100;
+const MAX_API_PAGES = 1_000;
+
+async function fetchAllApiPages(apiFetch, path, collectionKey) {
+  const rows = [];
+  const seenCursors = new Set();
+  let cursor = null;
+  for (let page = 0; page < MAX_API_PAGES; page += 1) {
+    const query = new URLSearchParams({ limit: String(API_PAGE_LIMIT) });
+    if (cursor) query.set('cursor', cursor);
+    const result = await apiFetch(`${path}?${query}`, { method: 'GET' });
+    const items = result?.[collectionKey];
+    if (!Array.isArray(items)) throw new Error('Paginated response is invalid');
+    rows.push(...items);
+    const next = result.nextCursor == null ? null : String(result.nextCursor);
+    if (!next) return rows;
+    if (seenCursors.has(next)) throw new Error('Paginated response repeated a cursor');
+    seenCursors.add(next);
+    cursor = next;
+  }
+  throw new Error('Paginated response exceeded the safe page limit');
+}
+
 // כתיבת השדות הנגזרים חזרה לטבלת contacts (אחרת הם נשארים מקומיים ונעלמים ב-reload)
 async function loadContactsFromApi(apiFetch, currentUser) {
   try {
-    const result = await apiFetch('/api/contacts', { method: 'GET' });
-    const details = await Promise.all((result.contacts || []).map((contact) => (
+    const contacts = await fetchAllApiPages(apiFetch, '/api/contacts', 'contacts');
+    const details = await Promise.all(contacts.map((contact) => (
       apiFetch(`/api/contacts/${encodeURIComponent(contact.id)}`, { method: 'GET' })
     )));
     const data = details.map(({ contact }) => contactDtoToLegacyRow(contact));
@@ -232,6 +255,10 @@ export function CrmProvider({ children }) {
   // הגזירה עצמה חיה ב-lib/paymentCalc.js (deriveMitzvotBonuses) כדי שסקריפטי האימות
   // יחשבו בדיוק אותו דבר — קודם היא הייתה משוכפלת בשלושה מקומות.
   const mitzvotBonuses = useMemo(() => deriveMitzvotBonuses(contacts), [contacts]);
+  const toraniBonuses = useMemo(
+    () => deriveToraniBonuses(interactions, contacts),
+    [interactions, contacts]
+  );
 
   const { currentUser, authLoading, apiFetch, activeProject } = useAuth();
 
@@ -354,19 +381,21 @@ export function CrmProvider({ children }) {
     if (!currentUser) { setInteractions([]); markDataLoaded('interactions'); return; }
     let active = true;
     (async () => {
-      const requests = contacts.map(contact => apiFetch(`/api/contacts/${encodeURIComponent(contact.id)}/interactions`, { method: 'GET' }));
-      const settled = await Promise.allSettled(requests);
+      let loaded;
+      try { loaded = await fetchAllApiPages(apiFetch, '/api/interactions', 'interactions'); }
+      catch { loaded = null; }
       if (!active) return;
-      if (settled.some(result => result.status === 'rejected')) {
+      if (!loaded) {
         setInteractions([]);
         markDataUnavailable('interactions');
         return;
       }
-      const data = settled.flatMap((result, index) => (result.value.interactions || []).map(interaction => ({
+      const projectsByContact = new Map(contacts.map((contact) => [String(contact.id), contact.project_id]));
+      const data = loaded.map(interaction => ({
         id: interaction.id,
         contact_id: interaction.contactId,
         activist_id: interaction.activistCode,
-        project_id: contacts[index]?.project_id ?? null,
+        project_id: projectsByContact.get(String(interaction.contactId)) ?? null,
         date: interaction.date ?? interaction.occurredAt?.slice(0, 10),
         time: interaction.time ?? interaction.occurredAt?.slice(11, 16),
         type: interaction.type,
@@ -379,7 +408,7 @@ export function CrmProvider({ children }) {
         next_action: interaction.nextAction,
         next_action_date: interaction.nextActionDate,
         participants: interaction.participants,
-      })));
+      }));
       setInteractions(data);
       markDataLoaded('interactions');
     })();
@@ -693,7 +722,7 @@ export function CrmProvider({ children }) {
   return (
     <CrmContext.Provider value={{
       contacts, interactions, activists, messages, baseMeetings, BASE_MEETING_QUESTIONS,
-      mitzvotBonuses, newParticipantBonuses, paymentConfig, paymentConfigError, expenses, tours,
+      mitzvotBonuses, newParticipantBonuses, toraniBonuses, paymentConfig, paymentConfigError, expenses, tours,
       addInteraction, addParticipantInteractions, updateInteraction, deleteInteraction, addContact, updateContact, deleteContact, updateMitzvot, addExpense, deleteExpense, submitBaseMeeting, updateBaseMeetingReport,
       PROJECT_NAMES,
     }}>

@@ -14,9 +14,11 @@ import {
   toContactDetailDto,
   checkDuplicateContact,
   escapeHtmlText,
+  listContactsPage,
 } from '../../lib/security/domains/contacts.mjs';
 import {
   createInteractionCommand,
+  listInteractionsPage,
   sanitizeParticipants,
   sanitizeInternalPath,
   toInteractionDto,
@@ -31,6 +33,31 @@ const rowA = {
 
 function code(expected) {
   return (error) => error instanceof SecurityError && error.code === expected;
+}
+
+function pagedDb(rowsByTable, calls = []) {
+  return {
+    from(table) {
+      const filters = [];
+      let limit = Infinity;
+      const query = {
+        select() { return query; },
+        eq(column, value) { filters.push((row) => row[column] === value); calls.push(['eq', column, value]); return query; },
+        in(column, values) { filters.push((row) => values.map(Number).includes(Number(row[column]))); calls.push(['in', column, values]); return query; },
+        gt(column, value) { filters.push((row) => Number(row[column]) > Number(value)); calls.push(['gt', column, value]); return query; },
+        order(column) { calls.push(['order', column]); return query; },
+        limit(value) {
+          limit = value;
+          calls.push(['limit', value]);
+          return Promise.resolve({
+            data: (rowsByTable[table] ?? []).filter((row) => filters.every((filter) => filter(row))).slice(0, limit),
+            error: null,
+          });
+        },
+      };
+      return query;
+    },
+  };
 }
 
 test('anonymous requests are rejected before contact data access', () => {
@@ -164,6 +191,29 @@ test('interaction authority is derived from session and RLS-loaded contact', asy
   assert.equal(command.contact_id, contactA.id);
 });
 
+test('brief interactions enforce the canonical method and fixed duration at the BFF boundary', async () => {
+  const base = {
+    contactId: contactA.id,
+    date: '2026-08-28',
+    time: '09:00',
+    type: 'קצרצר',
+    quality: 'טלפון',
+    durationMinutes: 5,
+  };
+  const command = await createInteractionCommand(makeContext(activistA), rowA, base);
+  assert.equal(command.type, 'קצרצר');
+  assert.equal(command.quality, 'טלפון');
+  assert.equal(command.duration_minutes, 5);
+  await assert.rejects(
+    () => createInteractionCommand(makeContext(activistA), rowA, { ...base, quality: 'email' }),
+    code('VALIDATION_FAILED'),
+  );
+  await assert.rejects(
+    () => createInteractionCommand(makeContext(activistA), rowA, { ...base, durationMinutes: 6 }),
+    code('VALIDATION_FAILED'),
+  );
+});
+
 test('interaction schema and sanitizers reject smuggled authority and unsafe links', () => {
   assert.equal(interactionCreateSchema.safeParse({
     contactId: contactA.id, occurredAt: '2026-08-28T09:00:00.000Z', type: 'שיחה',
@@ -184,6 +234,77 @@ test('interaction DTO is explicit and escapes notes', () => {
   assert.equal(dto.notes, '&lt;b&gt;raw&lt;/b&gt;');
   assert.equal('project_id' in dto, false);
   assert.equal('actor_user_id' in dto, false);
+});
+
+test('contacts and interactions expose stable bounded cursor pages through the BFF domain', async () => {
+  const calls = [];
+  const interactionRows = Array.from({ length: 135 }, (_, index) => ({
+    id: index + 1,
+    contact_id: contactA.id,
+    actor_user_id: activistA.userId,
+    activist_id: 7001,
+    project_id: activistA.projectId,
+    date: '2026-08-28',
+    time: '09:00',
+    type: 'טלפוני',
+    quality: 'תורני',
+    duration_minutes: 20,
+    participants: {},
+  }));
+  const contactRows = Array.from({ length: 105 }, (_, index) => ({
+    id: index + 1,
+    name: `Synthetic ${index + 1}`,
+    city: '',
+    is_active: true,
+    assigned_user_id: activistA.userId,
+    next_action_date: null,
+    project_id: activistA.projectId,
+  }));
+  const context = { ...makeContext(activistA), db: pagedDb({ interactions: interactionRows, contacts: contactRows }, calls) };
+
+  const firstInteractions = await listInteractionsPage(context, { limit: 100 });
+  assert.equal(firstInteractions.items.length, 100);
+  assert.equal(firstInteractions.nextCursor, '100');
+  const secondInteractions = await listInteractionsPage(context, { cursor: firstInteractions.nextCursor, limit: 100 });
+  assert.equal(secondInteractions.items.length, 35);
+  assert.equal(secondInteractions.nextCursor, null);
+
+  const firstContacts = await listContactsPage(context, { limit: 100 });
+  assert.equal(firstContacts.items.length, 100);
+  assert.equal(firstContacts.nextCursor, '100');
+  assert.ok(calls.some((call) => call[0] === 'limit' && call[1] === 101));
+  assert.ok(calls.some((call) => call[0] === 'eq' && call[1] === 'actor_user_id' && call[2] === activistA.userId));
+  assert.ok(calls.some((call) => call[0] === 'gt' && call[1] === 'id' && call[2] === '100'));
+});
+
+test('contacts and interactions routes expose cursor pages and the browser drains them through the BFF', async () => {
+  const [contactsRoute, interactionsRoute, store] = await Promise.all([
+    readFile(new URL('../../pages/api/contacts/index.js', import.meta.url), 'utf8'),
+    readFile(new URL('../../pages/api/interactions/index.js', import.meta.url), 'utf8'),
+    readFile(new URL('../../lib/CrmStore.jsx', import.meta.url), 'utf8'),
+  ]);
+  assert.match(contactsRoute, /listContactsPage/);
+  assert.match(interactionsRoute, /listInteractionsPage/);
+  assert.match(store, /fetchAllApiPages/);
+  assert.match(store, /['"]\/api\/interactions['"]/);
+  assert.match(store, /deriveToraniBonuses\(interactions, contacts\)/);
+  assert.match(store, /mitzvotBonuses, newParticipantBonuses, toraniBonuses,/);
+  assert.doesNotMatch(store, /contacts\.map\(contact => apiFetch\(`\/api\/contacts\/\$\{encodeURIComponent\(contact\.id\)\}\/interactions/);
+});
+
+test('interaction form preserves current brief-report and three-state payment semantics', async () => {
+  const source = await readFile(new URL('../../pages/contact/add-interaction/[id].jsx', import.meta.url), 'utf8');
+  assert.match(source, /buildContactContext/);
+  assert.match(source, /paidBefore\(draft, myMonthly, contacts, paymentConfig, interactions\)/);
+  assert.match(source, /reportKind:\s*'single'/);
+  assert.match(source, /kind === 'brief' \? 'קצרצר'/);
+  assert.match(source, /form\.reportKind === 'brief' \? form\.contact_method : form\.quality/);
+  assert.match(source, /form\.reportKind === 'brief' \? 5 : duration/);
+  assert.match(source, /CONFIG\.contactMethods\.map/);
+  assert.match(source, /if \(result\.amount > 0\)/);
+  assert.match(source, /ללא תשלום \(0 ₪\)/);
+  assert.match(source, /notifyInteractionApi\(apiFetch,/);
+  assert.doesNotMatch(source, /supabase\./);
 });
 
 test('contact update schema stays strict while allowing ordinary editable fields', () => {
