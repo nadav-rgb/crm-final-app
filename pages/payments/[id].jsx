@@ -8,6 +8,7 @@ import DesktopLayout from '../../components/DesktopLayout';
 import { useCrm } from '../../lib/CrmStore';
 import { useAuth } from '../../lib/AuthStore';
 import { calcMonthlyPayment, resolvePeriod } from '../../lib/paymentCalc';
+import { deriveActivityByType, exportActivityXlsx } from '../../lib/activityByTypeExcel';
 import { getSupabaseClient } from '../../lib/supabaseClient';
 
 const MONTH_NAMES = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
@@ -19,6 +20,7 @@ export default function ActivistPaymentDetail() {
   const { contacts, interactions, mitzvotBonuses, newParticipantBonuses, toraniBonuses, activists, paymentConfig, expenses, tours } = useCrm();
   const { currentUser, can } = useAuth();
   const [cancelledBonuses, setCancelledBonuses] = useState([]); // שורות bonus_cancellations
+  const [exportingActivity, setExportingActivity] = useState(false); // נועל את כפתור ייצוא הפעילות בזמן ה-import הדינמי של exceljs
 
   const canView = can.seePayments;
   // רשאים לבטל בונוס: רכז/ראש-פרויקט/מנכ"ל בלבד (לא כספים — צפייה בלבד)
@@ -128,6 +130,26 @@ export default function ActivistPaymentDetail() {
         {/* פירוט */}
         <div style={{ background:'#fffaf5', borderRadius:16, padding:'20px', border:'0.5px solid rgba(108,92,231,0.2)', marginBottom:24 }}>
           <div style={{ fontSize:15, fontWeight:700, marginBottom:14 }}>פירוט קשרים ובונוסים</div>
+
+          <button
+            onClick={async () => {
+              if (exportingActivity) return;
+              setExportingActivity(true);
+              try {
+                const activityData = deriveActivityByType(report, report.expensesTotal, report.guidePay, paymentConfig);
+                await exportActivityXlsx(activist.name, currentMonthName, year, activityData);
+              } catch (err) {
+                console.error('Activity export failed', err);
+                alert('ייצוא הפעילות נכשל. נסה שוב.');
+              } finally {
+                setExportingActivity(false);
+              }
+            }}
+            disabled={exportingActivity}
+            style={{ background: exportingActivity ? '#b7b0e8' : 'linear-gradient(135deg,#1f7a45,#2ecc71)', color:'#fff', border:'none', borderRadius:10, padding:'8px 16px', fontSize:12.5, fontWeight:700, cursor: exportingActivity ? 'default' : 'pointer', fontFamily:'inherit', marginBottom:14 }}
+          >
+            {exportingActivity ? '⏳ מייצא…' : '📋 ייצוא פעילות לאקסל'}
+          </button>
 
           {report.breakdown.length === 0 && report.guidePay === 0 && report.expensesTotal === 0 && (
             <div style={{ fontSize:13, color:'#aaa', padding:'8px 0' }}>אין קשרים מזכים ב{currentMonthName} {year}.</div>
