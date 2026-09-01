@@ -15,6 +15,38 @@ function check(name, actual, expected) {
   }
 }
 
+// resolveCellValue — קורא ערך מספרי אמיתי מתא ExcelJS שנקרא מקובץ שנכתב+נקרא-חזרה,
+// גם כשהתא מכיל נוסחה (לא ערך קפוא) — ואפילו נוסחה שמפנה לתא *אחר* שגם הוא נוסחה
+// (למשל: "סה"כ ארגוני לתשלום" מפנה לשורת "סה"כ לתשלום" של כל פעיל, וזו עצמה נוסחת
+// SUM). exceljs לא מחשב נוסחאות בעצמו — קריאה חוזרת מחזירה רק את מחרוזת הנוסחה — ואקסל
+// אמיתי היה פותר את זה בעצמו; זה קיים רק כדי שנוכל לוודא כאן, בלי לפתוח אקסל אמיתי,
+// שהנוסחאות המקוננות באמת מסתכמות למה שהן אמורות. תומך רק בשתי הצורות שהקובץ הזה
+// בפועל מייצר: "SUM(X#:X#)+SUM(X#:X#)..." ו-"X#+X#+X#...".
+function resolveCellValue(ws, cellRef, _depth = 0) {
+  if (_depth > 5) throw new Error(`resolveCellValue: עומק רקורסיה חריג עבור ${cellRef}`);
+  const v = ws.getCell(cellRef).value;
+  if (typeof v === 'number') return v;
+  if (v == null) return 0;
+  if (typeof v === 'object' && typeof v.formula === 'string') {
+    let total = 0;
+    for (const term of v.formula.split('+').map(s => s.trim())) {
+      const sumMatch = term.match(/^SUM\(([A-Z]+)(\d+):[A-Z]+(\d+)\)$/);
+      if (sumMatch) {
+        const [, col, fromRow, toRow] = sumMatch;
+        for (let rn = Number(fromRow); rn <= Number(toRow); rn++) {
+          total += resolveCellValue(ws, `${col}${rn}`, _depth + 1);
+        }
+      } else if (/^[A-Z]+\d+$/.test(term)) {
+        total += resolveCellValue(ws, term, _depth + 1);
+      } else {
+        throw new Error(`resolveCellValue: מונח נוסחה לא מזוהה "${term}" בתוך "${v.formula}"`);
+      }
+    }
+    return total;
+  }
+  return 0;
+}
+
 const contacts = [
   { id: 1, name: 'יוסי כהן' }, { id: 2, name: 'דנה לוי' }, { id: 3, name: 'רון גל' },
 ];
@@ -115,6 +147,85 @@ const AUG = { year: 2026, month: 7 }; // month 0-indexed, אוגוסט = 7
   check('אינטגרציה: calcMonthlyPayment.total כולל בונוס תורני', report.total, 1000);
   check('אינטגרציה: deriveActivityByType.grandTotal תואם בדיוק ל-calcMonthlyPayment.total (לא 0 — הבאג שתוקן)',
     data.grandTotal, report.total);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// סקירה סופית (2026-09-01), חשוב #1: BONUS_CATEGORIES הוא allow-list — בלי רשת
+// ביטחון, סוג בונוס עתידי שאף אחד עוד לא קטלג היה נעלם בשקט, בדיוק כמו שקרה עם
+// 'בונוס-תורני' למעלה (אותה מחלקת-באג בדיוק — לא רק היסטוריה: נבדק כאן עם סוג
+// סינתטי-לגמרי, שלא קיים ולא יתקיים ב-calcMonthlyPayment, כדי לוודא שהמנגנון עצמו
+// מבני ולא רק "תיקנו את המקרה שכבר נתפס"). שתי בדיקות: (1) סוג לא-מקוטלג יחיד →
+// שורת "תוספות אחרות". (2) שני סוגים לא-מקוטלגים שונים → מתקבצים לשורה אחת (לא
+// שתיים) עם כמות 2, בדיוק כמו כל שורת-תוספת רגילה עם כמה רשומות (ראה "קיבוץ תוספות" למעלה).
+// ────────────────────────────────────────────────────────────────────────────
+{
+  const report = {
+    breakdown: [
+      { type: 'בונוס-חדש', contactId: 2, contactName: 'אבנט קליינר', amount: 250, desc: 'הביא משתתף חדש דרך אבנט קליינר' },
+      { type: 'בונוס-עתידי-לא-ידוע', contactId: 5, contactName: 'איתן שגיא', amount: 777, desc: 'סוג בונוס עתידי שעדיין לא קוטלג' },
+    ],
+    unpaid: [],
+  };
+  const data = deriveActivityByType(report, 0, 0);
+  check('סוג בונוס לא-מקוטלג נכנס לשורת "תוספות אחרות" בסוף הרשימה — לא נעלם',
+    data.bonusRows.map(r => r.label), ['בונוס משתתף חדש', 'תוספות אחרות']);
+  check('שורת "תוספות אחרות": כמות 1, פירוט = desc (כמו כל שורת-תוספת עם רשומה בודדת), סכום = 777',
+    data.bonusRows[1], { label: 'תוספות אחרות', count: 1, detail: 'סוג בונוס עתידי שעדיין לא קוטלג', amount: 777 });
+  check('grandTotal כולל את הסכום הלא-מקוטלג (250 + 777) — הכסף לא נעלם',
+    data.grandTotal, 250 + 777);
+}
+{
+  const report = {
+    breakdown: [
+      { type: 'בונוס-עתידי-א', contactId: 5, contactName: 'איתן שגיא', amount: 100, desc: 'תיאור א' },
+      { type: 'בונוס-עתידי-ב', contactId: 6, contactName: 'נעה ברק', amount: 200, desc: 'תיאור ב' },
+    ],
+    unpaid: [],
+  };
+  const data = deriveActivityByType(report, 0, 0);
+  check('שני סוגי-בונוס לא-מקוטלגים שונים מתקבצים יחד לשורת "תוספות אחרות" אחת (לא שתיים)',
+    data.bonusRows, [{ label: 'תוספות אחרות', count: 2, detail: 'איתן שגיא + נעה ברק', amount: 300 }]);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// סקירה סופית (2026-09-01), חשוב #1(ב): בדיקת רגרסיה קבועה — calcMonthlyPayment
+// אמיתי, כל 4 סוגי הבונוס הידועים בבת אחת (לימוד-4, מצוות, משתתף-חדש, תורני) +
+// הוצאות + הדרכת-סיורים, מוודאת ש-deriveActivityByType.grandTotal מתאם בדיוק לנוסחה
+// שהעמודים בפועל מציגים כ-grandTotal (pages/payments/[id].jsx:67, pages/payments.jsx:95:
+// result.total + expensesTotal + guidePay). זה בדיוק ה-invariant שנשבר בפועל עם
+// 'בונוס-תורני' (ראה הבדיקה למעלה) — ועכשיו, עם רשת-הביטחון "תוספות אחרות" (נבדקה
+// ישירות למעלה), הוא מוחזק מבנית גם אם סוג עתידי ייפול בין הכיסאות. הבדיקה השנייה
+// למטה ("אין שורת תוספות אחרות") היא הרכיב שכן "יתפוס" סוג *ידוע* שנשכח לקטלג
+// בעתיד: הכסף לא ייעלם (הבדיקה הראשונה תמיד תעבור, גם אז) אבל הוא ייפול תחת התווית
+// הגנרית — והבדיקה השנייה תיכשל, בדיוק כפי שהייתה צריכה לתפוס את השמטת
+// 'בונוס-תורני' לפני שהיא קרתה בפועל.
+// ────────────────────────────────────────────────────────────────────────────
+{
+  const activistId = 30; // ייעודי לבדיקה הזו — לא מתנגש עם activist_id אחר בקובץ
+  const rows = [
+    // 4 מפגשי פרונטלי-תורני עם אותו לקוח: גם משלמים כ"קשר" (300×4) וגם מפעילים
+    // בונוס-לימוד-4 (בדיוק 4 — לא 6 — כדי לבדוק את השכבה "4", לא "6").
+    { activist_id: activistId, project_id: 1, id: 3001, contact_id: 1, type: 'פרונטלי', quality: 'תורני', duration_minutes: 20, date: '2026-08-01' },
+    { activist_id: activistId, project_id: 1, id: 3002, contact_id: 1, type: 'פרונטלי', quality: 'תורני', duration_minutes: 20, date: '2026-08-02' },
+    { activist_id: activistId, project_id: 1, id: 3003, contact_id: 1, type: 'פרונטלי', quality: 'תורני', duration_minutes: 20, date: '2026-08-03' },
+    { activist_id: activistId, project_id: 1, id: 3004, contact_id: 1, type: 'פרונטלי', quality: 'תורני', duration_minutes: 20, date: '2026-08-04' },
+  ];
+  const myMitzvotBonuses = [{ contact_id: 2, contactName: 'דנה לוי', desc: 'עליה בסרגל מצוות' }];
+  const myNewBonuses     = [{ contact_id: 3, contactName: 'רון גל' }];
+  const myToraniBonuses  = [{ contact_id: 1, contactName: 'יוסי כהן', desc: 'השלים 3 חודשים רצופים של קשר תורני' }];
+
+  const report = calcMonthlyPayment(activistId, rows, contacts, myMitzvotBonuses, myNewBonuses, DEFAULTS, new Set(), AUG, myToraniBonuses);
+  const expensesTotal = 343;
+  const guidePay = 750;
+  const data = deriveActivityByType(report, expensesTotal, guidePay, DEFAULTS);
+
+  check('קלט: report.total כולל את כל 4 סוגי הבונוס (לימוד-4=600, מצוות=600, חדש=250, תורני=1000) + 4×300 מפגשים = 3650',
+    report.total, 4 * 300 + 600 + 600 + 250 + 1000);
+  check('כל 4 סוגי הבונוס מקוטלגים בשמם — אין שורת "תוספות אחרות" (אם תופיע, סוג ידוע נשר מהקטגוריה שלו)',
+    data.bonusRows.map(r => r.label).sort(),
+    ['בונוס לימוד', 'בונוס משתתף חדש', 'בונוס עליה במצוות', 'בונוס תורני'].sort());
+  check('האינווריאנט: deriveActivityByType.grandTotal === calcMonthlyPayment.total + expensesTotal + guidePay (נוסחת grandTotal בעמודי payments)',
+    data.grandTotal, report.total + expensesTotal + guidePay);
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -234,12 +345,30 @@ async function testCombinedWorkbook() {
   check('שתי כותרות הפעילים קיימות בלשונית הראשונה',
     [Boolean(firstActivistTitleRow), Boolean(secondActivistTitleRow)], [true, true]);
 
-  // שורת סה"כ ארגוני בסוף הלשונית
+  // שורת סה"כ ארגוני לפי-סוג (מפגשים בלבד) בסוף הלשונית
   let orgTotalRow = null;
   overview.eachRow((row, rowNumber) => {
-    if (row.getCell(1).value === 'סה"כ ארגוני לפי סוג פעילות') orgTotalRow = rowNumber;
+    if (row.getCell(1).value === 'סה"כ ארגוני לפי סוג פעילות (מפגשים בלבד)') orgTotalRow = rowNumber;
   });
-  check('בלוק "סה"כ ארגוני לפי סוג פעילות" קיים בסוף הלשונית', Boolean(orgTotalRow), true);
+  check('בלוק "סה"כ ארגוני לפי סוג פעילות (מפגשים בלבד)" קיים בסוף הלשונית', Boolean(orgTotalRow), true);
+
+  // סקירה סופית (2026-09-01), חשוב #2: שורת "סה"כ ארגוני לתשלום" האמיתית — מוודאת
+  // שהתא הזה, לא בלוק "לפי-סוג" שלמעלה (שמכסה רק מפגשים), הוא מה ששווה לסכום
+  // ה-grandTotal של כל הפעילים (150+300=450 כאן; שני הפעילים בתרחיש הזה בלי
+  // בונוסים/הוצאות/הדרכות, כך ש-meetingsTotal==grandTotal לכל אחד בנפרד — התרחיש
+  // העשיר יותר, עם בונוס+הוצאות+הדרכה גם יחד, נבדק ב-testCombinedWorkbookMultiActivist למטה).
+  let orgGrandRowSimple = null;
+  overview.eachRow((row, rowNumber) => {
+    if (String(row.getCell(1).value || '').startsWith('סה"כ ארגוני לתשלום')) orgGrandRowSimple = rowNumber;
+  });
+  check('שורת "סה"כ ארגוני לתשלום" קיימת בלשונית הסיכום הכללי', Boolean(orgGrandRowSimple), true);
+  if (orgGrandRowSimple) {
+    const formula = overview.getCell(`C${orgGrandRowSimple}`).value?.formula || '';
+    const refs = formula.split('+').map(s => s.trim()).filter(Boolean);
+    const computed = refs.reduce((s, ref) => s + resolveCellValue(overview, ref), 0);
+    check('סה"כ ארגוני לתשלום (2 פעילים, בלי בונוסים/הוצאות/הדרכות) = 150+300 = 450',
+      computed, 450);
+  }
 
   // לשונית "פעיל ב" מכילה את הפירוט המלא שלו (בדיוק כמו buildActivityWorkbook עצמאי)
   const sheetB = back.worksheets.find(s => s.name === 'פעיל ב');
@@ -257,6 +386,9 @@ async function testCombinedWorkbook() {
 // הארגוני מסכם את שניהם (לא כפול, לא רק אחד) — ו"שני" מקבל בונוס+הוצאות+מפגש-
 // שלא-זוכה, כדי לתרגל את ענפי "תוספות"/"לא זוכו" בתוך הזרימה המרוכזת עצמה (עד כה
 // נבדקו רק דרך buildActivityWorkbook העצמאי של Task 3, לא דרך buildCombinedActivityWorkbook).
+// "שלישי" מקבל גם הדרכת-סיורים (guidePay, ראה deriveActivityByType(report3, 0, 750)
+// למטה) — סקירה סופית (2026-09-01), חשוב #2: כך שהתרחיש כולל את כל שלושת הרכיבים
+// שבונוס+הוצאות+הדרכה מייצגים יחד, לבדיקת "סה"כ ארגוני לתשלום" האמיתי בסוף הפונקציה.
 // ────────────────────────────────────────────────────────────────────────────
 async function testCombinedWorkbookMultiActivist() {
   const { buildCombinedActivityWorkbook } = require('../lib/activityByTypeExcel.js');
@@ -281,7 +413,7 @@ async function testCombinedWorkbookMultiActivist() {
 
   const data1 = deriveActivityByType(report1, 0, 0);
   const data2 = deriveActivityByType(report2, 150, 0); // expensesTotal=150 → שורת "החזר הוצאות" + ענף תוספות
-  const data3 = deriveActivityByType(report3, 0, 0);
+  const data3 = deriveActivityByType(report3, 0, 750); // guidePay=750 → שורת "הדרכת סיורים"
 
   // ודאות-קלט: מוודאים את ההנחות לפני שבודקים את הפלט (טלפוני תורני = TYPE_ROWS[1]).
   check('קלט: טלפוני תורני משותף לראשון+שלישי בלבד (שני = 0, כי המפגש שלו לא זוכה)',
@@ -356,6 +488,32 @@ async function testCombinedWorkbookMultiActivist() {
       computedCount, 2);
     check('סה"כ ארגוני "טלפוני תורני": סכום ₪ בפועל = 300 (150+150; לא 450 כפול; לא 150 חסר)',
       computedTotal, 300);
+  }
+
+  // סקירה סופית (2026-09-01), חשוב #2: "סה"כ ארגוני לתשלום" האמיתי — התרחיש הסינתטי
+  // עם 2-3 פעילים כולל בונוסים+הוצאות+הדרכת-סיורים שממצא #2 ביקש: "שני" תורם בונוס
+  // (250)+הוצאות (150), "שלישי" תורם הדרכת-סיורים (750). מחשבים ביד מה pages/payments.jsx
+  // היה מציג כ-totalAll (סכום ה-grandTotal של כל פעיל), ומוודאים שהנוסחה החדשה
+  // מסתכמת לאותו מספר בדיוק — ע"י מעקב אחרי התאים בפועל (resolveCellValue), לא הנחה
+  // שהנוסחה "נראית נכון". בלוק "לפי-סוג" (מפגשים-בלבד) למעלה מסתכם ל-600 בלבד
+  // (150+300+150) — ההפרש מ-1750 הוא בדיוק בונוס+הוצאות+הדרכה, מה שממצא #2 טען שחסר.
+  const expectedOrgGrandTotal = data1.grandTotal + data2.grandTotal + data3.grandTotal;
+  check('קלט: סכום ה-grandTotal של שלושת הפעילים = 150+700+900 = 1750 (מה שהעמוד היה מציג כ-totalAll)',
+    expectedOrgGrandTotal, 1750);
+
+  let orgGrandRow = null;
+  overview.eachRow((row, rn) => {
+    if (String(row.getCell(1).value || '').startsWith('סה"כ ארגוני לתשלום')) orgGrandRow = rn;
+  });
+  check('שורת "סה"כ ארגוני לתשלום" קיימת בלשונית הסיכום הכללי (תרחיש 3 פעילים)', Boolean(orgGrandRow), true);
+  if (orgGrandRow) {
+    const formula = overview.getCell(`C${orgGrandRow}`).value?.formula || '';
+    const refs = formula.split('+').map(s => s.trim()).filter(Boolean);
+    check('נוסחת "סה"כ ארגוני לתשלום" מפנה לבדיוק 3 תאים — שורת "סה"כ לתשלום" של כל פעיל, לא פחות ולא יותר',
+      refs.length, 3);
+    const computed = refs.reduce((s, ref) => s + resolveCellValue(overview, ref), 0);
+    check('סה"כ ארגוני לתשלום בפועל (מעקב אחרי הנוסחאות המקוננות עד לערכים הגולמיים) = 1750 — כולל בונוס+הוצאות+הדרכת-סיור, לא רק מפגשים',
+      computed, 1750);
   }
 
   console.log(failures === 0 ? '\nכל הבדיקות עברו (כולל buildCombinedActivityWorkbook).' : `\n${failures} בדיקות נכשלו.`);
