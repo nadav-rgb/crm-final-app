@@ -6,6 +6,7 @@ import { useCrm } from '../lib/CrmStore';
 import { useAuth } from '../lib/AuthStore';
 import { calcMonthlyPayment, resolvePeriod } from '../lib/paymentCalc';
 import { exportPayrollXlsx } from '../lib/payrollExcel';
+import { deriveActivityByType, exportCombinedActivityXlsx } from '../lib/activityByTypeExcel';
 import { inProject, inAnyPaidProject } from '../lib/projectUtils';
 import { getSupabaseClient } from '../lib/supabaseClient';
 // activists מגיע מ-CrmStore (Supabase) — לא מקובץ סטטי, כך ה-IDs תואמים ל-activist_id בקשרים
@@ -29,6 +30,7 @@ export default function PaymentsPage() {
   const router = useRouter();
   const [viewMode, setViewMode] = useState('grid');
   const [exporting, setExporting] = useState(false); // exceljs נטענת ב-import דינמי — הכפתור ננעל בזמן הטעינה
+  const [exportingActivity, setExportingActivity] = useState(false); // אותו נעילה, לכפתור ייצוא הפעילות המרוכז
   const [cancelledBonuses, setCancelledBonuses] = useState([]); // שורות bonus_cancellations החודש — נחוץ לחישוב מדויק של הסכומים ברשימה
 
   const monthOptions = useMemo(() => buildMonthOptions(), []);
@@ -200,7 +202,8 @@ export default function PaymentsPage() {
         </div>
       )}
 
-      {/* כפתורי ייצוא — txt מפורט (פירוט לפי לקוח + קשרים שלא זוכו) ו-xlsx רזה לחשבות */}
+      {/* כפתורי ייצוא — txt מפורט (פירוט לפי לקוח + קשרים שלא זוכו), xlsx רזה לחשבות,
+          ו-xlsx פעילות-לפי-סוג מרוכז לכל הפעילים */}
       <div style={{ textAlign:'left', display:'flex', gap:10, justifyContent:'flex-start' }}>
         <button
           onClick={async () => {
@@ -245,6 +248,28 @@ export default function PaymentsPage() {
           style={{ background:'linear-gradient(135deg,#6c5ce7,#a29bfe)', color:'#fff', border:'none', borderRadius:12, padding:'12px 24px', fontSize:14, fontWeight:700, cursor:'pointer', fontFamily:'Rubik,sans-serif', boxShadow:'0 2px 8px rgba(108,92,231,0.25)' }}
         >
           📄 דוח פעילות לתשלום {currentMonthName} {year}
+        </button>
+        <button
+          onClick={async () => {
+            if (exportingActivity) return;
+            setExportingActivity(true);
+            try {
+              const activistsData = paymentData.map(({ activist, breakdown, unpaid, expensesTotal, guidePay }) => ({
+                activistName: activist.name,
+                data: deriveActivityByType({ breakdown, unpaid }, expensesTotal, guidePay, paymentConfig),
+              }));
+              await exportCombinedActivityXlsx(activistsData, currentMonthName, year);
+            } catch (err) {
+              console.error('Combined activity export failed', err);
+              alert('ייצוא הפעילות המרוכז נכשל. נסה שוב.');
+            } finally {
+              setExportingActivity(false);
+            }
+          }}
+          disabled={exportingActivity || paymentData.length === 0}
+          style={{ background: exportingActivity || paymentData.length === 0 ? '#b7b0e8' : 'linear-gradient(135deg,#1f7a45,#2ecc71)', color:'#fff', border:'none', borderRadius:12, padding:'12px 24px', fontSize:14, fontWeight:700, cursor: exportingActivity || paymentData.length === 0 ? 'default' : 'pointer', fontFamily:'Rubik,sans-serif', boxShadow:'0 2px 8px rgba(31,122,69,0.25)' }}
+        >
+          {exportingActivity ? '⏳ מייצא…' : `📋 ייצוא פעילות לכל הפעילים`}
         </button>
       </div>
 
