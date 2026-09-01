@@ -24,7 +24,7 @@ function buildMonthOptions(count = 18) {
 }
 
 export default function PaymentsPage() {
-  const { contacts, interactions, mitzvotBonuses, newParticipantBonuses, activists, paymentConfig, expenses, tours } = useCrm();
+  const { contacts, interactions, mitzvotBonuses, newParticipantBonuses, toraniBonuses, activists, paymentConfig, expenses, tours } = useCrm();
   const { currentUser, can, filterProject } = useAuth();
   const router = useRouter();
   const [viewMode, setViewMode] = useState('grid');
@@ -78,7 +78,8 @@ export default function PaymentsPage() {
   const paymentData = useMemo(() => achdutActivists.map(activist => {
     const myMitzvotBonuses = mitzvotBonuses.filter(b => b.activist_id === activist.id && b.month === monthKey);
     const myNewBonuses     = newParticipantBonuses.filter(b => b.activist_id === activist.id && b.month === monthKey);
-    const result = calcMonthlyPayment(activist.id, interactions, contacts, myMitzvotBonuses, myNewBonuses, paymentConfig, cancelledBonusKeys, { year, month });
+    const myToraniBonuses  = toraniBonuses.filter(b => b.activist_id === activist.id && b.month === monthKey);
+    const result = calcMonthlyPayment(activist.id, interactions, contacts, myMitzvotBonuses, myNewBonuses, paymentConfig, cancelledBonusKeys, { year, month }, myToraniBonuses);
     const expensesTotal = expenses
       .filter(x => Number(x.activist_id) === Number(activist.id) && x.date >= startIso && x.date < endIso)
       .reduce((s, x) => s + Number(x.amount || 0), 0);
@@ -90,7 +91,7 @@ export default function PaymentsPage() {
     ).length;
     const guidePay = guidedCount * (paymentConfig.TOUR_GUIDE_RATE ?? 750);
     return { activist, ...result, expensesTotal, guidePay, guidedCount, grandTotal: result.total + expensesTotal + guidePay };
-  }), [achdutActivists, interactions, contacts, mitzvotBonuses, newParticipantBonuses, paymentConfig, expenses, tours, cancelledBonusKeys, monthKey, startIso, endIso, year, month]);
+  }), [achdutActivists, interactions, contacts, mitzvotBonuses, newParticipantBonuses, toraniBonuses, paymentConfig, expenses, tours, cancelledBonusKeys, monthKey, startIso, endIso, year, month]);
 
   if (!canView) return (
     <DesktopLayout title="דוחות תשלום פעילים">

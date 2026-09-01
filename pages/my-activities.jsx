@@ -6,6 +6,7 @@ import DesktopLayout from '../components/DesktopLayout';
 import FilterChips from '../components/FilterChips';
 import { useCrm } from '../lib/CrmStore';
 import { useAuth } from '../lib/AuthStore';
+import { isDerivedInteraction } from '../lib/paymentCalc';
 
 const PERIOD_OPTIONS = [
   { value: 'daily',   label: 'יומי' },
@@ -61,6 +62,9 @@ export default function MyActivitiesPage() {
         type: i.type, quality: i.quality, outcome: i.outcome,
         duration: i.duration_minutes,
         title: i.contact_name || 'לקוח',
+        // שורה נגזרת ממפגש רב-משתתפים — מוצגת (הלקוח באמת נפגש) אבל לא נספרת
+        // כדיווח נפרד, אחרת מפגש אחד נראה כשלושה (דיווחי 28-30.7).
+        derived: isDerivedInteraction(i),
       }));
     baseMeetings
       // מפגש בלי תאריך מתוזמן (date:'') עדיין נספר — לפי תאריך השליחה (submitted_at)
@@ -91,11 +95,12 @@ export default function MyActivitiesPage() {
     );
   }
 
-  const interactionCount = feed.filter(x => x.kind === 'interaction').length;
+  const interactionCount = feed.filter(x => x.kind === 'interaction' && !x.derived).length;
   const meetingCount     = feed.filter(x => x.kind === 'baseMeeting').length;
+  const activityCount    = feed.filter(x => !x.derived).length;
 
   return (
-    <DesktopLayout title="הפעילויות שלי" subtitle={`${feed.length} פעילויות ${PERIOD_LABELS[period]}`}>
+    <DesktopLayout title="הפעילויות שלי" subtitle={`${activityCount} פעילויות ${PERIOD_LABELS[period]}`}>
       {/* שורת כלים: תקופה + מצב תצוגה */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
         <FilterChips options={PERIOD_OPTIONS} active={period} onChange={setPeriod} />
@@ -116,7 +121,7 @@ export default function MyActivitiesPage() {
 
       {/* מוני סיכום */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: 16 }}>
-        <div className="stat-box"><div className="stat-num">{feed.length}</div><div className="stat-lbl">סה"כ פעילויות {PERIOD_LABELS[period]}</div></div>
+        <div className="stat-box"><div className="stat-num">{activityCount}</div><div className="stat-lbl">סה"כ פעילויות {PERIOD_LABELS[period]}</div></div>
         <div className="stat-box"><div className="stat-num">{interactionCount}</div><div className="stat-lbl">דיווחי קשר</div></div>
         <div className="stat-box"><div className="stat-num">{meetingCount}</div><div className="stat-lbl">מפגשי בסיס</div></div>
       </div>
@@ -174,6 +179,9 @@ function ActivityCard({ item, router }) {
       </div>
       <div style={{ fontSize: 15, fontWeight: 600, color: '#1a1a1a', marginBottom: 8 }}>{item.title}</div>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {/* שורה נגזרת — הלקוח השתתף במפגש רב-משתתפים של מישהו אחר ברשימה.
+            מסומנת כדי שהפעיל יבין למה היא כאן ולמה היא לא נספרת כדיווח נפרד. */}
+        {item.derived && <Pill text="משתתף במפגש" color="#8e44ad" bg="#f5eef8" />}
         {item.quality && <Pill text={item.quality} />}
         {item.outcome && !isMeeting && <Pill text={item.outcome} color={OUTCOME_COLORS[item.outcome] ?? '#6c5ce7'} bg="rgba(0,0,0,0.04)" />}
         {item.duration ? <Pill text={`${item.duration} דק'`} color="#888" bg="#f5f5f5" /> : null}
@@ -212,6 +220,7 @@ function ActivityRow({ item, last, router }) {
         {item.title}
       </div>
       <div style={{ flex: '0 0 auto', display: 'flex', gap: 6 }}>
+        {item.derived && <Pill text="משתתף במפגש" color="#8e44ad" bg="#f5eef8" />}
         {item.quality && <Pill text={item.quality} />}
         {item.outcome && !isMeeting && <Pill text={item.outcome} color={OUTCOME_COLORS[item.outcome] ?? '#6c5ce7'} bg="rgba(0,0,0,0.04)" />}
         {isMeeting && item.participants ? <Pill text={`${item.participants} משתתפים`} color="#27ae60" bg="#edfaf1" /> : null}

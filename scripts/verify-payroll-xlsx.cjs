@@ -9,7 +9,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const fs = require('fs');
 const path = require('path');
-const { calcMonthlyPayment } = require('../lib/paymentCalc.js');
+const { calcMonthlyPayment, deriveMitzvotBonuses, deriveToraniBonuses } = require('../lib/paymentCalc.js');
 const { buildPayrollWorkbook, buildPayrollRows } = require('../lib/payrollExcel.js');
 
 const env = Object.fromEntries(
@@ -44,18 +44,12 @@ const fail = m => { console.error(`\n❌ FAIL — ${m}`); process.exit(1); };
     .filter(c => c.activist_id && c.joined_at && (c.source === 'external' || c.referred_by))
     .map(c => { const d = new Date(c.joined_at); return { activist_id: c.activist_id, contact_id: c.id, contactName: c.name, month: `${d.getFullYear()}-${d.getMonth()}` }; });
 
-  const mitzvotBonuses = (contacts || []).flatMap(c => {
-    if (!c.activist_id || !Array.isArray(c.mitzvot_history)) return [];
-    return c.mitzvot_history.flatMap(h => {
-      const from = Number(h?.from ?? 0), to = Number(h?.to ?? 0), diff = to - from;
-      if (!h?.mitzva || diff <= 0) return [];
-      const d = h.date ? new Date(h.date) : new Date();
-      return Array.from({ length: diff }, (_, i) => ({
-        activist_id: c.activist_id, contact_id: c.id, contactName: c.name,
-        desc: `עליה ב${h.mitzva} מרמה ${from + i} ל-${from + i + 1}`, month: `${d.getFullYear()}-${d.getMonth()}`,
-      }));
-    });
-  });
+  // בונוסי מצוות — מהגזירה המשותפת ב-lib/paymentCalc.js, לא עותק מקומי.
+  // בונוס אחד לכל אירוע-עליה, גם בקפיצה של כמה רמות (דיווח מוטי גלעד, 2026-08-02).
+  const mitzvotBonuses = deriveMitzvotBonuses(contacts);
+
+  // בונוס תורני — מהגזירה המשותפת ב-lib/paymentCalc.js, אותו דפוס כמו mitzvotBonuses לעיל.
+  const toraniBonuses = deriveToraniBonuses(interactions, contacts);
 
   // אותו paymentData בדיוק שעמוד /payments בונה
   const paymentData = (activists || [])
@@ -64,7 +58,8 @@ const fail = m => { console.error(`\n❌ FAIL — ${m}`); process.exit(1); };
     .map(activist => {
       const myMitzvot = mitzvotBonuses.filter(b => Number(b.activist_id) === Number(activist.id) && b.month === monthKey);
       const myNew     = newParticipantBonuses.filter(b => Number(b.activist_id) === Number(activist.id) && b.month === monthKey);
-      const result = calcMonthlyPayment(activist.id, interactions || [], contacts || [], myMitzvot, myNew, undefined, cancelledKeys, { year, month });
+      const myTorani  = toraniBonuses.filter(b => Number(b.activist_id) === Number(activist.id) && b.month === monthKey);
+      const result = calcMonthlyPayment(activist.id, interactions || [], contacts || [], myMitzvot, myNew, undefined, cancelledKeys, { year, month }, myTorani);
       const expensesTotal = (expenses || [])
         .filter(x => Number(x.activist_id) === Number(activist.id) && x.date >= startIso && x.date < endIso)
         .reduce((s, x) => s + Number(x.amount || 0), 0);

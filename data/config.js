@@ -38,6 +38,10 @@ const CONFIG = {
   interactionQuality: ['תורני', 'ידידותי'],
   // איכות מיוחדת — זמינה רק לקשר מסוג "פרונטלי". מלגה קבועה 300 ש"ח (ראה BASE_PRICES ב-lib/paymentCalc.js).
   interactionQualityMulti: 'רב משתתפים',
+  // אמצעי קשר — למצב-דיווח "קשר קצרצר" בלבד (type='קצרצר', לעולם לא מזכה בתשלום —
+  // ראה calcInteractionPayment ב-lib/paymentCalc.js). לא חלק מ-interactionTypes:
+  // זה מצב-אופי-דיווח נפרד בטופס, לא סוג קשר רגיל.
+  contactMethods: ['טלפון', 'וואטסאפ'],
 
   outcomeValues: ['חיובי', 'ניטרלי', 'שלילי', 'ממתין למענה'],
 

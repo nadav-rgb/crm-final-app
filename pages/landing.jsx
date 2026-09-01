@@ -8,10 +8,11 @@ import Link from 'next/link';
 import {
   Home, User, Users, Calendar, UserPlus,
   ClipboardList, Star, CreditCard, Bell, BellRing, Receipt, Compass,
-  MessageSquare, Building2, FolderOpen, Activity, AlertCircle,
+  MessageSquare, Building2, FolderOpen, Activity, AlertCircle, BarChart2,
 } from 'lucide-react';
 import MobileBottomNav from '../components/MobileBottomNav';
 import { inProject, inAnyPaidProject } from '../lib/projectUtils';
+import { isDerivedInteraction } from '../lib/paymentCalc';
 
 const TORAH_DEFAULT = 'וְאָהַבְתָּ לְרֵעֲךָ כָּמוֹךָ — זה כלל גדול בתורה. כל מי שמקרב יהודי אחד לאביו שבשמים, כאילו קיים עולם מלא. השבוע נזכור שכל שיחה, כל פגישה, כל חיוך — הם צינור להאיר את עולמם של אחינו.';
 
@@ -69,6 +70,11 @@ export default function LandingPage() {
         return contact?.project_id === selectedProj;
       });
 
+  // מוני הקשרים סופרים דיווחים בפועל. שורה נגזרת ממפגש רב-משתתפים היא תיעוד עבור
+  // לקוח נוסף שהשתתף באותו מפגש — לא דיווח נפרד (ראה isDerivedInteraction).
+  // בפיד "פעילות אחרונה" הן כן נשארות: שם רואים מה קרה עם כל לקוח.
+  const reportedInteractions = filteredInteractions.filter(i => !isDerivedInteraction(i));
+
   const filteredContacts = isActivist
     ? contacts.filter(c => c.activist_id === currentUser.id)
     : selectedProj === 0 ? contacts : contacts.filter(c => c.project_id === selectedProj);
@@ -115,11 +121,11 @@ export default function LandingPage() {
   const thisMonthKey = new Date().toISOString().slice(0, 7);
   const activistScopedTile = can.seeActivists
     ? { num: activists.filter(a => a.role === 'activist' && a.status === 'active' && inProject(a, selectedProj)).length, label: 'פעילים פעילים', color: '#c47a2e', rgb: '196,122,46', href: '/activists' }
-    : { num: filteredInteractions.filter(i => i.date?.slice(0, 7) === thisMonthKey).length, label: 'קשרים החודש', color: '#c47a2e', rgb: '196,122,46', href: '/contacts' };
+    : { num: reportedInteractions.filter(i => i.date?.slice(0, 7) === thisMonthKey).length, label: 'קשרים החודש', color: '#c47a2e', rgb: '196,122,46', href: '/contacts' };
 
   const stats = [
     { num: filteredContacts.length, label: 'סה"כ לקוחות', color: '#c47a2e', rgb: '196,122,46', href: '/contacts' },
-    { num: filteredInteractions.length, label: 'סה"כ קשרים', color: '#8b6d3f', rgb: '139,109,63', href: '/contacts' },
+    { num: reportedInteractions.length, label: 'סה"כ קשרים', color: '#8b6d3f', rgb: '139,109,63', href: '/contacts' },
     activistScopedTile,
     { num: filteredContacts.filter(c => c.days_since_last_contact >= 30).length, label: 'על סף ניתוק', color: '#a32d2d', rgb: '163,45,45', href: '/contacts' },
   ];
@@ -237,6 +243,9 @@ export default function LandingPage() {
           )}
           {can.seePayments && (
             <SideItem icon={<CreditCard   {...ICO} />} label="דוחות תשלום"    open={open} onClick={() => router.push('/payments')} />
+          )}
+          {isCeo && (
+            <SideItem icon={<BarChart2 {...ICO} />} label="דו״ח קשרים" open={open} onClick={() => router.push('/interaction-report')} />
           )}
           <SideItem icon={<Receipt        {...ICO} />} label="דיווח הוצאות"   open={open} onClick={() => router.push('/expenses')} />
           <SideItem icon={<Bell           {...ICO} />} label="תזכורות קשר"    open={open} onClick={() => router.push('/reminders')} />

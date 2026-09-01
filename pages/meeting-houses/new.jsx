@@ -21,6 +21,7 @@ export default function NewMeetingHousePage() {
     meetings: emptyMeetings,
   });
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false); // מנעול שליחה — ראה CLAUDE.md, "טפסים"
 
   // יצירה — רק רכז/הנהלה שחברים באחדות יהודית (או מנכ"ל)
   if (!can.seeMeetingHouses || !(currentUser?.role === 'ceo' || inProject(currentUser, 1))) {
@@ -57,11 +58,13 @@ export default function NewMeetingHousePage() {
 
   async function handleSubmit(e) {
     e.preventDefault();
+    if (saving) return; // כמו בטופס דיווח הקשר: id הוא Date.now(), אז לחיצה כפולה = שני בתי מפגש
     const validationError = validate();
     if (validationError) {
       setError(validationError);
       return;
     }
+    setSaving(true);
 
     // מקור אמת: Supabase (דרך API מאומת).
     const saved = await upsertMeetingHouseApi({
@@ -92,6 +95,7 @@ export default function NewMeetingHousePage() {
     });
     if (!local) {
       setError('לא ניתן לשמור כרגע. נסה לרענן את הדף.');
+      setSaving(false); // נכשל — הטופס חוזר להיות לחיץ לניסיון נוסף
       return;
     }
     router.push(`/meeting-houses/${local.id}`);
@@ -132,7 +136,7 @@ export default function NewMeetingHousePage() {
           <div style={{ fontSize:12, color:'#999', lineHeight:1.6 }}>
             לאחר השמירה ניתן להיכנס לבית המפגש ולשבץ אליו פעיל.
           </div>
-          <button type="submit" style={{ border:'none', borderRadius:10, padding:'11px 18px', fontFamily:'inherit', fontWeight:800, cursor:'pointer', background:'#6c5ce7', color:'#fff' }}>
+          <button type="submit" disabled={saving} style={{ border:'none', borderRadius:10, padding:'11px 18px', fontFamily:'inherit', fontWeight:800, cursor: saving ? 'wait' : 'pointer', background:'#6c5ce7', color:'#fff', opacity: saving ? 0.6 : 1 }}>
             שמור בית מפגש
           </button>
         </div>

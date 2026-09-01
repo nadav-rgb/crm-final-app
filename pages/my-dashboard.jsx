@@ -26,9 +26,11 @@ function barColor(pct) {
 }
 
 function CounterCard({ counter, monthLabel }) {
-  const { done, cap, label } = counter;
+  const { done, cap, label, reported } = counter;
   const pct = cap > 0 ? Math.min(100, Math.round((done / cap) * 100)) : 0;
-  const over = done > cap;
+  // `done` חסום ע"י התקרה מעצם הגדרתו, ולכן `done > cap` לעולם לא יקרה. מה שכן מעניין
+  // לסמן זה שהפעיל *דיווח* מעבר לתקרה — כלומר עבד ולא קיבל על הכל.
+  const over = (reported ?? done) > cap;
   const col = barColor(cap > 0 ? (done / cap) * 100 : 0);
 
   return (
@@ -45,14 +47,22 @@ function CounterCard({ counter, monthLabel }) {
         <div style={{ width: `${pct}%`, height: '100%', background: col.bar, borderRadius: 999, transition: 'width 0.5s ease' }} />
       </div>
       <div style={{ fontSize: 12, color: '#999', marginTop: 8 }}>
-        ביצעת {done} מתוך יעד של {cap} ב{monthLabel}
+        {done} מתוך {cap} משבצות נוצלו ב{monthLabel}
       </div>
+      {/* המונה סופר משבצות שנתפסו, לא דיווחים. בלי המשפט הזה המספר נראה נמוך מדי בלי
+          הסבר. הסיבה עצמה לא נכתבת כאן: היא יכולה להיות תקרה חודשית או תקרה מול לקוח
+          מסוים, והרשימה "קשרים שלא זוכו" למטה מפרטת אותה לכל קשר בנפרד. */}
+      {reported > done && (
+        <div style={{ fontSize: 11.5, color: '#d68910', marginTop: 4, lineHeight: 1.5 }}>
+          דיווחת {reported}; {reported - done} לא נספרו בגלל תקרה — הפירוט למטה.
+        </div>
+      )}
     </div>
   );
 }
 
 export default function MyDashboardPage() {
-  const { interactions, contacts, mitzvotBonuses, newParticipantBonuses, paymentConfig, expenses, tours } = useCrm();
+  const { interactions, contacts, mitzvotBonuses, newParticipantBonuses, toraniBonuses, paymentConfig, expenses, tours } = useCrm();
   const { currentUser } = useAuth();
   const [cancelledBonuses, setCancelledBonuses] = useState([]); // בונוסים שרכז ביטל — ראה pages/payments.jsx
 
@@ -88,8 +98,9 @@ export default function MyDashboardPage() {
     // סינון בונוסים ליועץ הנוכחי ולחודש הנבחר — זהה לעמוד התשלומים של הרכז (כדי שהמספרים יתאימו).
     const myMitzvot = mitzvotBonuses.filter(b => b.activist_id === currentUser.id && b.month === monthKey);
     const myNew     = newParticipantBonuses.filter(b => b.activist_id === currentUser.id && b.month === monthKey);
-    return calcConsultantDashboard(currentUser.id, interactions, contacts, myMitzvot, myNew, paymentConfig, cancelledBonusKeys, { year, month });
-  }, [currentUser, interactions, contacts, mitzvotBonuses, newParticipantBonuses, paymentConfig, cancelledBonusKeys, monthKey, year, month]);
+    const myTorani  = toraniBonuses.filter(b => b.activist_id === currentUser.id && b.month === monthKey);
+    return calcConsultantDashboard(currentUser.id, interactions, contacts, myMitzvot, myNew, paymentConfig, cancelledBonusKeys, { year, month }, myTorani);
+  }, [currentUser, interactions, contacts, mitzvotBonuses, newParticipantBonuses, toraniBonuses, paymentConfig, cancelledBonusKeys, monthKey, year, month]);
 
   if (!data) return <DesktopLayout title="הדשבורד שלי"><div style={{ padding: 40, color: '#aaa' }}>טוען…</div></DesktopLayout>;
 
