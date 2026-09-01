@@ -11,6 +11,10 @@ const IDS = {
   head: '00000000-0000-4000-8000-000000000012',
   disabled: '00000000-0000-4000-8000-000000000013',
   multiProjectHead: '00000000-0000-4000-8000-000000000014',
+  yonatan: '00000000-0000-4000-8000-000000000015',
+  shmuel: '00000000-0000-4000-8000-000000000016',
+  israel: '00000000-0000-4000-8000-000000000017',
+  ezra: '00000000-0000-4000-8000-000000000018',
 };
 
 function makeHarness() {
@@ -20,6 +24,10 @@ function makeHarness() {
     ['head', { userId: IDS.head, email: 'head@identity.invalid' }],
     ['disabled', { userId: IDS.disabled, email: 'disabled@identity.invalid' }],
     ['multi', { userId: IDS.multiProjectHead, email: 'multi@identity.invalid' }],
+    ['יונתן מור יוסף', { userId: IDS.yonatan, email: 'yonatan@identity.invalid' }],
+    ['שמואל הכט', { userId: IDS.shmuel, email: 'shmuel@identity.invalid' }],
+    ['ישראל מרוויס', { userId: IDS.israel, email: 'israel@identity.invalid' }],
+    ['עזרא הללויה', { userId: IDS.ezra, email: 'ezra@identity.invalid' }],
   ]);
   const profiles = new Map([
     [IDS.activist, {
@@ -41,6 +49,16 @@ function makeHarness() {
         { id: 2, name: 'Project B', role: 'head' },
       ],
     }],
+    ...[
+      [IDS.yonatan, 'יונתן מור יוסף', 105],
+      [IDS.shmuel, 'שמואל הכט', 106],
+      [IDS.israel, 'ישראל מרוויס', 107],
+      [IDS.ezra, 'עזרא הללויה', 108],
+    ].map(([userId, name, activistCode]) => [userId, {
+      userId, name, role: 'activist', activistCode,
+      securityVersion: 1, disabledAt: null,
+      projects: [{ id: 1, name: 'Project A', role: 'activist' }],
+    }]),
   ]);
   const storedSessions = new Map();
   const auditEvents = [];
@@ -136,6 +154,21 @@ test('unknown username and bad password have identical public response', async (
     await publicFailure(unknown.login({ username: 'nobody', password: 'correct-password', ipKey: 'ip-a' })),
     await publicFailure(badPassword.login({ username: 'activist', password: 'wrong-password', ipKey: 'ip-b' })),
   );
+});
+
+test('current-main Hebrew usernames resolve through the hardened identity registry', async () => {
+  for (const username of ['יונתן מור יוסף', 'שמואל הכט', 'ישראל מרוויס', 'עזרא הללויה']) {
+    const { service } = makeHarness();
+    const result = await service.login({ username: `  ${username}  `, password: 'correct-password', ipKey: 'ip' });
+    assert.equal(result.authState, 'active');
+    assert.equal(result.user.name, username);
+  }
+  const [authStore, migration] = await Promise.all([
+    readFile('lib/AuthStore.jsx', 'utf8'),
+    readFile('migrations/0018_security_foundation.sql', 'utf8'),
+  ]);
+  assert.doesNotMatch(authStore, /USERNAME_TO_EMAIL|@achdut-crm\.test/);
+  assert.match(migration, /insert into app_private\.auth_identities[\s\S]*select lower\(btrim\(p\.name\)\), p\.id, u\.email[\s\S]*from public\.profiles p/i);
 });
 
 test('head at AAL1 receives an exact status-only response', async () => {
