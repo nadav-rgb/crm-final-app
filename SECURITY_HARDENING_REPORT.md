@@ -6,7 +6,7 @@ Branch: `security/hardening-p0`
 
 Starting checkpoint: `5340d9763ce27d396bbc79bf33f342933bedceb8`
 
-G5 source/test checkpoint before this report update: `69b027156a8f7f675b9d7f60edf490f114f8f305`
+G5 source/test checkpoint before this report update: `9d6aea5cb4e8e18a802080331afce747332b6246`
 
 This is a time-bound engineering evidence record. It is not authorization to merge, deploy, use
 real sensitive data, or apply these migrations to Production.
@@ -14,7 +14,7 @@ Static contract evidence and live database proof are reported separately.
 
 ## Executive Summary
 
-A fresh disposable local Supabase project, `mekarvim-security-g5-f358e8022ba8`, was created solely
+A fresh disposable local Supabase project, `mekarvim-security-g5-5b6553b5dde5`, was created solely
 for CRM Mekarvim G5. Its identity, dedicated ports, exact container labels and loopback-only
 listeners were proven before any destructive reset. No existing database was reused.
 No remote Supabase environment was contacted. Production is untouched.
@@ -38,7 +38,7 @@ the excluded `mekusharim` and `shabbat-hosting` stacks matched. All 18/18 exclud
 Only read-only Docker metadata was inspected. Neither excluded stack was stopped or restarted, and
 no container exec, database query, network request, migration, cleanup or mutation targeted either stack.
 
-G6 was rerun from a clean install: baseline 51/51, security 324 pass plus 19 explicit local-live
+G6 was rerun from a clean install: baseline 51/51, security 325 pass plus 19 explicit local-live
 gates and zero failures, focused finance/PDF/Excel 32/32, production Webpack build, HTTP/CSP,
 Android debug, secret scans, bundle scan and dependency audits all passed. The 19 deterministic
 suite skips are environment gates whose corresponding live tests were measured separately in G5.
@@ -60,7 +60,7 @@ G5 database/runtime evidence. It does not remove the remaining operational contr
 
 | Finding | Original defect | Fix commit(s) | Test evidence | Status | Residual risk |
 | --- | --- | --- | --- | --- | --- |
-| `C1` | Broad direct authority/workflow mutation allowed caller-controlled ownership changes. | `bb507ec` | Authority/RLS static suite and direct-JWT G5 matrix | ADDRESSED | Evidence is time-bound to this G5 runtime. |
+| `C1` | Broad direct authority/workflow mutation allowed caller-controlled ownership changes. | `bb507ec`, `9d6aea5` | Authority/RLS static suite and direct-JWT G5 matrix, including manager-forged INSERT authority | ADDRESSED | Evidence is time-bound to this G5 runtime. |
 | `I1` | CRM/BFF DTO and schema drift dropped operational fields and trusted client-created IDs. | `7eff62a` | Canonical CRM contract and migrated synthetic fixtures | ADDRESSED | Evidence is time-bound to the tested runtime contract. |
 | `I2` | Legacy numeric identities and provider UUID identities could diverge. | `74450ac` | Compatibility suite and live authority-transfer rejection | ADDRESSED | Evidence is time-bound to the G5 fixtures. |
 | `I3` | Notification callers could supply sensitive or cross-resource delivery content. | `920b336` | Notification callgraph and live resource-derived RPC checks | ADDRESSED | External provider runtime remains operator-controlled. |
@@ -91,7 +91,7 @@ non-blocking build and Gradle warnings are recorded below as maintenance risks.
 - Finance, notification, tour, reminder, governance and reporting projections are allowlisted.
 - G5 infrastructure now creates an exact disposable project, enforces loopback Docker publishing,
   measures evidence, performs exact cleanup and proves project-scoped destruction.
-- The G5 RED-to-GREEN sequence added 36 implementation/test commits after the requested starting checkpoint, covering
+- The G5 RED-to-GREEN sequence added 39 implementation, test and evidence commits after the requested starting checkpoint, covering
   entrypoint ownership, loopback binding, migration/posture correctness, TOTP, Finance isolation and
   audit atomicity. Each real defect was committed before recreating and rerunning the disposable DB.
 
@@ -155,7 +155,7 @@ approved posture verifier.
 | `npm run test:baseline` | PASS (exit 0) | 51 total; 51 pass; 0 skip; 0 fail |
 | `npm run verify:interaction-report` | PASS (exit 0) | 27 total; 27 pass; 0 skip; 0 fail |
 | `node scripts/verify-payment-order.cjs` | PASS (exit 0) | 24 total; 24 pass; 0 skip; 0 fail |
-| `npm run test:security` | PASS (exit 0) | 343 total; 324 pass; 19 explicit live skips; 0 fail |
+| `npm run test:security` | PASS (exit 0) | 344 total; 325 pass; 19 explicit live skips; 0 fail |
 | `node --test tests/security/finance-reports-feedback.test.mjs tests/security/jspdf-compatibility.test.mjs tests/security/exceljs-uuid-compatibility.test.mjs` | PASS (exit 0) | 32 total; 32 pass; 0 skip; 0 fail |
 | `npm run test:security -- tests/security/report-completeness.test.mjs` | PASS (exit 0) | 8 total; 8 pass; 0 skip; 0 fail |
 | `npm run build` | PASS (exit 0) | Next.js 16.3.3 Webpack production build; compiled successfully |
@@ -183,23 +183,24 @@ pooler-disabled reservation `56329`; edge-inspector reservation `56342`; local B
 Published listeners were loopback-only on `127.0.0.1`.
 
 The identity inventory found twelve exact-project containers:
-`supabase_analytics_mekarvim-security-g5-f358e8022ba8`,
-`supabase_auth_mekarvim-security-g5-f358e8022ba8`,
-`supabase_db_mekarvim-security-g5-f358e8022ba8`,
-`supabase_edge_runtime_mekarvim-security-g5-f358e8022ba8`,
-`supabase_inbucket_mekarvim-security-g5-f358e8022ba8`,
-`supabase_kong_mekarvim-security-g5-f358e8022ba8`,
-`supabase_pg_meta_mekarvim-security-g5-f358e8022ba8`,
-`supabase_realtime_mekarvim-security-g5-f358e8022ba8`,
-`supabase_rest_mekarvim-security-g5-f358e8022ba8`,
-`supabase_storage_mekarvim-security-g5-f358e8022ba8`,
-`supabase_studio_mekarvim-security-g5-f358e8022ba8`, and
-`supabase_vector_mekarvim-security-g5-f358e8022ba8`.
+`supabase_analytics_mekarvim-security-g5-5b6553b5dde5`,
+`supabase_auth_mekarvim-security-g5-5b6553b5dde5`,
+`supabase_db_mekarvim-security-g5-5b6553b5dde5`,
+`supabase_edge_runtime_mekarvim-security-g5-5b6553b5dde5`,
+`supabase_inbucket_mekarvim-security-g5-5b6553b5dde5`,
+`supabase_kong_mekarvim-security-g5-5b6553b5dde5`,
+`supabase_pg_meta_mekarvim-security-g5-5b6553b5dde5`,
+`supabase_realtime_mekarvim-security-g5-5b6553b5dde5`,
+`supabase_rest_mekarvim-security-g5-5b6553b5dde5`,
+`supabase_storage_mekarvim-security-g5-5b6553b5dde5`,
+`supabase_studio_mekarvim-security-g5-5b6553b5dde5`, and
+`supabase_vector_mekarvim-security-g5-5b6553b5dde5`.
 
 ## Negative / Adversarial Tests
 
 Measured denial paths included anonymous table access, direct anonymous PII mutation, cross-project
-and cross-activist CRUD, forged tenant/owner/recipient fields, project transfer, legacy-UUID
+and cross-activist CRUD, manager-forged actor/contact/house/assignee/beneficiary and tour-state
+INSERTs, forged tenant/owner/recipient fields, project transfer, legacy-UUID
 divergence, disabled/stale JWTs, AAL1 privileged access, another recipient's reminder cancellation,
 unassigned tour reporting, arbitrary notification events, private audit reads and Coordinator raw
 Finance access. Expected denials were observed as RLS empty/denied results, stable concealed 404s,
@@ -214,7 +215,7 @@ multi-project scope, caps, expenses, bonuses, tours and totals with zero unexpla
 | Package/control | Verified state |
 | --- | --- |
 | Next.js | `16.3.3`, exact pin, Webpack build passed |
-| Supabase JS | `2.105.1`, exact approved pin |
+| Supabase JS | Manifest range `^2.105.1`; lockfile resolved `2.105.1` for this verification |
 | jsPDF | `4.2.1`, Hebrew/RTL and browser-bundle compatibility passed |
 | ExcelJS | `4.4.0`, exact UUID override and workbook round trips passed |
 | Capacitor Android/Core/CLI | `8.4.1`, Android debug verification passed |

@@ -147,14 +147,14 @@ test('report keeps deterministic evidence distinct from measured live proof', as
 test('G5 closeout records exact disposable identity and destruction proof', async () => {
   const report = await readReport();
   for (const pattern of [
-    /mekarvim-security-g5-f358e8022ba8/,
+    /mekarvim-security-g5-5b6553b5dde5/,
     /API `56321`; DB `56322`; Studio `56323`; Mail `56324`/,
     /loopback-only.*127\.0\.0\.1/i,
     /twelve exact-project containers/i,
-    /supabase_analytics_mekarvim-security-g5-f358e8022ba8/,
-    /supabase_edge_runtime_mekarvim-security-g5-f358e8022ba8/,
-    /supabase_realtime_mekarvim-security-g5-f358e8022ba8/,
-    /supabase_vector_mekarvim-security-g5-f358e8022ba8/,
+    /supabase_analytics_mekarvim-security-g5-5b6553b5dde5/,
+    /supabase_edge_runtime_mekarvim-security-g5-5b6553b5dde5/,
+    /supabase_realtime_mekarvim-security-g5-5b6553b5dde5/,
+    /supabase_vector_mekarvim-security-g5-5b6553b5dde5/,
     /18\/18 excluded container metadata records matched/i,
     /Containers `0`; volumes `0`; networks `0`; listeners `0`/,
     /47\/47 migration checks passed/,
@@ -212,7 +212,7 @@ test('test evidence names every required command with exact status and bounded r
     [
       '`npm run test:security`',
       /^PASS \(exit 0\)$/,
-      new RegExp(`343 total; 324 pass; ${G5_REQUIRED_LIVE_TESTS.length} explicit live skips; 0 fail`),
+      new RegExp(`344 total; 325 pass; ${G5_REQUIRED_LIVE_TESTS.length} explicit live skips; 0 fail`),
     ],
     [
       '`node --test tests/security/finance-reports-feedback.test.mjs tests/security/jspdf-compatibility.test.mjs tests/security/exceljs-uuid-compatibility.test.mjs`',
