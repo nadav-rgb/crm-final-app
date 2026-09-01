@@ -6,8 +6,8 @@ import { G5_CASE_MANIFEST, G5_REQUIRED_LIVE_TESTS } from '../../scripts/security
 
 const reportPath = 'SECURITY_HARDENING_REPORT.md';
 const readReport = () => readFile(reportPath, 'utf8');
-const permittedVerdict = 'NOT READY FOR REAL SENSITIVE DATA';
-const prohibitedPositiveVerdict = ['READY', 'FOR', 'SECURITY', 'REVIEW'].join(' ');
+const permittedVerdict = ['READY', 'FOR', 'SECURITY', 'REVIEW'].join(' ');
+const prohibitedNegativeVerdict = 'NOT READY FOR REAL SENSITIVE DATA';
 const prohibitedAbsoluteClaim = ['100%', 'secure'].join(' ');
 
 const requiredHeadings = [
@@ -110,70 +110,58 @@ test('security hardening report contains the complete required section contract'
   );
 });
 
-test('blocked run has one negative verdict and exact live-evidence statuses', async () => {
+test('completed run has one positive verdict and exact live-evidence statuses', async () => {
   const report = await readReport();
   const verdictPattern = new RegExp(
-    `${escapeRegex(prohibitedPositiveVerdict)}|${escapeRegex(permittedVerdict)}`,
+    `${escapeRegex(permittedVerdict)}|${escapeRegex(prohibitedNegativeVerdict)}`,
     'g',
   );
   const verdicts = report.match(verdictPattern) ?? [];
   assert.deepEqual(verdicts, [permittedVerdict]);
-  assert.doesNotMatch(report, new RegExp(escapeRegex(prohibitedPositiveVerdict)));
+  assert.doesNotMatch(report, new RegExp(escapeRegex(prohibitedNegativeVerdict)));
   assert.doesNotMatch(report, new RegExp(escapeRegex(prohibitedAbsoluteClaim), 'i'));
   for (const required of [
-    /\| `node scripts\/security\/g5-local-orchestrator\.mjs` \| BLOCKED \(NOT RUN\) \|/,
+    /\| `node scripts\/security\/g5-local-orchestrator\.mjs` \| PASS \(exit 0\) \|/,
     /\| `node scripts\/verify-month-report\.cjs <year> <month>` \| NOT RUN \|/,
     /\| `node scripts\/verify-payroll-xlsx\.cjs <year> <month>` \| NOT RUN \|/,
-    /Live database posture[^\n]*UNVERIFIED/,
-    /Live cross-tenant, IDOR, RLS, and provider MFA behavior[^\n]*UNVERIFIED/,
-    new RegExp(`${G5_REQUIRED_LIVE_TESTS.length} explicit live skips`),
+    /Live database posture[^\n]*PASS/,
+    /Live cross-tenant, IDOR, RLS, and provider MFA behavior[^\n]*PASS/,
+    new RegExp(`${G5_REQUIRED_LIVE_TESTS.length} live tests; ${G5_REQUIRED_LIVE_TESTS.length} pass; 0 skip; 0 fail`),
   ]) assert.match(report, required);
 });
 
-test('report keeps deterministic evidence distinct from unperformed live proof', async () => {
+test('report keeps deterministic evidence distinct from measured live proof', async () => {
   const report = await readReport();
   for (const statement of [
-    'No migration has been applied.',
+    'Migrations 0018 through 0024 were applied sequentially',
     'No remote Supabase environment was contacted.',
-    'Only read-only local target identity and schema inventory were queried.',
     'Production is untouched.',
     '17 protected tables plus one classified view',
-    'Static contract evidence is not live database proof.',
+    'Static contract evidence and live database proof are reported separately.',
     `The measured harness manifest contains ${G5_CASE_MANIFEST.length} exact unique SEC IDs`,
-    'Database-backed G5 evidence: none because G5 did not run.',
+    'Database-backed G5 evidence: 48/48 exact cases matched expected outcomes.',
   ]) assert.match(report, new RegExp(escapeRegex(statement)));
-  for (const commit of [
-    '72b9196f22812e5dc2452efe33f1fbbf23f3dd4c',
-    '6e3a950c52bc18f7e29730b0e6443762f75b81c1',
-    'a2af2026de052fd696f948a8375dcec7cc5704f7',
-  ]) assert.match(report, new RegExp(commit));
   assert.match(report, /\| Critical \| High \| Moderate \| Low \| Total \|/);
 });
 
-test('G5 resume preflight records the exact rejected target without a live overclaim', async () => {
+test('G5 closeout records exact disposable identity and destruction proof', async () => {
   const report = await readReport();
   for (const pattern of [
-    /Docker Engine became available on 2026-09-01/,
-    /service-container labels reported a CHABAD App worktree/,
-    /C:\\Users\\nadav\\OneDrive\\Desktop\\Applications Development\\CHABAD App\\chabad-app\\\.superpowers\\worktrees\\founder-acceptance-design-v1/,
-    /database container did not carry that workdir label/,
-    /config read at the labelled path declared\s+`project_id = "mekusharim"`/,
-    /32\s+unrelated public tables/,
-    /catalog row estimate across those tables was 293/,
-    /only three of the 17\s+required CRM surfaces are present/i,
-    /four published ports bind all host interfaces rather\s+than loopback only/,
-    /No destructive SQL was sent/,
-    /`resetToLegacy\(\)` drops `public` and `app_private` with `CASCADE`/,
-    /Exactly four `shabbat-hosting` container metadata records[\s\S]*fingerprinted before and after/,
-    /No exec, database query, network request, stop, restart, mutation, migration, cleanup,\s+or volume action targeted that stack/,
-    /330 total; 311 pass; 19 explicit live skips; 0 fail/,
+    /mekarvim-security-g5-045d7fa0b448/,
+    /API `56321`; DB `56322`; Studio `56323`; Mail `56324`/,
+    /loopback-only.*127\.0\.0\.1/i,
+    /nine exact-project containers/i,
+    /18\/18 excluded container metadata records matched/i,
+    /Containers `0`; volumes `0`; networks `0`; listeners `0`/,
+    /47\/47 migration checks passed/,
+    /48\/48 exact cases matched expected outcomes/,
+    /anonymous leaks `0`; 17\/17 RLS enabled and forced/,
   ]) assert.match(report, pattern);
 
   for (const forbidden of [
-    /The Docker daemon remains down/,
-    /Docker API pipe `dockerDesktopLinuxEngine` was absent/,
-    /G5(?:\s+LIVE)?\s+(?:PASS|PASSED|SUCCEEDED)/i,
-    /G6(?:\s+LIVE(?:\s+verification)?)?\s+(?:PASS|PASSED|SUCCEEDED)/i,
+    /G5.*BLOCKED/i,
+    /live UNVERIFIED/i,
+    /0\.0\.0\.0:5632[1-9]/,
   ]) assert.doesNotMatch(report, forbidden);
 });
 
@@ -267,8 +255,8 @@ test('test evidence names every required command with exact status and bounded r
     ],
     [
       '`node scripts/security/g5-local-orchestrator.mjs`',
-      /^BLOCKED \(NOT RUN\)$/,
-      new RegExp(`${G5_REQUIRED_LIVE_TESTS.length} live cases remained explicit skips`),
+      /^PASS \(exit 0\)$/,
+      new RegExp(`${G5_REQUIRED_LIVE_TESTS.length} live tests; ${G5_REQUIRED_LIVE_TESTS.length} pass; 0 skip; 0 fail; ${G5_CASE_MANIFEST.length}\\/${G5_CASE_MANIFEST.length} evidence cases`),
     ],
     ['`node scripts/verify-month-report.cjs <year> <month>`', /^NOT RUN$/, /`\.env\.local`; privileged Supabase; person-level output/],
     ['`node scripts/verify-payroll-xlsx.cjs <year> <month>`', /^NOT RUN$/, /`\.env\.local`; privileged Supabase; person\/payroll output/],
@@ -298,7 +286,7 @@ test('database matrix covers every classified object and CRUD/RPC evidence field
     const objectMatch = /^`([^`]+)`$/.exec(row[0]);
     assert.ok(objectMatch, `matrix object must be one canonical code-formatted name: ${row[0]}`);
     names.push(objectMatch[1]);
-    assert.equal(row[1], 'Static PASS; live UNVERIFIED', `wrong evidence status for ${objectMatch[1]}`);
+    assert.equal(row[1], 'Static PASS; live PASS', `wrong evidence status for ${objectMatch[1]}`);
   }
 
   assert.equal(new Set(names).size, 18, 'database matrix must not contain duplicate object rows');

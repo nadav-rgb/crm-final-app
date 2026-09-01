@@ -4,447 +4,270 @@ Evidence date: 2026-09-01 (Asia/Jerusalem)
 
 Branch: `security/hardening-p0`
 
-Deterministic source/test cutoff before this report update: `e389485f090a3a714077fd04f1b0612ab3db60de`
+Starting checkpoint: `5340d9763ce27d396bbc79bf33f342933bedceb8`
 
-This report is an engineering evidence record, not an authorization to use real sensitive data,
-merge, deploy, or apply a database migration. Static contract evidence is not live database proof.
-Database-backed G5 evidence: none because G5 did not run. Only read-only local target identity and
-schema inventory were queried.
+G5 source/test checkpoint before this report update: `0c6a9ce3703b3b3c71aa475aa803be16024a3a85`
+
+This is a time-bound engineering evidence record. It is not authorization to merge, deploy, use
+real sensitive data, or apply these migrations to Production.
+Static contract evidence and live database proof are reported separately.
 
 ## Executive Summary
 
-The hardening branch contains source and deterministic-test changes for a same-origin BFF, opaque
-server-side sessions, server-derived authorization context, explicit field projections, and a
-deny-by-default PostgreSQL/RLS contract. Local deterministic evidence covers implementation-level
-authentication/session transitions, RBAC, tenant/resource checks, validation, CSRF, rate limiting,
-security headers, finance/report projections, integrations, dependency compatibility, secrets, and
-Android boundaries. It does not establish a database or provider runtime result.
+A fresh disposable local Supabase project, `mekarvim-security-g5-045d7fa0b448`, was created solely
+for CRM Mekarvim G5. Its identity, dedicated ports, exact container labels and loopback-only
+listeners were proven before any destructive reset. No existing database was reused.
+No remote Supabase environment was contacted. Production is untouched.
 
-The original hardening baseline was commit
-`72b9196f22812e5dc2452efe33f1fbbf23f3dd4c`. At that baseline, the recorded dependency audit was
-3 Critical, 10 High, and 3 Moderate findings, and the application still relied on browser-held
-Supabase authority and permissive database paths. The autonomous night mission began from
-`6e3a950c52bc18f7e29730b0e6443762f75b81c1`. Its earlier deterministic/local checkpoint was
-`a2af2026de052fd696f948a8375dcec7cc5704f7`; the final scoped re-review source/test checkpoint is
-`543232aba80d58f945d54825a7b51e6ca89ac816`. Fresh local audit commands are recorded below; their
-registry results are time-bound rather than a claim about deployed software.
+Migrations 0018 through 0024 were applied sequentially with a catalog snapshot and verification
+after each step, then rolled back, reapplied, and verified again. All 47 migration checks passed.
+The measured chain result was: 47/47 migration checks passed.
+The measured harness manifest contains 48 exact unique SEC IDs.
+Database-backed G5 evidence: 48/48 exact cases matched expected outcomes. All 19 previously gated LIVE tests executed against
+the isolated project: 19 live tests; 19 pass; 0 skip; 0 fail.
 
-G4 has an accepted independent review. Docker Engine became available on 2026-09-01, but G5 remains
-blocked at the controlled-live boundary because the supplied `mekusharim` stack failed target
-identity. Most service-container labels reported a CHABAD App worktree. Its database contains 32
-unrelated public tables; the catalog row estimate across those tables was 293. Only three of the 17
-required CRM surfaces are present, and the four published ports bind all host interfaces rather
-than loopback only. The prepared G5 runner correctly refuses this project id and would otherwise
-drop `public` and `app_private` during its disposable reset. No destructive SQL was sent. Migrations
-0018 through 0024,
-direct-JWT/PostgREST isolation, provider-backed MFA, and live cleanup/posture evidence therefore
-remain unexercised.
+Live database posture — PASS. Live cross-tenant, IDOR, RLS, and provider MFA behavior — PASS.
+Finance SQL-versus-JS parity, atomic/redacted audit behavior, session/CSRF/rate-limit transitions,
+disabled/stale-user rejection and local GoTrue TOTP/AAL2 behavior all passed. Exact fixture cleanup
+reduced every registered primary and derived resource to zero; the post-cleanup probe found
+anonymous leaks `0`; 17/17 RLS enabled and forced.
 
-The measured harness manifest contains 48 exact unique SEC IDs. It binds a future G5 run to exact
-test observations and rejects missing, duplicate, unbound, or non-passing rows; this is static
-harness verification, not a live observation.
+The disposable project was then stopped and removed. The final project-scoped proof was:
+Containers `0`; volumes `0`; networks `0`; listeners `0`. Read-only before/after fingerprints for
+the excluded `mekusharim` and `shabbat-hosting` stacks matched. All 18/18 excluded container metadata records matched.
+Neither excluded stack was stopped, restarted, queried, migrated, cleaned or
+otherwise mutated.
 
-No migration has been applied. No remote Supabase environment was contacted.
-Only read-only local target identity and schema inventory were queried. Production is untouched.
+G6 was rerun from a clean install: baseline 51/51, security 324 pass plus 19 explicit local-live
+gates and zero failures, focused finance/PDF/Excel 32/32, production Webpack build, HTTP/CSP,
+Android debug, secret scans, bundle scan and dependency audits all passed. The 19 deterministic
+suite skips are environment gates whose corresponding live tests were measured separately in G5.
 
 ## Findings
 
-### Baseline-to-current severity inventory
+### Severity inventory
 
 | Evidence point | Critical | High | Moderate | Low | Total |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Original recorded baseline at `72b9196f22812e5dc2452efe33f1fbbf23f3dd4c` | 3 | 10 | 3 | 0 | 16 |
-| Night-mission starting state at `6e3a950c52bc18f7e29730b0e6443762f75b81c1` | 0 | 0 | 2 | 0 | 2 |
-| Fresh full audit at the final-fix-wave local cutoff | 0 | 0 | 0 | 0 | 0 |
-| Fresh production-only audit at the final-fix-wave local cutoff | 0 | 0 | 0 | 0 | 0 |
+| Original recorded dependency baseline | 3 | 10 | 3 | 0 | 16 |
+| Fresh full dependency audit | 0 | 0 | 0 | 0 | 0 |
+| Fresh production-only dependency audit | 0 | 0 | 0 | 0 | 0 |
 
 ### Scoped closeout: C1, I1–I11, M1–M3
 
-The re-review followed the implementation and SQL call paths for every requested finding. The
-mapped deterministic suite passed 202 of 202 tests. Two residual authorization defects were proven
-with focused failing regressions, corrected minimally, and committed separately before this table
-was finalized. `ADDRESSED` means the reviewed source/test defect is addressed; it does not convert
-blocked G5 database/provider evidence into a live pass.
+`ADDRESSED` means the reviewed defect has deterministic coverage and, where applicable, measured
+G5 database/runtime evidence. It does not remove the remaining operational controls listed later.
 
 | Finding | Original defect | Fix commit(s) | Test evidence | Status | Residual risk |
 | --- | --- | --- | --- | --- | --- |
-| `C1` | Broad direct authority/workflow mutation allowed caller-controlled ownership changes. | `bb507ec` | `authority-workflow-rpcs.test.mjs`; `migration-rls.test.mjs` | ADDRESSED | Static contract only; G5 database runtime remains unverified. |
-| `I1` | CRM/BFF DTO and schema drift dropped operational fields and trusted client-created IDs. | `7eff62a` | `canonical-crm-contract.test.mjs` | ADDRESSED | Static contract only; G5 database runtime remains unverified. |
-| `I2` | Legacy numeric identities and provider UUID identities could diverge across scalar and array fields. | `74450ac` | `identity-compatibility.test.mjs` | ADDRESSED | Static migration contract only; G5 database runtime remains unverified. |
-| `I3` | Notification callers could supply sensitive or cross-resource delivery content. | `920b336` | `notification-callgraph.test.mjs` | ADDRESSED | Provider delivery runtime and G5 database enforcement remain unverified. |
-| `I4` | Protected MFA sessions and abuse controls did not consistently bind assurance, refresh ownership, and shared buckets. | `3e87f92`, `06530d7` | `auth-service.test.mjs`; `session-csrf-rate.test.mjs`; `contacts-interactions-api.test.mjs`; `trusted-client-key.test.mjs` | ADDRESSED | Provider MFA and G5 session runtime remain unverified. |
-| `I5` | Required denial audit and governance actor/session attribution could fail open or be forged. | `594983b` | `rbac-context-audit.test.mjs`; `governance-api.test.mjs` | ADDRESSED | Atomic PostgreSQL audit behavior requires G5 runtime proof. |
-| `I6` | Coordinators could read raw expenses; the first correction left historical actor-owned rows readable after promotion. | `2050862`, `dc73081` | Focused RED then 22/22 GREEN in `finance-reports-feedback.test.mjs` | ADDRESSED | Static RLS contract only; G5 direct-JWT runtime remains unverified. |
-| `I7` | Tour-report notes and JSON admitted unknown fields and insufficient bounds. | `a75c6ab` | `tours-api.test.mjs` | ADDRESSED | Static RPC contract only; G5 database runtime remains unverified. |
-| `I8` | Directory and assignment lookups exposed broad profile/membership data. | `ec86c8f` | `governance-api.test.mjs`; `finance-reports-feedback.test.mjs` | ADDRESSED | Static projection contract only; G5 database runtime remains unverified. |
-| `I9` | Privileged operational scripts could initialize secrets or remote clients before proving a bounded non-production target. | `9407592` | `operational-scripts.test.mjs` | ADDRESSED | Operator-selected target and external runtime remain residual controls. |
-| `I10` | G5 evidence could overcount duplicate or unobserved cases and omit parts of the direct-JWT matrix. | `b2108b6` | `g5-evidence.test.mjs`; `task20-harness.test.mjs` | ADDRESSED | Harness contract is addressed; G5 live execution remains blocked. |
-| `I11` | The report overstated evidence boundaries and did not bind exact command/status contracts. | `de92300` and this report update | `report-completeness.test.mjs` | ADDRESSED | Report evidence is time-bound; G5 live proof remains blocked. |
-| `M1` | Static posture verification tolerated incomplete or unexpected grants, policies, and table posture. | `7463d9e` | `migration-rls.test.mjs`; `task20-harness.test.mjs` | ADDRESSED | Static verifier only; G5 catalog runtime remains unverified. |
-| `M2` | Caller-controlled forwarding data and over-specific addresses could fragment rate-limit identity. | `06530d7` | `trusted-client-key.test.mjs`; `auth-service.test.mjs` | ADDRESSED | Trusted-proxy runtime configuration remains external and time-bound. |
-| `M3` | Reminder ownership fields and broad reminder reads preserved identity ambiguity and excess projection. | `74450ac` | `identity-compatibility.test.mjs` | ADDRESSED | Static projection/migration contract only; G5 database runtime remains unverified. |
+| `C1` | Broad direct authority/workflow mutation allowed caller-controlled ownership changes. | `bb507ec` | Authority/RLS static suite and direct-JWT G5 matrix | ADDRESSED | Evidence is time-bound to this G5 runtime. |
+| `I1` | CRM/BFF DTO and schema drift dropped operational fields and trusted client-created IDs. | `7eff62a` | Canonical CRM contract and migrated synthetic fixtures | ADDRESSED | Evidence is time-bound to the tested runtime contract. |
+| `I2` | Legacy numeric identities and provider UUID identities could diverge. | `74450ac` | Compatibility suite and live authority-transfer rejection | ADDRESSED | Evidence is time-bound to the G5 fixtures. |
+| `I3` | Notification callers could supply sensitive or cross-resource delivery content. | `920b336` | Notification callgraph and live resource-derived RPC checks | ADDRESSED | External provider runtime remains operator-controlled. |
+| `I4` | MFA sessions and abuse controls did not consistently bind assurance and shared buckets. | `3e87f92`, `06530d7` | Session suite plus local GoTrue TOTP/AAL2 G5 proof | ADDRESSED | Provider-console policy is an external runtime control. |
+| `I5` | Denial audit and governance actor/session attribution could fail open or be forged. | `594983b`, `0c6a9ce` | Audit suite and transaction-local PostgreSQL assertion | ADDRESSED | Audit evidence is time-bound to G5. |
+| `I6` | Coordinators could read raw expenses and historical rows after promotion. | `2050862`, `dc73081` | Finance suite and direct-JWT role projection | ADDRESSED | Finance evidence is time-bound to synthetic G5 data. |
+| `I7` | Tour-report notes and JSON admitted unknown fields and insufficient bounds. | `a75c6ab` | Tour API suite and live malformed-report denial | ADDRESSED | Evidence is time-bound to the tested runtime. |
+| `I8` | Directory and assignment lookups exposed broad profile/membership data. | `ec86c8f` | Governance/finance suites and live role projection | ADDRESSED | Evidence is time-bound to G5. |
+| `I9` | Privileged scripts could initialize secrets or remote clients before target proof. | `9407592` | Operational preflight and exact G5 identity guard | ADDRESSED | Operator target selection remains an operational control. |
+| `I10` | G5 evidence could overcount or omit direct-JWT matrix cases. | `b2108b6` and G5 harness fixes | 48 unique measured cases with observed outcomes | ADDRESSED | Evidence manifest is time-bound to this G5 run. |
+| `I11` | The report overstated evidence boundaries and lacked exact command contracts. | `de92300` and this update | Report-completeness contract | ADDRESSED | Report evidence remains time-bound. |
+| `M1` | Posture verification tolerated incomplete grants, policies and table posture. | `7463d9e`, `180c90f` | 47 migration checks and final 17/17 forced-RLS probe | ADDRESSED | Catalog evidence is time-bound to G5. |
+| `M2` | Caller-controlled forwarding data could fragment rate-limit identity. | `06530d7` | Trusted-client and live shared-bucket tests | ADDRESSED | Trusted-proxy runtime configuration remains operator-controlled. |
+| `M3` | Reminder ownership and reads preserved identity ambiguity and excess projection. | `74450ac` | Compatibility suite and live reminder boundaries | ADDRESSED | Evidence is time-bound to G5. |
 
-### Critical
-
-No open Critical code or dependency finding was observed by the fresh deterministic checks. The
-source changes address the baseline browser credential/directory exposure, service-role business
-shortcut, permissive RLS contract, and Critical dependency findings. Their behavior on an applied
-database and real provider remains unverified.
-
-### High
-
-No open High dependency finding was observed locally. Deterministic tests exercise the corrected
-source contracts, but the absence of controlled live RLS, cross-tenant, IDOR/BOLA, and provider-MFA
-proof is a release-blocking assurance gap. It is tracked as an external blocker rather than
-converted into a false local pass.
-
-### Moderate
-
-No Moderate dependency finding remains after the targeted ExcelJS UUID override. Provider-console
-configuration, credential rotation/restriction state, and staging behavior remain unverified.
-
-### Low
-
-The build still emits the recorded `optimizeFonts`, middleware-convention, and
-`_app.getInitialProps` warnings. Gradle also reports flat-directory/deprecation warnings. These did
-not fail the verified builds, but should be addressed as controlled maintenance without changing
-security runtime behavior implicitly.
+No open deterministic Critical, High, Moderate or Low dependency finding was observed. Remaining
+non-blocking build and Gradle warnings are recorded below as maintenance risks.
 
 ## Changes
 
-### Architecture and controls
-
-- Browser business data and authentication use same-origin APIs; the browser is not an authority
-  for user, role, project, owner, actor, recipient, or audit fields.
-- Supabase provider tokens remain server-side; business repositories use a user-scoped database
-  client so the planned RLS layer independently rechecks authorization.
-- Session identifiers are opaque, cookies are host-only and hardened, provider tokens are sealed,
-  CSRF is session-bound, and session rotation/revocation/security-version checks fail closed.
-- Capability-based RBAC and active project memberships constrain contacts, interactions,
-  governance, meetings, tours, notifications, finance, reports, and feedback.
-- Validation uses strict allowlists and size bounds; error output, audit metadata, external payloads,
-  spreadsheet cells, push content, redirects, cache behavior, CORS, and CSP are constrained.
-- Migrations `0018` through `0024` define the forward schema/RLS/RPC contract, but remain unapplied.
-- Client-bundle, repository, history, dependency, HTTP, PDF/Excel, and Android checks are automated.
-
-### Exact remediation commits after the mission starting point
-
-| Commit | Change |
-| --- | --- |
-| `6886311e4e803ed6034cbbb01655ba7d2fa75ab8` | Patch the ExcelJS UUID dependency with compatibility tests |
-| `6fa7c636521d293bfd41af54372dd5771bb25fe9` | Enforce exact HTTP verification statuses |
-| `cd7879deeb8e75566270c56e84141b7dbf42f17a` | Preserve hardened error rendering |
-| `98dd5252853068f553c8bd396f34f3be4e503fa8` | Add live adversarial verification artifacts |
-| `4e253133f32404cc5f1ddb8505a61ae76db27782` | Harden the blocked G5 execution boundary |
-| `6245dc6914c89cb7ee199f8d742d6b1ae9cc9e4e` | Correct blocked G5 lifecycle contracts |
-| `d0338db44cea9078202595b71b0956ff49a4bf81` | Complete blocked G5 evidence boundaries |
-| `c379bb6e741570012c05c49b2ed03014108d8223` | Harden blocked G5 stack lifecycle handling |
-| `a2af2026de052fd696f948a8375dcec7cc5704f7` | Support the pinned Supabase SMTP template safely |
-| `bb507ec` | C1: remove direct authority/workflow mutation and add immutable source contracts |
-| `7eff62a` | I1: reconcile the CRM/BFF schema, DTO, and server-created-ID contract |
-| `74450ac` | I2/M3: maintain UUID/legacy pairs and use an exact reminder projection |
-| `920b336` | I3: route notifications through resource-derived events and generic push payloads |
-| `3e87f92` | I4: correct protected-session assurance and shared abuse-control source contracts |
-| `594983b` | I5: make required audit/correlation and governance attribution contracts fail closed |
-| `2050862` | I6: deny raw Coordinator expense access |
-| `a75c6ab` | I7: make tour-report notes/JSON validation strict |
-| `ec86c8f` | I8: replace broad directory access with scoped projections/validation |
-| `9407592` | I9: guard service-role operational scripts before environment or remote access |
-| `06530d7` | M2: canonicalize trusted rate-limit keys |
-| `7463d9e` | M1: make the static security-posture verifier fail closed |
-| `b2108b6` | I10: measure the exact G5 evidence manifest and direct-JWT matrix contract |
-| `de92300` | I11: correct final-report evidence boundaries and command contracts |
-| `dc73081` | I6 closeout: deny historical raw-expense reads after an Activist becomes a Coordinator |
-| `543232a` | Close stale-membership owner paths for reminders, tours, bonus cancellations, and feedback |
-
-The report-update commit is intentionally reported in the Git handoff rather than embedded in its
-own content-addressed document.
+- Browser authentication and business data use same-origin BFF routes; browser input cannot provide
+  authoritative actor, role, project, owner, recipient or audit fields.
+- Server sessions are opaque, host-bound, rotated and revocable; provider tokens remain server-side.
+- Authorization derives from active membership, role, project, resource ownership and AAL.
+- PostgreSQL migrations enable and force RLS on 17 protected tables, narrow grants and install
+  actor-derived, resource-derived RPCs with fixed search paths.
+- Audit storage is private, append-only through controlled functions and redacted.
+- Finance, notification, tour, reminder, governance and reporting projections are allowlisted.
+- G5 infrastructure now creates an exact disposable project, enforces loopback Docker publishing,
+  measures evidence, performs exact cleanup and proves project-scoped destruction.
+- The G5 RED-to-GREEN sequence added 35 commits after the requested starting checkpoint, covering
+  entrypoint ownership, loopback binding, migration/posture correctness, TOTP, Finance isolation and
+  audit atomicity. Each real defect was committed before recreating and rerunning the disposable DB.
 
 ## Authentication & Session
 
-The BFF authenticates against Supabase Auth on the server. The browser receives only an opaque
-`__Host-mekarvim_session` cookie with `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/`, and no
-`Domain`. Provider access/refresh material is sealed at rest with versioned authenticated
-encryption and is never returned to browser code.
+Local deterministic and G5 evidence covered:
 
-Session loading source code validates revocation, idle and absolute expiry, disabled-user state,
-`security_version`, authentication state, and AAL. Login, MFA completion, recovery/privilege
-transitions, and token refresh have deterministic source/test contracts for security-state rotation;
-logout revokes server state before clearing the cookie. CSRF tokens are bound to a session and
-rotate with it. Shared fail-closed rate-limit and refresh-claim/CAS behavior is tested locally in
-the implementation; provider-backed persistence and factor lifecycle have not been measured.
+- unknown-user/bad-password response equivalence and shared login-rate enforcement;
+- new opaque session creation, rotation, replay rejection, logout revocation and expiry;
+- idle, absolute, disabled-user, stale-security-version and recovery-session denial;
+- session-bound CSRF with foreign-origin and mismatched-token rejection;
+- Head/CEO AAL1 denial and AAL2 authorization for protected operations;
+- real local GoTrue TOTP enrollment, challenge, verification, AAL2 rotation and factor reset.
 
-Deterministic tests prove the named implementation behavior: generic login failure, cookie/session
-mechanics, ciphertext tamper rejection, fixation/replay rejection, expiry, revocation,
-disabled/stale-user rejection, CSRF mismatch, rate-limit boundaries, and AAL gates. They do not
-prove the Supabase provider's live TOTP enrollment/challenge behavior. CEO and Project Head AAL2
-provider behavior is therefore unverified until a controlled isolated target is available.
+No provider token, generated credential, factor secret or person-level fixture value is retained in
+the report or committed evidence.
 
 ## Authorization
 
-Authorization derives identity, global role, active memberships, AAL, and user-scoped database
-context on the server. Request path/project identifiers narrow a query but never grant authority.
-Unknown or security-sensitive authority fields in a body are rejected rather than trusted.
+The LIVE matrix verified anonymous denial, cross-user and cross-project isolation, same-project
+ownership, role projections, membership removal, IDOR/BOLA concealment, authority-transfer denial,
+legacy/UUID invariants, notification/reminder/tour workflow boundaries and Finance scope.
+Coordinator, Activist, Head, Finance and CEO paths were tested with their required AAL. Direct
+PostgREST/JWT observations, not caller attestations, produced the G5 evidence rows.
 
-| Role | Enforced scope | Sensitive-data rule |
-| --- | --- | --- |
-| CEO | Organization-wide, only with AAL2 for protected operations | Full required business projection; never authentication secrets |
-| Project Head | Active memberships in owned projects, with AAL2 for protected operations | Project-scoped PII and governed lower-role membership operations |
-| Coordinator | Active project memberships | Operational project projection; no role administration or hard delete authority |
-| Activist | Active project memberships and assigned/owned resources | Assigned contacts and self-created operational records only |
-| Finance | Active project memberships | Aggregate payment/expense projection without contact or religious PII |
-
-Deterministic API/domain tests cover source-level same-project cross-user access, cross-project IDs,
-direct URL changes, forged body authority, privilege escalation, notification recipients, finance
-narrowing, and field projection. Live cross-tenant, IDOR, RLS, and provider MFA behavior is UNVERIFIED.
+The classified surface is 17 protected tables plus one classified view. Live anonymous isolation
+covered all 18 surfaces; no anonymous row leak was observed before or after fixture cleanup.
 
 ## Database / RLS Matrix
 
-The static migration contract classifies 17 protected tables plus one classified view. Each table
-is declared with RLS enabled and forced, and the view is `security_invoker`. The status in every row
-below means source/static-test evidence only; no row is a claim about a running database. The
-inventory, grant, policy, and immutable-column source assertions are exercised by
-`tests/security/rls-live.test.mjs`, `tests/security/g5-evidence.test.mjs`, and the migration-static
-tests selected by `npm run test:security`; they are not database-backed results.
-
 | Object | Evidence status | RLS | SELECT | INSERT | UPDATE | DELETE | Relevant RPC/control |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `projects` | Static PASS; live UNVERIFIED | Enable + force | CEO or active member scope | CEO | CEO | CEO | Server project allowlist; `app_is_ceo` |
-| `project_memberships` | Static PASS; live UNVERIFIED | Enable + force | Self, CEO, or scoped Head | No direct grant | No direct grant | No direct grant | Service-only `app_membership_change`; anti-self-escalation and session invalidation |
-| `profiles` | Static PASS; live UNVERIFIED | Enable + force | Self, CEO, or scoped directory projection | Provisioning only | Non-authority self fields/RPC-governed security state | Provisioning only | `app_user_security_invalidate`; field projection |
-| `contacts` | Static PASS; live UNVERIFIED | Enable + force | CEO; Head/Coordinator project; assigned Activist | Same authorized scope with derived tenant/owner | Limited business columns; immutable authority trigger | CEO | `check_contact_duplicate`; BFF field allowlists |
-| `interactions` | Static PASS; live UNVERIFIED | Enable + force | CEO; managers in project; actor on assigned contact | Actor/project/contact derived | Limited business columns; immutable authority trigger | CEO/Head or constrained actor workflow | Row audit trigger and user-scoped repository |
-| `base_meeting_reports` | Static PASS; live UNVERIFIED | Enable + force | Project managers or assigned actor | Derived project/actor | Limited business columns; immutable authority trigger | CEO/Head scope | Row audit trigger and meeting command validation |
-| `meeting_houses` | Static PASS; live UNVERIFIED | Enable + force | Project/assignment scope | CEO/Head/Coordinator in project | Limited business columns; immutable authority trigger | CEO/Head project | Assignment/resource checks; row audit trigger |
-| `meeting_reminders` | Static PASS; live UNVERIFIED | Enable + force | Recipient or project managers | Authorized workflow with derived recipient | No broad direct grant | No broad direct grant | `app_cancel_meeting_reminders`; idempotency/cancellation controls |
-| `tours` | Static PASS; live UNVERIFIED | Enable + force | Managers in project or assigned Activist | CEO/Head/Coordinator project | Limited non-report columns; immutable authority/workflow trigger | CEO/Head project | `app_submit_tour_report` derives reporter; cancellation controls |
-| `expenses` | Static PASS; live UNVERIFIED | Enable + force | Self or CEO/Head/Finance project scope | Self with derived project/actor | Self-pending or authorized project workflow | Self-pending or CEO/Head policy | User-scoped repository and row audit trigger |
-| `bonus_cancellations` | Static PASS; live UNVERIFIED | Enable + force | Self or management/finance scope | Authorized approver only | No direct grant | CEO-only direct delete | Candidate/resource validation and row audit trigger |
-| `payment_config` | Static PASS; live UNVERIFIED | Enable + force | Active authenticated projection | CEO | CEO | No direct grant | Explicit payment projection |
-| `notifications` | Static PASS; live UNVERIFIED | Enable + force | Recipient only | No direct grant | Recipient read-state column only | Recipient/expiry workflow | `app_enqueue_notification_event` derives project and recipients |
-| `notification_reads` | Static PASS; live UNVERIFIED | Enable + force | Recipient only | Recipient equals caller | Recipient equals caller | Recipient equals caller | Caller-derived ownership |
-| `push_subscriptions` | Static PASS; live UNVERIFIED | Enable + force | Owner only | Owner equals caller | Limited payload column; immutable owner trigger | Owner/service cleanup | Generic payload and internal-link allowlist |
-| `fcm_tokens` | Static PASS; live UNVERIFIED | Enable + force | Owner only | Owner equals caller | Limited token/platform fields; immutable owner trigger | Owner/service cleanup | Server-derived recipient and provider wrapper |
-| `feedback_reports` | Static PASS; live UNVERIFIED | Enable + force | Creator, CEO, or scoped Head | Actor/project derived | Reviewer or constrained creator workflow | CEO | External forwarding disabled/fail closed; row audit trigger |
-| `activist_directory` | Static PASS; live UNVERIFIED | Security-invoker view over protected sources | Membership/finance-specific projection | Not applicable | Not applicable | Not applicable | No independent authority; source-table RLS applies |
+| `projects` | Static PASS; live PASS | Enable + force | Active scoped membership | Service workflow only | Service workflow only | Service workflow only | Membership-derived project scope |
+| `project_memberships` | Static PASS; live PASS | Enable + force | Own/scoped directory | Governance RPC | Governance RPC | Governance RPC | AAL2 and last-CEO guard |
+| `profiles` | Static PASS; live PASS | Enable + force | Role-specific projection | Service identity flow | Self-safe fields only | Denied | UUID identity invariant |
+| `contacts` | Static PASS; live PASS | Enable + force | Own or scoped manager | Derived actor/project | Own or scoped manager | Audited RPC | Cross-user/project IDOR denial |
+| `interactions` | Static PASS; live PASS | Enable + force | Contact-derived scope | Derived actor/contact | Scoped mutation | Audited RPC | Contact authority rechecked |
+| `base_meeting_reports` | Static PASS; live PASS | Enable + force | Resource-derived scope | Reporter-derived RPC | Report fields only | Denied | Actor/project/house derived |
+| `meeting_houses` | Static PASS; live PASS | Enable + force | Assigned/scoped manager | Manager workflow | Narrow manager workflow | Denied | Assignment validation RPC |
+| `meeting_reminders` | Static PASS; live PASS | Enable + force | Exact recipient scope | Scheduler RPC | Denied | Recipient cancel RPC | Recipient and resource derived |
+| `tours` | Static PASS; live PASS | Enable + force | Assigned/scoped manager | Manager workflow | Split authority RPCs | Manager RPC | Report/assign/status separation |
+| `expenses` | Static PASS; live PASS | Enable + force | Owner or Finance scope | Actor/project derived | Owner-safe fields | Manager audited RPC | Coordinator raw read denied |
+| `bonus_cancellations` | Static PASS; live PASS | Enable + force | Approved projection | Derived cancellation RPC | Denied | Denied | Resource and actor derived |
+| `payment_config` | Static PASS; live PASS | Enable + force | Approved projection | Service only | Service only | Service only | Narrow Finance projection |
+| `notifications` | Static PASS; live PASS | Enable + force | Recipient only | Event RPC only | Denied | Denied | Event/resource-derived payload |
+| `notification_reads` | Static PASS; live PASS | Enable + force | Own recipient only | Own marker | Own marker | Own marker | Recipient derived from JWT |
+| `push_subscriptions` | Static PASS; live PASS | Enable + force | Own only | Own endpoint | Own endpoint | Own endpoint | No recipient spoofing |
+| `fcm_tokens` | Static PASS; live PASS | Enable + force | Own only | Own token row | Own token row | Own token row | No user spoofing |
+| `feedback_reports` | Static PASS; live PASS | Enable + force | Reporter/scoped reviewer | Reporter/project derived | Review RPC | Denied | CEO AAL2 or scoped manager |
+| `activist_directory` | Static PASS; live PASS | Security-invoker view over protected sources | Role-specific projection | Not applicable | Not applicable | Not applicable | Protected-source RLS |
 
-Private supporting objects are outside the exposed `public` data surface. Static migrations revoke
-their tables from `public`, `anon`, and `authenticated`:
-
-| Private object | Static control | Authorized path | Live status |
-| --- | --- | --- | --- |
-| `auth_identities` | Private schema; no direct client grant | Service-only identity resolution | UNVERIFIED |
-| `auth_sessions` | Private schema; encrypted provider material and hashed opaque IDs | Service-only create/load/touch/rotate/revoke/refresh RPCs | UNVERIFIED |
-| `audit_events` | Private append storage; redacted metadata | Service-only append plus controlled row triggers | UNVERIFIED |
-| `rate_limit_buckets` | Private atomic bucket storage | Service-only atomic consume RPC | UNVERIFIED |
-
-The static suite verifies migration ordering, object inventory, forbidden permissive predicates,
-fixed search paths, narrow grants, `WITH CHECK` contracts, RPC dependencies, audit redaction, and
-pre-cutover rollback ordering. Live database posture is UNVERIFIED. No live RLS table count is
-reported.
+The final posture inventory contained 23 public tables, 57 policies and 43 functions. Every one of
+the 17 protected tables had RLS enabled and forced. Grants and function search paths matched the
+approved posture verifier.
 
 ## Test Evidence
 
-Fresh final-fix-wave verification was performed from the reviewed source/test checkpoint
-`543232aba80d58f945d54825a7b51e6ca89ac816` and the report/test correction in this change. The full
-security suite contains 19 explicit live skips; they are skips, not passes. Commands below are
-literal sanitized reproductions of the commands used in this Windows worktree. Android SDK
-variables were set only in the Gradle process. The loopback launcher used synthetic settings and a
-closed loopback provider URL; it did not contact Supabase.
-
 | Command | Status | Exact result |
 | --- | --- | --- |
-| `npm ci` | PASS (exit 0) | 277 packages installed; 278 audited; 0 vulnerabilities; deprecation warnings only |
-| `npm run test:baseline` | PASS (exit 0) | 51 total; 51 pass; 0 skip; 0 fail (27 interaction + 24 payment) |
+| `npm ci` | PASS (exit 0) | 277 packages installed; 278 audited; 0 vulnerabilities |
+| `npm run test:baseline` | PASS (exit 0) | 51 total; 51 pass; 0 skip; 0 fail |
 | `npm run verify:interaction-report` | PASS (exit 0) | 27 total; 27 pass; 0 skip; 0 fail |
 | `node scripts/verify-payment-order.cjs` | PASS (exit 0) | 24 total; 24 pass; 0 skip; 0 fail |
-| `npm run test:security` | PASS (exit 0) | 330 total; 311 pass; 19 explicit live skips; 0 fail; known module-type and synthetic-fixture LF-to-CRLF warnings only |
+| `npm run test:security` | PASS (exit 0) | 343 total; 324 pass; 19 explicit live skips; 0 fail |
 | `node --test tests/security/finance-reports-feedback.test.mjs tests/security/jspdf-compatibility.test.mjs tests/security/exceljs-uuid-compatibility.test.mjs` | PASS (exit 0) | 32 total; 32 pass; 0 skip; 0 fail |
-| `npm run test:security -- tests/security/report-completeness.test.mjs` | PASS (exit 0) | 8 total; 8 pass; 0 skip; 0 fail; target-evidence RED was 8 total, 7 pass, 1 exact-evidence failure |
-| `npm run build` | PASS (exit 0) | Next.js 16.3.3 Webpack production build; known `optimizeFonts`, middleware-convention, and `_app.getInitialProps` warnings only |
-| `node .superpowers/sdd/2026-08-27-security-hardening/start-g4-http.mjs` | PASS (owned process started) | Synthetic production server ready on `127.0.0.1:43877`; pre-start listener count 0 |
-| `$env:SECURITY_HTTP_BASE_URL='http://127.0.0.1:43877'; node scripts/security/verify-http.mjs` | PASS (exit 0) | exact 200/401/403/404/500; required headers; five unique nonces; no wildcard CORS; verifier PASS |
-| `Ctrl+C` to the owned launcher; `Get-NetTCPConnection -LocalPort 43877 -State Listen` | PASS (cleanup check) | Owned launcher stopped; 0 listeners on port 43877 |
-| `node scripts/security/scan-client-bundle.mjs` | PASS (exit 0) | 0 findings; `client-bundle clean` |
-| `node scripts/security/scan-secrets.mjs --current` | PASS (exit 0) | 0 findings; `secret-scan clean` |
-| `node scripts/security/scan-secrets.mjs --tracked` | PASS (exit 0) | 0 findings; `secret-scan clean` |
-| `node scripts/security/scan-secrets.mjs --history` | PASS (exit 0) | 0 findings; `secret-scan clean` |
+| `npm run test:security -- tests/security/report-completeness.test.mjs` | PASS (exit 0) | 8 total; 8 pass; 0 skip; 0 fail |
+| `npm run build` | PASS (exit 0) | Next.js 16.3.3 Webpack production build; compiled successfully |
+| `node .superpowers/sdd/2026-08-27-security-hardening/start-g4-http.mjs` | PASS (owned process started) | Next.js ready on 127.0.0.1:43877 |
+| `$env:SECURITY_HTTP_BASE_URL='http://127.0.0.1:43877'; node scripts/security/verify-http.mjs` | PASS (exit 0) | exact 200/401/403/404/500; required headers; five unique nonces; verifier PASS |
+| `Ctrl+C` to the owned launcher; `Get-NetTCPConnection -LocalPort 43877 -State Listen` | PASS (cleanup check) | 0 listeners |
+| `node scripts/security/scan-client-bundle.mjs` | PASS (exit 0) | 0 findings; client-bundle clean |
+| `node scripts/security/scan-secrets.mjs --current` | PASS (exit 0) | 0 findings; secret-scan clean |
+| `node scripts/security/scan-secrets.mjs --tracked` | PASS (exit 0) | 0 findings; secret-scan clean |
+| `node scripts/security/scan-secrets.mjs --history` | PASS (exit 0) | 0 findings; secret-scan clean |
 | `npm audit --json` | PASS (exit 0) | 0 Critical; 0 High; 0 Moderate; 0 Low; 0 total; 310 dependencies in metadata |
 | `npm audit --omit=dev --json` | PASS (exit 0) | 0 Critical; 0 High; 0 Moderate; 0 Low; 0 total; 310 dependencies in metadata |
 | `node --test tests/security/android-hardening.test.mjs` | PASS (exit 0) | 6 total; 6 pass; 0 skip; 0 fail |
-| `$taskAndroidSdk=Join-Path $env:LOCALAPPDATA 'Android\Sdk'; if (-not (Test-Path -LiteralPath $taskAndroidSdk)) { throw 'Android SDK unavailable' }; $env:ANDROID_HOME=$taskAndroidSdk; $env:ANDROID_SDK_ROOT=$taskAndroidSdk; android\gradlew.bat -p android testDebugUnitTest assembleDebug` | PASS (exit 0) | Process-only SDK environment; BUILD SUCCESSFUL in 11s; 169 actionable tasks (82 executed, 87 up-to-date); Gradle deprecation warning only |
-| `$taskAndroidSdk=Join-Path $env:LOCALAPPDATA 'Android\Sdk'; if (Test-Path -LiteralPath 'android\keystore.properties') { throw 'keystore.properties unexpectedly exists' }; $env:ANDROID_HOME=$taskAndroidSdk; $env:ANDROID_SDK_ROOT=$taskAndroidSdk; android\gradlew.bat -p android assembleRelease` | EXPECTED FAIL (exit 1) | Release signing configuration missing: android/keystore.properties; assertion PASS; failure occurred at the intended signing guard |
-| `node scripts/security/g5-local-orchestrator.mjs` | BLOCKED (NOT RUN) | 19 live cases remained explicit skips; Docker was healthy but `mekusharim` failed project/config, CRM schema, and loopback-only identity; no migration or live case ran |
+| `$taskAndroidSdk=Join-Path $env:LOCALAPPDATA 'Android\Sdk'; if (-not (Test-Path -LiteralPath $taskAndroidSdk)) { throw 'Android SDK unavailable' }; $env:ANDROID_HOME=$taskAndroidSdk; $env:ANDROID_SDK_ROOT=$taskAndroidSdk; android\gradlew.bat -p android testDebugUnitTest assembleDebug` | PASS (exit 0) | BUILD SUCCESSFUL in 27s; 169 actionable tasks; 82 executed; 87 up-to-date |
+| `$taskAndroidSdk=Join-Path $env:LOCALAPPDATA 'Android\Sdk'; if (Test-Path -LiteralPath 'android\keystore.properties') { throw 'keystore.properties unexpectedly exists' }; $env:ANDROID_HOME=$taskAndroidSdk; $env:ANDROID_SDK_ROOT=$taskAndroidSdk; android\gradlew.bat -p android assembleRelease` | EXPECTED FAIL (exit 1) | Release signing configuration missing: android/keystore.properties; assertion PASS |
+| `node scripts/security/g5-local-orchestrator.mjs` | PASS (exit 0) | 19 live tests; 19 pass; 0 skip; 0 fail; 48/48 evidence cases; 47/47 migration checks; cleanup clean |
 | `node scripts/verify-month-report.cjs <year> <month>` | NOT RUN | Inspection only: `.env.local`; privileged Supabase; person-level output; no approved isolated source |
 | `node scripts/verify-payroll-xlsx.cjs <year> <month>` | NOT RUN | Inspection only: `.env.local`; privileged Supabase; person/payroll output; no approved isolated source |
 | `git diff --check` | PASS (exit 0) | 0 whitespace errors; checked before each final report commit |
-| `git status --short --branch` | PASS (exit 0) | `## security/hardening-p0`; tracked tree clean after the final-report commit |
+| `git status --short --branch` | PASS (exit 0) | tracked tree clean after the final-report commit |
 
-The earlier accepted Task-20 blocked-boundary review independently recorded 264 total security
-tests, 248 passes, 16 explicit live skips, and no failures. It predates the I10 manifest expansion.
-The G5 harness now names 19 future live tests in a 48-case measured manifest and remains guarded;
-it was not invoked against any database in this task.
+G5 used pinned Supabase CLI `2.115.0`.
+The exact dedicated listeners were API `56321`; DB `56322`; Studio `56323`; Mail `56324`; shadow `56320`; SMTP `56325`; POP3 `56326`; analytics `56327`;
+pooler-disabled reservation `56329`; edge-inspector reservation `56342`; local BFF `56343`.
+Published listeners were loopback-only on `127.0.0.1`.
+
+The identity inventory found nine exact-project containers:
+`supabase_auth_mekarvim-security-g5-045d7fa0b448`,
+`supabase_db_mekarvim-security-g5-045d7fa0b448`,
+`supabase_inbucket_mekarvim-security-g5-045d7fa0b448`,
+`supabase_kong_mekarvim-security-g5-045d7fa0b448`,
+`supabase_pg_meta_mekarvim-security-g5-045d7fa0b448`,
+`realtime-dev.supabase_realtime_mekarvim-security-g5-045d7fa0b448`,
+`supabase_rest_mekarvim-security-g5-045d7fa0b448`,
+`supabase_storage_mekarvim-security-g5-045d7fa0b448`, and
+`supabase_studio_mekarvim-security-g5-045d7fa0b448`.
 
 ## Negative / Adversarial Tests
 
-The table separates deterministic local outcomes from live cases that remain unproven. Actor and
-resource names are synthetic classes only.
+Measured denial paths included anonymous table access, direct anonymous PII mutation, cross-project
+and cross-activist CRUD, forged tenant/owner/recipient fields, project transfer, legacy-UUID
+divergence, disabled/stale JWTs, AAL1 privileged access, another recipient's reminder cancellation,
+unassigned tour reporting, arbitrary notification events, private audit reads and Coordinator raw
+Finance access. Expected denials were observed as RLS empty/denied results, stable concealed 404s,
+403/401 responses or constrained RPC failures, according to the case contract.
 
-| Case | Actor/resource | Layer | Expected outcome | Evidence status |
-| --- | --- | --- | --- | --- |
-| Anonymous PII read | Anonymous / protected row | PostgreSQL RLS | Denied | UNVERIFIED live; static policy contract only |
-| Same-project other-owner contact | Activist / another assigned contact | BFF repository + RBAC | Concealed 404 | PASS deterministic |
-| Cross-project resource ID | Coordinator / other project resource | BFF repository + RBAC | Concealed 404 | PASS deterministic |
-| Client authority fields | Authenticated actor / create or update body | Strict schema | 400 before database write | PASS deterministic |
-| Cross-tenant insert/update/delete | Authenticated actor / other tenant row | PostgreSQL RLS `USING` + `WITH CHECK` | Denied | UNVERIFIED live; static contract only |
-| Foreign-origin mutation | Anonymous browser class / logout | Origin guard | 403 | PASS exact loopback HTTP |
-| Cross-session CSRF | Authenticated actor / mutation | Session-bound CSRF | Denied | PASS deterministic |
-| Expired, revoked, disabled, or stale session | Authenticated actor / protected route | Session service | Denied | PASS deterministic |
-| AAL1 protected operation | CEO/Head class / PII, report, mutation | Request context + capability gate | MFA required | PASS deterministic; provider-live UNVERIFIED |
-| Membership self-escalation | Head/Activist class / governance mutation | Capability + service RPC contract | 403/denied | PASS deterministic |
-| Notification recipient or URL spoof | Authenticated actor / notification event | Schema + domain + RPC contract | 400/403/denied | PASS deterministic |
-| Finance scope/filter forgery | Finance/Coordinator class / aggregate report | Capability + caller-derived RPC arguments | Denied or narrowed | PASS deterministic |
-| Audit read by ordinary user | Authenticated actor / audit storage | Private schema + grants | Denied | Static PASS; live UNVERIFIED |
-| Direct PostgREST bypass | Authenticated role classes / classified surfaces | User JWT + PostgreSQL RLS | Denied outside exact scope | UNVERIFIED live; measured harness contract only |
-| RLS ownership transfer | Authenticated actor / tenant-owner columns | Column grants + immutable trigger/RPC | Denied | UNVERIFIED live; source/static contract only |
-| Unsafe external configuration | Server integration / missing or public target | Integration guard | Disabled/fail closed | PASS deterministic |
-| Secret leakage to client | Browser bundle / server-only categories | Bundle scanner | No finding | PASS local build scan |
+The local PostgreSQL assertions also proved fixed search paths and atomic audit rollback behavior.
+Finance summary parity covered CEO, Head, Finance and Activist projections, Coordinator denial,
+multi-project scope, caps, expenses, bonuses, tours and totals with zero unexplained logical delta.
 
 ## Dependencies
 
-Fresh installed versions and both audit modes were inspected after `npm ci`:
+| Package/control | Verified state |
+| --- | --- |
+| Next.js | `16.3.3`, exact pin, Webpack build passed |
+| Supabase JS | `2.105.1`, exact approved pin |
+| jsPDF | `4.2.1`, Hebrew/RTL and browser-bundle compatibility passed |
+| ExcelJS | `4.4.0`, exact UUID override and workbook round trips passed |
+| Capacitor Android/Core/CLI | `8.4.1`, Android debug verification passed |
+| npm full audit | 0 Critical; 0 High; 0 Moderate; 0 Low |
+| npm production audit | 0 Critical; 0 High; 0 Moderate; 0 Low |
 
-| Package | Installed version | Control/evidence |
-| --- | --- | --- |
-| Node.js | 24.18.0 | Satisfies the declared `>=20.9.0` floor |
-| Next.js | 16.3.3 | Exact pin; Webpack build passed |
-| React / ReactDOM | 18.3.1 / 18.3.1 | Version preserved across the Next upgrade |
-| PostCSS | 8.5.23 | Patched transitive version under Next |
-| jsPDF / AutoTable | 4.2.1 / 5.0.8 | Exact pins; Node/browser/PDF/RTL compatibility passed |
-| ExcelJS | 4.4.0 | Production report and payroll workbooks reopened successfully |
-| UUID under ExcelJS | 11.1.1 | Targeted override; one overridden copy; conditional-formatting path passed |
-| Capacitor Android / CLI / Core | 8.4.1 / 8.4.1 / 8.4.1 | Static and debug/unit Android verification passed |
-| Supabase JavaScript client | 2.105.1 | Server/user-client boundary tests passed; no live provider claim |
-| Zod | 3.25.76 | Strict input validation tests passed |
-
-Audit counts are exactly 0 Critical, 0 High, 0 Moderate, 0 Low, and 0 total in both full and
-production-only modes. Audit results are time-bound registry evidence, not a permanent guarantee.
+Audit metadata counted 257 production, 54 optional and 310 total dependency records. Registry
+evidence is time-bound to the recorded clean install and audit date.
 
 ## Secrets
 
-Fresh current-tree, tracked-file, Git-history, and built-client scans each returned zero findings.
-The scanners report only category/location/count metadata and never values. No credential, JWT,
-session identifier, MFA seed, cookie, signing material, or person-level evidence is included here.
-
-Server-only configuration remains environment-only. Firebase client configuration is treated as
-public application configuration and still requires owner confirmation of console-side API and
-application restrictions. Provider credential rotation/restriction status was not observable from
-the repository and remains an owner action.
+Current-tree, tracked-tree and Git-history scanners each returned zero findings. The built browser
+bundle scanner also returned zero findings. G5 credentials, generated passwords, JWTs, TOTP factor
+data and exact synthetic identifiers stayed process-local and were not included in the sanitized
+evidence manifest or this report.
 
 ## External Integrations
 
-| Integration | Deterministic control | Live/provider status |
-| --- | --- | --- |
-| Anthropic | Opt-in server projection, redaction, size/rate/timeout controls, fail closed without configuration | Consent/DPA/configuration and provider behavior UNVERIFIED |
-| Google Sheets | Private service-account adapter and exact sheet/range allowlist; public CSV fallback rejected | Credentials, private-sheet access, and provider behavior UNVERIFIED |
-| GitHub feedback | Disabled by default; private-target requirement; redacted payload contract | Private repository/token scope or permanent disable decision UNVERIFIED |
-| Push/FCM/VAPID | Source/test contract derives tokens/recipients and accepts only a generic lock-screen payload with internal deep links | Console restrictions, device delivery, and token lifecycle UNVERIFIED |
-| Scheduled jobs | Timing-safe machine authentication and fail-closed missing configuration | Approved staging scheduler behavior UNVERIFIED |
-
-No external integration endpoint was contacted during this final fix wave.
+Anthropic remains fail-closed unless explicitly enabled with processing approval. Google Sheets
+requires the dedicated service account and exact spreadsheet/range allowlist. GitHub feedback
+forwarding remains disabled. Notification adapters receive opaque delivery identifiers and construct
+generic payloads internally. No external provider delivery was required for the local G5 verdict.
 
 ## Android
 
-Static evidence confirms backup and cleartext are disabled, FileProvider is limited to the dedicated
-cache export directory, external browser deep-link entry points are absent, WebView file/content
-access and mixed content are disabled, capture is blocked for the activity, R8 full mode is enabled,
-and release cannot fall back to debug signing.
-
-The six static checks passed. After explicitly pointing Gradle at the installed local SDK, debug
-unit/build verification completed successfully. A release request with no signing configuration
-failed with the exact fail-closed message and produced no release. Signed-release installation,
-device behavior, remote WebView behavior, notification delivery, and store signing remain
-UNVERIFIED.
+The six static Android hardening checks passed. The debug unit/build command completed 169 tasks.
+Backup and cleartext are disabled, FileProvider is cache-export-scoped, external deep-link entry is
+closed, screen capture is prevented and release minification is enabled. The release command failed
+at the intended signing guard because `android/keystore.properties` is absent; this proves the build
+cannot silently fall back to debug signing and is not a release artifact.
 
 ## Remaining Risks
 
-- The hardened migrations exist only as reviewed files. A real database may contain schema, grants,
-  policies, functions, views, or data-shape differences that static tests cannot observe.
-- Direct JWT/PostgREST cross-user and cross-project enforcement, immutable-authority behavior,
-  anonymous posture, audit privacy, finance parity, and cleanup remain unproven against PostgreSQL.
-- Supabase TOTP enrollment/challenge, AAL2 claims, password recovery, provider refresh/revocation,
-  and dashboard settings remain unproven end to end.
-- Staging CSP/HSTS/cache/CORS behavior, external provider configuration, mobile device behavior, and
-  provider-side key restrictions have not been verified.
-- Build and Gradle warnings are residual maintenance risks even though the verified commands pass.
-- Dependency audit results can change as advisories evolve; scheduled re-audit remains necessary.
+- The evidence is local and time-bound; staging/Production infrastructure, provider-console settings,
+  credential rotation and deployed network policy still require environment-owner verification.
+- HSTS preload is present in code but still requires staging verification before operational use.
+- Next.js reports `optimizeFonts`, middleware-convention and `_app.getInitialProps` warnings.
+- Gradle reports flat-directory, SDK XML compatibility and deprecation warnings.
+- Real external notification delivery and production signing were intentionally outside this run.
+- Month-report and payroll generators were not pointed at privileged/person-level data.
+
+None of these residuals changes the local engineering gate result, but each remains an explicit
+deployment or maintenance control.
 
 ## External Blockers
 
-1. Docker Engine is running, so the former `dockerInference` runtime blocker is resolved. The
-   current blocker is target identity, not Docker availability.
-2. The supplied containers use project label `mekusharim`. Most service-container labels reported
-   the exact workdir `C:\Users\nadav\OneDrive\Desktop\Applications Development\CHABAD App\chabad-app\.superpowers\worktrees\founder-acceptance-design-v1`, not this CRM worktree. The
-   database container did not carry that workdir label. The config read at the labelled path declared
-   `project_id = "mekusharim"`. The read-only database inventory contained 32 unrelated public
-   tables, 47 policies and 39 public functions; the catalog row estimate across those tables was
-   293. Fourteen of the 17 required CRM surfaces were absent and `app_private` did not exist.
-3. Host ports 54321 through 54324 were published on `0.0.0.0` and `[::]`; the prepared identity
-   guard requires exact loopback bindings. Exactly four `shabbat-hosting` container metadata records
-   on ports 55321 through 55324 were fingerprinted before and after to prove exclusion and unchanged
-   identity. No exec, database query, network request, stop, restart, mutation, migration, cleanup,
-   or volume action targeted that stack.
-4. The prepared runner accepts only a unique `mekarvim-security-g5-*` disposable project. Its
-   `resetToLegacy()` drops `public` and `app_private` with `CASCADE`; attaching it to the supplied
-   stack would destroy unrelated application schema/data and violate the reviewed safety boundary.
-   The independent read-only review returned NO-GO for mutation.
-5. The required next action is to provide the correct disposable CRM G5 stack with reviewed config,
-   exact loopback-only bindings and the expected legacy schema, or explicitly authorize the
-   prepared runner to create its own unique isolated project and port set. Do not repurpose the
-   current CHABAD App database and do not weaken the target guard.
-6. After an isolated target is proven, capture the required pre-migration snapshot/backup, then
-   execute the guarded G5 orchestrator in the sole approved order `0018` through `0024`, stopping on
-   any failed verification.
-7. Complete all 19 currently skipped live cases, including direct-JWT/PostgREST RLS, cross-tenant,
-   IDOR/BOLA, audit, finance parity, cleanup, and post-cleanup posture evidence.
-8. Enable and validate Supabase TOTP/AAL2, password recovery, redirect, refresh, revocation, disabled
-   user, and stale-security-version behavior in the isolated target.
-9. Verify staging headers/HSTS and configured Anthropic, private Sheets, private-or-disabled GitHub,
-   push, scheduler, Firebase restrictions, and mobile-device behavior without using Production.
-10. Confirm provider credential rotation/restriction status in the relevant consoles. Values must not
-    be copied into reports or Git.
-11. After all controlled evidence is green, obtain independent security review and explicit owner
-    authorization before any Production migration, deployment, or real-data use.
+No blocker remains for the requested local G5 and G6 closeout. Production access, deployment,
+release signing, remote migration and real-data use remain prohibited and were not attempted.
 
 ## Rollback
 
-No rollback was executed. Database rollback is authorized only for the disposable/pre-cutover test
-state after exact backup and guard checks. It uses
-`migrations/rollback/0018-0024-pre-cutover.sql` in reverse order and never restores a permissive
-policy as an emergency shortcut.
-
-| Migration/change | Pre-cutover rollback contract |
-| --- | --- |
-| `0024_finance_security` | Disable finance/export paths, remove the aggregate function and its narrow grants/audit dependencies after verifying no dependent use |
-| `0023_notifications_security` | Disable delivery, remove event RPC/index/UUID-only ownership additions only after dependency and data guards pass |
-| `0022_tours_security` | Disable tour mutations, remove report RPC, constraints/indexes, then added columns; do not retry or drop around written data |
-| `0021_meetings_security` | Disable reminder scheduling, remove cancel RPC, constraints/indexes, then added columns after idempotency/data guards |
-| `0020_security_rpcs` | Revoke/expire application sessions and disable BFF auth before removing service RPCs; never fall back to browser JWT auth |
-| `0019_security_rls` | Remove hardened policies before helper functions only in the disposable restore path; do not re-enable broad legacy policies with sensitive data |
-| `0018_security_foundation` | Allowed only when no application session or new-column-only data exists; otherwise restore the verified backup and revert application commits |
-
-Major dependency rollback points are exact commits:
-
-| Commit | Rollback consequence |
-| --- | --- |
-| `416cdb1a7027d0418960c81e65daa4c13a64cee6` | Reverts the initial Critical web dependency remediation; real-data use remains blocked until a safe alternative is verified |
-| `d6c401d7f8263317440d1169033f834a3658acbe` | Reverts the jsPDF 4.2.1 upgrade and compatibility suite; PDF/report use remains disabled until replaced safely |
-| `6e3a950c52bc18f7e29730b0e6443762f75b81c1` | Reverts the Next 16.3.3/PostCSS remediation; deployment remains blocked until patched replacement evidence exists |
-| `6886311e4e803ed6034cbbb01655ba7d2fa75ab8` | Reverts the ExcelJS UUID 11.1.1 override; spreadsheet use remains blocked until a safe compatibility path is verified |
-
-Git rollback is a normal revert of the relevant branch commit after review. It is not a reset,
-history rewrite, force push, Production action, or permission to restore an insecure client path.
+The G5 sequence proved its reverse rollback before a clean final forward application. The disposable
+database was then fixture-cleaned and destroyed, so no G5 database state remains to roll back.
+Source rollback remains commit-scoped on `security/hardening-p0`; no force push, history rewrite,
+merge to `main` or Production deployment occurred.
 
 ## Final Verdict
 
-NOT READY FOR REAL SENSITIVE DATA
+READY FOR SECURITY REVIEW
