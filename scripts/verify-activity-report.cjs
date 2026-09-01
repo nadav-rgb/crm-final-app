@@ -83,6 +83,41 @@ const AUG = { year: 2026, month: 7 }; // month 0-indexed, אוגוסט = 7
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// בונוס-תורני ב-BONUS_CATEGORIES — רגרסיה ל-Task 5: deriveActivityByType נכתב
+// (Task 1, commit dfee0c7) *לפני* המיזוג עם fix/feedback-2026-08 (payment rules
+// overhaul, commit 16b32bd) שהוסיף את סוג הבונוס 'בונוס-תורני' ל-calcMonthlyPayment
+// (deriveToraniBonuses ב-lib/paymentCalc.js). בלי 'בונוס-תורני' ב-BONUS_CATEGORIES,
+// breakdown.push({type:'בונוס-תורני', ...}) לא תואם אף קטגוריה — הבונוס נעלם בשקט
+// מ-bonusRows/grandTotal של הדוח, כשה-total האמיתי (המוצג בעמוד) עדיין כולל אותו.
+// שני חלקים: (א) יחידה — report סינתטי, בסגנון בלוק "קיבוץ תוספות" למעלה. (ב)
+// אינטגרציה — calcMonthlyPayment אמיתי (כמו שהעמודים בפועל קוראים לו), מוודא
+// שה-invariant שנשבר (grandTotal של הדוח = total של calcMonthlyPayment) מוחזק.
+// ────────────────────────────────────────────────────────────────────────────
+{
+  const report = {
+    breakdown: [
+      { type: 'בונוס-חדש', contactId: 2, contactName: 'אבנט קליינר', amount: 250, desc: 'הביא משתתף חדש דרך אבנט קליינר' },
+      { type: 'בונוס-תורני', contactId: 4, contactName: 'משה עמית', amount: 1000, desc: 'השלים 3 חודשים רצופים של קשר תורני' },
+    ],
+    unpaid: [],
+  };
+  const data = deriveActivityByType(report, 0, 0);
+  check('בונוס-תורני מופיע כשורת תוספת נפרדת (לא נעלם, לא מתמזג עם קטגוריה אחרת)',
+    data.bonusRows.map(r => r.label), ['בונוס משתתף חדש', 'בונוס תורני']);
+  check('בונוס תורני: כמות 1, פירוט = desc, סכום 1000',
+    data.bonusRows[1], { label: 'בונוס תורני', count: 1, detail: 'השלים 3 חודשים רצופים של קשר תורני', amount: 1000 });
+  check('grandTotal כולל את הבונוס התורני (250 + 1000)', data.grandTotal, 250 + 1000);
+}
+{
+  const report = calcMonthlyPayment(7, [], contacts, [], [], DEFAULTS, new Set(), AUG,
+    [{ activist_id: 7, contact_id: 1, contactName: 'יוסי כהן', amount: 1000, desc: 'השלים 3 חודשים רצופים של קשר תורני', month: '2026-7' }]);
+  const data = deriveActivityByType(report, 0, 0, DEFAULTS);
+  check('אינטגרציה: calcMonthlyPayment.total כולל בונוס תורני', report.total, 1000);
+  check('אינטגרציה: deriveActivityByType.grandTotal תואם בדיוק ל-calcMonthlyPayment.total (לא 0 — הבאג שתוקן)',
+    data.grandTotal, report.total);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // unpaidByReason מקבץ כמה סיבות שונות בנפרד, לא מציג רק את הראשונה.
 // ────────────────────────────────────────────────────────────────────────────
 {
