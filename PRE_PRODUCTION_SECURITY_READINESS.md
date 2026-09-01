@@ -49,7 +49,8 @@ scratch from the same implementation checkpoint plus evidence-only documentation
 | `npm audit --json` | PASS | 0 Critical / High / Moderate / Low; 310 dependency records |
 | `npm audit --omit=dev --json` | PASS | 0 Critical / High / Moderate / Low; 310 dependency records |
 | Android static hardening | PASS | 6/6 |
-| Android debug/unit build | PASS | 169 actionable tasks; 82 executed; 87 up-to-date |
+| Capacitor Android sync | PASS | Pinned CLI generated the ignored bridge files required by a clean worktree |
+| Android debug/unit build | PASS | 169 actionable tasks; 169 executed; BUILD SUCCESSFUL |
 | Android release guard | EXPECTED FAIL | Missing `android/keystore.properties`; no debug-signing fallback |
 | `git diff --check` | PASS | No whitespace errors before documentation commit |
 
