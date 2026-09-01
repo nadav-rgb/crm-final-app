@@ -74,7 +74,8 @@ const SAFE_FINANCE_ALLOWED_ACTORS = Object.freeze([
 ]);
 const SAFE_FINANCE_PARITY_FIELDS = Object.freeze([
   'row-count', 'user-id', 'name', 'period', 'activity-total', 'bonus-total',
-  'tour-total', 'expense-total', 'grand-total',
+  'tour-total', 'expense-total', 'grand-total', 'activity-by-type',
+  'bonus-by-type', 'unpaid-by-reason',
 ]);
 const SAFE_LIVE_CHECKPOINTS = Object.freeze([
   'finance-deny-cross-project',

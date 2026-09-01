@@ -6,7 +6,7 @@ import { toPaymentConfigDto } from '../../lib/security/domains/finance.mjs';
 import { assertSafeTestTarget } from './verify-rls-live.mjs';
 
 const require = createRequire(import.meta.url);
-const { calcMonthlyPayment, deriveMitzvotBonuses } = require('../../lib/paymentCalc.js');
+const { calcMonthlyPayment, deriveMitzvotBonuses, deriveToraniBonuses } = require('../../lib/paymentCalc.js');
 
 export const MIGRATION_SEQUENCE = Object.freeze([
   '0018', '0019', '0020', '0021', '0022', '0023', '0024',
@@ -120,7 +120,7 @@ const MIGRATION_VERIFICATIONS = Object.freeze({
       then 'pass' else 'fail' end`),
     migrationCheck('0024', 'projection-allowlisted', `select case when
       pg_get_function_result('public.app_finance_summary(text,integer,uuid)'::regprocedure)
-      = 'TABLE(user_id uuid, name text, period text, activity_total numeric, bonus_total numeric, tour_total numeric, expense_total numeric, grand_total numeric)'
+      = 'TABLE(user_id uuid, name text, period text, activity_total numeric, bonus_total numeric, tour_total numeric, expense_total numeric, grand_total numeric, activity_by_type jsonb, bonus_by_type jsonb, unpaid_by_reason jsonb)'
       then 'pass' else 'fail' end`),
     migrationCheck('0024', 'audit-atomic-and-redacted', `select case when
       position('insert into app_private.audit_events' in lower(pg_get_functiondef('public.app_finance_summary(text,integer,uuid)'::regprocedure))) > 0
@@ -264,6 +264,12 @@ export function buildLegacyFixtureRows(runId, actorIds) {
   const contactA = 910001;
   const contactA2 = 910002;
   const contactB = 910003;
+  const contactFriendlyExpired = 910004;
+  const contactToraniTransition = 910005;
+  const contactFriendlyCap = 910006;
+  const contactToraniStreak = 910007;
+  const contactCancelledStreak = 910008;
+  const contactShort = 910009;
   const meetingA = `security-${runId}-meeting-a`;
   const meetingB = `security-${runId}-meeting-b`;
   const tourA = `security-${runId}-tour-a`;
@@ -291,7 +297,10 @@ export function buildLegacyFixtureRows(runId, actorIds) {
       {
         id: contactA, project_id: projectA, activist_id: codes.activistA1,
         name: 'Synthetic Contact A1', high_potential: true,
-        mitzvot_history: [{ mitzva: 'synthetic', from: 0, to: 1, date: '2026-08-10' }],
+        mitzvot_history: [
+          { mitzva: 'synthetic', from: 0, to: 1, date: '2026-08-10' },
+          { mitzva: 'synthetic', from: 1, to: 3, date: '2026-08-20' },
+        ],
         joined_at: '2026-08-02', source: 'external', security_run_id: runId,
       },
       {
@@ -304,6 +313,18 @@ export function buildLegacyFixtureRows(runId, actorIds) {
         name: 'Synthetic Contact B1', high_potential: false,
         mitzvot_history: [], joined_at: '2026-08-04', source: 'internal', security_run_id: runId,
       },
+      ...[
+        [contactFriendlyExpired, '2026-05-01'],
+        [contactToraniTransition, '2026-07-01'],
+        [contactFriendlyCap, '2026-08-01'],
+        [contactToraniStreak, '2026-06-01'],
+        [contactCancelledStreak, '2026-06-01'],
+        [contactShort, '2026-08-01'],
+      ].map(([id, joined_at]) => ({
+        id, project_id: projectA, activist_id: codes.activistA1,
+        name: `Synthetic Finance Contact ${id}`, high_potential: false,
+        mitzvot_history: [], joined_at, source: 'internal', security_run_id: runId,
+      })),
     ],
     interactions: [
       {
@@ -321,6 +342,24 @@ export function buildLegacyFixtureRows(runId, actorIds) {
         activist_id: codes.activistB1, type: 'וידאו', quality: 'ידידותי',
         duration_minutes: 30, date: '2026-08-07', participants: {}, security_run_id: runId,
       },
+      ...[
+        [920004, contactFriendlyExpired, 'וידאו', 'ידידותי', '2026-08-04'],
+        [920005, contactToraniTransition, 'וידאו', 'תורני', '2026-08-15'],
+        [920006, contactToraniTransition, 'טלפוני', 'ידידותי', '2026-08-16'],
+        [920007, contactFriendlyCap, 'פרונטלי', 'ידידותי', '2026-08-01'],
+        [920008, contactFriendlyCap, 'פרונטלי', 'ידידותי', '2026-08-02'],
+        [920009, contactFriendlyCap, 'פרונטלי', 'ידידותי', '2026-08-03'],
+        [920010, contactToraniStreak, 'טלפוני', 'תורני', '2026-06-10'],
+        [920011, contactToraniStreak, 'וידאו', 'תורני', '2026-07-10'],
+        [920012, contactToraniStreak, 'טלפוני', 'תורני', '2026-08-10'],
+        [920013, contactCancelledStreak, 'טלפוני', 'תורני', '2026-06-11'],
+        [920014, contactCancelledStreak, 'וידאו', 'תורני', '2026-07-11'],
+        [920015, contactCancelledStreak, 'וידאו', 'תורני', '2026-08-11'],
+        [920016, contactShort, 'קצרצר', 'ידידותי', '2026-08-05'],
+      ].map(([id, contact_id, type, quality, date]) => ({
+        id, contact_id, project_id: projectA, activist_id: codes.activistA1,
+        type, quality, duration_minutes: 20, date, participants: {}, security_run_id: runId,
+      })),
     ],
     base_meeting_reports: [
       { id: randomUUID(), project_id: projectA, activist_id: codes.activistA1, security_run_id: runId },
@@ -366,6 +405,7 @@ export function buildLegacyFixtureRows(runId, actorIds) {
     ],
     bonus_cancellations: [
       { id: randomUUID(), project_id: projectA, activist_id: codes.activistA2, cancelled_by: codes.coordA, bonus_key: `${codes.activistA2}|synthetic|2026-7`, security_run_id: runId },
+      { id: randomUUID(), project_id: projectA, activist_id: codes.activistA1, cancelled_by: codes.coordA, bonus_key: `${codes.activistA1}|בונוס-תורני|${contactCancelledStreak}|2026-7`, security_run_id: runId },
     ],
     payment_config: [{
       id: 1,
@@ -410,12 +450,81 @@ function sum(rows, selector) {
   return rows.reduce((total, row) => total + Number(selector(row) ?? 0), 0);
 }
 
+const FINANCE_ACTIVITY_CATEGORIES = Object.freeze([
+  ['phone-friendly', 'טלפוני-ידידותי', 'טלפוני', 'ידידותי'],
+  ['phone-torani', 'טלפוני-תורני', 'טלפוני', 'תורני'],
+  ['video-friendly', 'וידאו-ידידותי', 'וידאו', 'ידידותי'],
+  ['video-torani', 'וידאו-תורני', 'וידאו', 'תורני'],
+  ['frontal-friendly', 'פרונטלי-ידידותי', 'פרונטלי', 'ידידותי'],
+  ['frontal-torani', 'פרונטלי-תורני', 'פרונטלי', 'תורני'],
+  ['frontal-multi', 'פרונטלי-רב משתתפים', 'פרונטלי', 'רב משתתפים'],
+  ['shabbat-hosting', 'אירוח שבת', 'אירוח שבת', null],
+]);
+
+const FINANCE_BONUS_TYPES = Object.freeze([
+  'בונוס-לימוד-4', 'בונוס-לימוד-6', 'בונוס-מצוות', 'בונוס-חדש', 'בונוס-תורני',
+]);
+
+const UNPAID_LABELS = Object.freeze({
+  'short-contact': 'קשר קצרצר — אינו מזכה בתשלום',
+  'min-duration': 'פחות ממשך המינימום',
+  'friendly-window': 'קשר ידידותי מעבר לחלון הזכאות',
+  'torani-transition': 'הלקוח כבר עבר לקשר תורני',
+  'friendly-frontal-cap': 'חריגה ממכסת ידידותי-פרונטלי',
+  'monthly-cap': 'חריגה מהמכסה החודשית',
+  'contact-cap': 'חריגה מהמכסה מול לקוח',
+  'unknown-type': 'סוג קשר אינו מזכה',
+  'not-payable': 'הקשר אינו מזכה בתשלום',
+});
+
+function unpaidReasonKey(reason = '') {
+  if (reason.includes('קשר קצרצר')) return 'short-contact';
+  if (reason.includes('פחות מ-')) return 'min-duration';
+  if (reason.includes('מעבר לחלון הזכאות')) return 'friendly-window';
+  if (reason.includes('כבר עבר לקשר תורני')) return 'torani-transition';
+  if (reason.includes('מכסת 2 קשרים ידידותיים-פרונטליים')) return 'friendly-frontal-cap';
+  if (reason.includes('חודשית') || reason.includes('חודשיים') || reason.includes('רב-משתתפים')) return 'monthly-cap';
+  if (reason.includes('עם לקוח זה')) return 'contact-cap';
+  if (reason.includes('סוג קשר')) return 'unknown-type';
+  return 'not-payable';
+}
+
+function financeAggregateProjection(payment, config) {
+  const paid = payment.breakdown.filter((entry) => entry.type === 'קשר');
+  const activity_by_type = FINANCE_ACTIVITY_CATEGORIES.map(([key, configKey, type, quality]) => {
+    const count = paid.filter((entry) => entry.interactionType === type
+      && (quality === null || entry.quality === quality)).length;
+    const unitRate = Number(config.BASE_PRICES[configKey] ?? 0);
+    return { key, count, unitRate, total: count * unitRate };
+  });
+  const bonus_by_type = FINANCE_BONUS_TYPES.map((type) => {
+    const entries = payment.breakdown.filter((entry) => entry.type === type);
+    return { type, count: entries.length, total: sum(entries, (entry) => entry.amount) };
+  }).filter((entry) => entry.count > 0);
+  const unpaidCounts = new Map();
+  for (const entry of payment.unpaid) {
+    const key = unpaidReasonKey(entry.reason);
+    unpaidCounts.set(key, (unpaidCounts.get(key) ?? 0) + 1);
+  }
+  const unpaid_by_reason = [...unpaidCounts.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([reason, count]) => ({ reason, label: UNPAID_LABELS[reason], count }));
+  return { activity_by_type, bonus_by_type, unpaid_by_reason };
+}
+
 export function computeDeterministicFinanceExpected({ runId, actorIds }) {
   const fixture = buildLegacyFixtureRows(runId, actorIds);
-  const config = toPaymentConfigDto(fixture.payment_config[0]);
+  const config = toPaymentConfigDto({
+    ...fixture.payment_config[0],
+    // Migration 0024 is applied after the legacy fixture is seeded.
+    rate_phone_friendly: 0,
+    rate_phone_torani: 150,
+    rate_video_torani: 200,
+  });
   const period = '2026-08';
   const periodInput = { year: 2026, month: 7 };
   const mitzvot = deriveMitzvotBonuses(fixture.contacts, config.MITZVOT_BONUS_PER_LEVEL);
+  const torani = deriveToraniBonuses(fixture.interactions, fixture.contacts, 1000, 3, config);
   const newParticipants = fixture.contacts
     .filter((contact) => inPeriod(contact.joined_at, period)
       && (contact.source === 'external' || contact.referred_by != null))
@@ -442,6 +551,8 @@ export function computeDeterministicFinanceExpected({ runId, actorIds }) {
       config,
       cancelled,
       periodInput,
+      torani.filter((bonus) => Number(bonus.activist_id) === Number(profile.activist_code)
+        && bonus.month === '2026-7'),
     );
     const activityTotal = sum(payment.breakdown.filter((entry) => entry.type === 'קשר'), (entry) => entry.amount);
     const bonusTotal = sum(payment.breakdown.filter((entry) => entry.type !== 'קשר'), (entry) => entry.amount);
@@ -460,6 +571,7 @@ export function computeDeterministicFinanceExpected({ runId, actorIds }) {
       tour_total: tourTotal,
       expense_total: expenseTotal,
       grand_total: activityTotal + bonusTotal + tourTotal + expenseTotal,
+      ...financeAggregateProjection(payment, config),
       project_id: profile.project_id,
     };
   }).sort((left, right) => left.name.localeCompare(right.name) || left.user_id.localeCompare(right.user_id));

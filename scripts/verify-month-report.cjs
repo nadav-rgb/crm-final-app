@@ -5,7 +5,7 @@ const {
   beginOperation,
   createGuardedSupabase,
 } = require('./security/operational-guard.cjs');
-const { calcMonthlyPayment, deriveMitzvotBonuses } = require('../lib/paymentCalc.js');
+const { calcMonthlyPayment, deriveMitzvotBonuses, deriveToraniBonuses } = require('../lib/paymentCalc.js');
 
 const operation = beginOperation({ scriptName: 'verify-month-report' });
 const [rawYear, rawMonth] = operation.positional;
@@ -55,6 +55,7 @@ async function main() {
       return { activist_id: contact.activist_id, contact_id: contact.id, month: `${date.getFullYear()}-${date.getMonth()}` };
     });
   const mitzvot = deriveMitzvotBonuses(contacts);
+  const toraniBonuses = deriveToraniBonuses(interactions, contacts);
   const paid = activists.filter((entry) => entry.role === 'activist')
     .map((entry) => Number(entry.activist_code)).filter(Number.isSafeInteger);
   let rows = 0;
@@ -65,6 +66,7 @@ async function main() {
       mitzvot.filter((bonus) => Number(bonus.activist_id) === activistId && bonus.month === monthKey),
       participantBonuses.filter((bonus) => Number(bonus.activist_id) === activistId && bonus.month === monthKey),
       undefined, cancelled, { year, month: monthIndex },
+      toraniBonuses.filter((bonus) => Number(bonus.activist_id) === activistId && bonus.month === monthKey),
     );
     const expensesTotal = expenses.filter((entry) => Number(entry.activist_id) === activistId && entry.date >= start && entry.date < end)
       .reduce((sum, entry) => sum + Number(entry.amount ?? 0), 0);

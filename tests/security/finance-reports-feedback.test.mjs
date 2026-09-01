@@ -42,7 +42,11 @@ test('finance payment projection exposes aggregate fields only and strips contac
   });
   assert.deepEqual(Object.keys(dto), [
     'userId', 'name', 'period', 'activityTotal', 'bonusTotal', 'tourTotal', 'expenseTotal', 'grandTotal',
+    'activityByType', 'bonusByType', 'unpaidByReason',
   ]);
+  assert.deepEqual(dto.activityByType, []);
+  assert.deepEqual(dto.bonusByType, []);
+  assert.deepEqual(dto.unpaidByReason, []);
   assert.doesNotMatch(JSON.stringify(dto), /0500000000|secret|Hidden|mitzvot/);
 });
 

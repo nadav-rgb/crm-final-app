@@ -267,8 +267,9 @@ test('legacy fixture rows exercise owner backfills for both tenants using exact 
   const fixture = buildLegacyFixtureRows(runId, actorIds);
   assert.deepEqual(fixture.projects.map((row) => row.id), [1, 2]);
   assert.equal(fixture.profiles.length, 10);
-  assert.equal(fixture.contacts.length, 3);
-  assert.equal(fixture.interactions.length >= 3, true);
+  assert.equal(fixture.contacts.length, 9);
+  assert.equal(fixture.interactions.length, 16);
+  assert.equal(fixture.bonus_cancellations.length, 2);
   assert.equal(fixture.meeting_reminders.length >= 2, true);
   assert.equal(fixture.tours.length, 3);
   assert.equal(fixture.tours[0].date.startsWith('2026-08'), true);
@@ -390,17 +391,44 @@ test('finance parity is computed in-process from the deterministic fixture and e
     runId: createSecurityRunId(),
     actorIds,
   });
+  const activityByType = (counts = {}) => [
+    ['phone-friendly', 0], ['phone-torani', 150], ['video-friendly', 14],
+    ['video-torani', 200], ['frontal-friendly', 18], ['frontal-torani', 20],
+    ['frontal-multi', 22], ['shabbat-hosting', 24],
+  ].map(([key, unitRate]) => ({
+    key,
+    count: counts[key] ?? 0,
+    unitRate,
+    total: (counts[key] ?? 0) * unitRate,
+  }));
 
   assert.deepEqual(expected.projectA, [
     {
       user_id: actorIds.activistA1,
       name: 'Synthetic activistA1',
       period: '2026-08',
-      activity_total: 10,
-      bonus_total: 12,
+      activity_total: 586,
+      bonus_total: 1012,
       tour_total: 0,
       expense_total: 17,
-      grand_total: 39,
+      grand_total: 1615,
+      activity_by_type: activityByType({
+        'phone-friendly': 1,
+        'phone-torani': 1,
+        'video-torani': 2,
+        'frontal-friendly': 2,
+      }),
+      bonus_by_type: [
+        { type: 'בונוס-מצוות', count: 1, total: 5 },
+        { type: 'בונוס-חדש', count: 1, total: 7 },
+        { type: 'בונוס-תורני', count: 1, total: 1000 },
+      ],
+      unpaid_by_reason: [
+        { reason: 'friendly-frontal-cap', label: 'חריגה ממכסת ידידותי-פרונטלי', count: 1 },
+        { reason: 'friendly-window', label: 'קשר ידידותי מעבר לחלון הזכאות', count: 1 },
+        { reason: 'short-contact', label: 'קשר קצרצר — אינו מזכה בתשלום', count: 1 },
+        { reason: 'torani-transition', label: 'הלקוח כבר עבר לקשר תורני', count: 1 },
+      ],
     },
     {
       user_id: actorIds.activistA2,
@@ -411,6 +439,9 @@ test('finance parity is computed in-process from the deterministic fixture and e
       tour_total: 0,
       expense_total: 0,
       grand_total: 20,
+      activity_by_type: activityByType({ 'frontal-torani': 1 }),
+      bonus_by_type: [],
+      unpaid_by_reason: [],
     },
     {
       user_id: actorIds.staleSecurityVersion,
@@ -421,6 +452,9 @@ test('finance parity is computed in-process from the deterministic fixture and e
       tour_total: 0,
       expense_total: 0,
       grand_total: 0,
+      activity_by_type: activityByType(),
+      bonus_by_type: [],
+      unpaid_by_reason: [],
     },
   ]);
   assert.deepEqual(expected.projectB, [{
@@ -432,6 +466,9 @@ test('finance parity is computed in-process from the deterministic fixture and e
     tour_total: 0,
     expense_total: 19,
     grand_total: 33,
+    activity_by_type: activityByType({ 'video-friendly': 1 }),
+    bonus_by_type: [],
+    unpaid_by_reason: [],
   }]);
   assert.deepEqual(expected.byActor.activistA, expected.projectA.slice(0, 1));
   assert.deepEqual(expected.byActor.headAal2, expected.projectA);

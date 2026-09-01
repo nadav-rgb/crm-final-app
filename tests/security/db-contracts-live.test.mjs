@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { isDeepStrictEqual } from 'node:util';
 import { createClient } from '@supabase/supabase-js';
 import { computeDeterministicFinanceExpected } from '../../scripts/security/provision-test-fixtures.mjs';
 import {
@@ -53,8 +54,9 @@ function observeG5CaseInTest(testContext, caseId, actualStatus) {
 }
 
 const financeKeys = [
-  'activity_total', 'bonus_total', 'expense_total', 'grand_total',
-  'name', 'period', 'tour_total', 'user_id',
+  'activity_by_type', 'activity_total', 'bonus_by_type', 'bonus_total',
+  'expense_total', 'grand_total', 'name', 'period', 'tour_total',
+  'unpaid_by_reason', 'user_id',
 ];
 
 function assertFinanceProjection(rows) {
@@ -67,7 +69,7 @@ function financeParityMismatch(actual, expected) {
   }
   for (let index = 0; index < expected.length; index += 1) {
     for (const key of financeKeys) {
-      if (!Object.is(actual[index]?.[key], expected[index]?.[key])) {
+      if (!isDeepStrictEqual(actual[index]?.[key], expected[index]?.[key])) {
         return key.replaceAll('_', '-');
       }
     }

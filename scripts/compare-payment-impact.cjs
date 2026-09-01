@@ -90,6 +90,7 @@ async function main() {
     });
   const newMitzvot = current.deriveMitzvotBonuses(contacts);
   const oldMitzvot = deriveMitzvotBonusesLegacy(contacts, current.MITZVOT_BONUS_PER_LEVEL);
+  const toraniBonuses = current.deriveToraniBonuses(interactions, contacts);
   const paid = activists.filter((entry) => entry.role === 'activist')
     .map((entry) => Number(entry.activist_code)).filter(Number.isSafeInteger);
   const differences = [];
@@ -108,6 +109,7 @@ async function main() {
       newMitzvot.filter((bonus) => Number(bonus.activist_id) === activistId && bonus.month === monthKey),
       newParticipantBonuses.filter((bonus) => Number(bonus.activist_id) === activistId && bonus.month === monthKey),
       current.DEFAULTS, cancelledKeys, period,
+      toraniBonuses.filter((bonus) => Number(bonus.activist_id) === activistId && bonus.month === monthKey),
     );
     oldTotal += oldResult.total;
     newTotal += newResult.total;

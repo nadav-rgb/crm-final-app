@@ -115,7 +115,10 @@ test('0024 finance summary narrows scope and returns only the approved projectio
 
   assert.match(fn, /p_period\s+text[\s\S]*p_project_id\s+integer[\s\S]*p_user_id\s+uuid/i);
   assert.match(fn, /p_period\s*!~\s*'\^\\d\{4\}-\(0\[1-9\]\|1\[0-2\]\)\$'/i);
-  for (const column of ['user_id', 'name', 'period', 'activity_total', 'bonus_total', 'tour_total', 'expense_total', 'grand_total']) {
+  for (const column of [
+    'user_id', 'name', 'period', 'activity_total', 'bonus_total', 'tour_total',
+    'expense_total', 'grand_total', 'activity_by_type', 'bonus_by_type', 'unpaid_by_reason',
+  ]) {
     assert.match(fn, new RegExp(`\\b${column}\\b`, 'i'));
   }
   for (const forbidden of ['phone', 'notes', 'mitzvot_history', 'interaction_text', 'contact_name']) {

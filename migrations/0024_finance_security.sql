@@ -1,7 +1,15 @@
 -- SECURITY HARDENING: WRITTEN ONLY. DO NOT RUN OUTSIDE THE APPROVED G5 TEST PROJECT.
 -- Aggregated finance projection. The function owner may read source tables, but
--- callers receive only the eight explicitly declared output columns below.
+-- callers receive only the explicitly declared field-minimized output below.
 begin;
+
+-- Current-main approved rates. This is part of the unapplied Finance cutover,
+-- replacing the removed browser/admin mutation script with a reviewed migration.
+update public.payment_config
+set rate_phone_friendly = 0,
+    rate_phone_torani = 150,
+    rate_video_torani = 200
+where id = 1;
 
 create or replace function public.app_finance_summary(
   p_period text,
@@ -15,7 +23,10 @@ create or replace function public.app_finance_summary(
   bonus_total numeric,
   tour_total numeric,
   expense_total numeric,
-  grand_total numeric
+  grand_total numeric,
+  activity_by_type jsonb,
+  bonus_by_type jsonb,
+  unpaid_by_reason jsonb
 )
 language plpgsql security definer
 set search_path = pg_catalog, public, app_private
@@ -47,9 +58,21 @@ declare
   v_multi_count integer;
   v_contact_phone jsonb;
   v_contact_frontal jsonb;
+  v_contact_friendly_frontal jsonb;
   v_contact_key text;
   v_contact_phone_count integer;
   v_contact_frontal_count integer;
+  v_contact_friendly_frontal_count integer;
+  v_category_key text;
+  v_recognized boolean;
+  v_unpaid_reason text;
+  v_activity_counts jsonb;
+  v_unpaid_counts jsonb;
+  v_mitzvot_count integer;
+  v_new_count integer;
+  v_torani_count integer;
+  v_learning_4_count integer;
+  v_learning_6_count integer;
   v_bonus_key text;
   v_row_count integer := 0;
 begin
@@ -158,6 +181,19 @@ begin
     v_multi_count := 0;
     v_contact_phone := '{}'::jsonb;
     v_contact_frontal := '{}'::jsonb;
+    v_contact_friendly_frontal := '{}'::jsonb;
+    v_activity_counts := jsonb_build_object(
+      'phone-friendly', 0, 'phone-torani', 0,
+      'video-friendly', 0, 'video-torani', 0,
+      'frontal-friendly', 0, 'frontal-torani', 0,
+      'frontal-multi', 0, 'shabbat-hosting', 0
+    );
+    v_unpaid_counts := '{}'::jsonb;
+    v_mitzvot_count := 0;
+    v_new_count := 0;
+    v_torani_count := 0;
+    v_learning_4_count := 0;
+    v_learning_6_count := 0;
 
     -- Same allocation order as paymentCalc.js: price descending, date ascending,
     -- then stable row id. Only paid interactions consume monthly/contact caps.
@@ -165,6 +201,39 @@ begin
       select i.id, i.contact_id, i.type, i.quality,
              coalesce(i.duration_minutes, 0) as duration_minutes, i.date,
              coalesce(c.high_potential, false) as is_high_potential,
+             coalesce(
+               c.joined_at,
+               (
+                 select min(h.date)
+                 from public.interactions h
+                 where h.actor_user_id = v_target.target_user_id
+                   and h.contact_id = i.contact_id
+                   and h.project_id in (1, 2)
+                   and not (coalesce(h.participants, '{}'::jsonb) ? 'derived_from')
+               ),
+               i.date
+             ) as anchor_date,
+             (
+               select min(h.date)
+               from public.interactions h
+               where h.actor_user_id = v_target.target_user_id
+                 and h.contact_id = i.contact_id
+                 and h.project_id in (1, 2)
+                 and h.quality = 'תורני'
+                 and coalesce(h.duration_minutes, 0) >= v_cfg.min_duration_minutes
+                 and not (coalesce(h.participants, '{}'::jsonb) ? 'derived_from')
+             ) as first_torani_date,
+             case
+               when i.type = 'טלפוני' and i.quality = 'ידידותי' then 'phone-friendly'
+               when i.type = 'טלפוני' and i.quality = 'תורני' then 'phone-torani'
+               when i.type = 'וידאו' and i.quality = 'ידידותי' then 'video-friendly'
+               when i.type = 'וידאו' and i.quality = 'תורני' then 'video-torani'
+               when i.type = 'פרונטלי' and i.quality = 'ידידותי' then 'frontal-friendly'
+               when i.type = 'פרונטלי' and i.quality = 'תורני' then 'frontal-torani'
+               when i.type = 'פרונטלי' and i.quality = 'רב משתתפים' then 'frontal-multi'
+               when i.type = 'אירוח שבת' then 'shabbat-hosting'
+               else null
+             end as category_key,
              case
                when i.type = 'אירוח שבת' then v_cfg.rate_shabbat_hosting
                when i.type = 'טלפוני' and i.quality = 'ידידותי' then v_cfg.rate_phone_friendly
@@ -180,36 +249,67 @@ begin
       left join public.contacts c on c.id = i.contact_id
       where i.actor_user_id = v_target.target_user_id
         and i.project_id = any(v_effective_projects)
+        and i.project_id in (1, 2)
         and i.date >= v_start and i.date < v_end
         and not (coalesce(i.participants, '{}'::jsonb) ? 'derived_from')
       order by base_amount desc, i.date asc nulls last, i.id::text asc
     loop
       v_base := coalesce(v_interaction.base_amount, 0);
       v_payable := false;
+      v_category_key := v_interaction.category_key;
+      v_recognized := v_category_key is not null;
+      v_unpaid_reason := null;
       v_contact_key := coalesce(v_interaction.contact_id::text, '');
       v_contact_phone_count := coalesce((v_contact_phone ->> v_contact_key)::integer, 0);
       v_contact_frontal_count := coalesce((v_contact_frontal ->> v_contact_key)::integer, 0);
+      v_contact_friendly_frontal_count := coalesce((v_contact_friendly_frontal ->> v_contact_key)::integer, 0);
 
-      if v_interaction.duration_minutes < v_cfg.min_duration_minutes then
-        v_payable := false;
+      if v_interaction.type = 'קצרצר' then
+        v_unpaid_reason := 'short-contact';
+      elsif v_interaction.duration_minutes < v_cfg.min_duration_minutes then
+        v_unpaid_reason := 'min-duration';
+      elsif v_interaction.quality = 'ידידותי'
+        and ((extract(year from age(v_interaction.date, v_interaction.anchor_date))::integer * 12)
+          + extract(month from age(v_interaction.date, v_interaction.anchor_date))::integer) >= 3 then
+        v_unpaid_reason := 'friendly-window';
+      elsif v_interaction.quality = 'ידידותי'
+        and v_interaction.first_torani_date is not null
+        and v_interaction.first_torani_date <= v_interaction.date then
+        v_unpaid_reason := 'torani-transition';
+      elsif not v_recognized then
+        v_unpaid_reason := 'unknown-type';
       elsif v_interaction.type = 'אירוח שבת' then
         v_payable := true;
       elsif v_interaction.type = 'פרונטלי' and v_interaction.quality = 'רב משתתפים' then
         v_payable := v_multi_count < v_cfg.cap_multi;
-      elsif v_base <= 0 then
-        v_payable := false;
+        if not v_payable then v_unpaid_reason := 'monthly-cap'; end if;
+      elsif v_interaction.type = 'פרונטלי' and v_interaction.quality = 'ידידותי'
+        and v_contact_friendly_frontal_count >= 2 then
+        v_unpaid_reason := 'friendly-frontal-cap';
       elsif v_interaction.type in ('טלפוני','וידאו') then
         v_payable := v_phone_count < v_cfg.cap_phone
           and v_contact_phone_count < case when v_interaction.is_high_potential
             then v_cfg.cap_contact_phone_high else v_cfg.cap_contact_phone_regular end;
+        if not v_payable then
+          v_unpaid_reason := case when v_phone_count >= v_cfg.cap_phone then 'monthly-cap' else 'contact-cap' end;
+        end if;
       elsif v_interaction.type = 'פרונטלי' then
         v_payable := v_frontal_count < v_cfg.cap_frontal
           and v_contact_frontal_count < case when v_interaction.is_high_potential
             then v_cfg.cap_contact_frontal_high else v_cfg.cap_contact_frontal_regular end;
+        if not v_payable then
+          v_unpaid_reason := case when v_frontal_count >= v_cfg.cap_frontal then 'monthly-cap' else 'contact-cap' end;
+        end if;
       end if;
 
       if v_payable then
         v_activity := v_activity + v_base;
+        v_activity_counts := jsonb_set(
+          v_activity_counts,
+          array[v_category_key],
+          to_jsonb(coalesce((v_activity_counts ->> v_category_key)::integer, 0) + 1),
+          true
+        );
         if v_interaction.type = 'פרונטלי' and v_interaction.quality = 'רב משתתפים' then
           v_multi_count := v_multi_count + 1;
         elsif v_interaction.type in ('טלפוני','וידאו') then
@@ -222,7 +322,23 @@ begin
           v_contact_frontal := jsonb_set(
             v_contact_frontal, array[v_contact_key], to_jsonb(v_contact_frontal_count + 1), true
           );
+          if v_interaction.quality = 'ידידותי' then
+            v_contact_friendly_frontal := jsonb_set(
+              v_contact_friendly_frontal,
+              array[v_contact_key],
+              to_jsonb(v_contact_friendly_frontal_count + 1),
+              true
+            );
+          end if;
         end if;
+      else
+        v_unpaid_reason := coalesce(v_unpaid_reason, 'not-payable');
+        v_unpaid_counts := jsonb_set(
+          v_unpaid_counts,
+          array[v_unpaid_reason],
+          to_jsonb(coalesce((v_unpaid_counts ->> v_unpaid_reason)::integer, 0) + 1),
+          true
+        );
       end if;
     end loop;
 
@@ -233,6 +349,7 @@ begin
       from public.interactions i
       where i.actor_user_id = v_target.target_user_id
         and i.project_id = any(v_effective_projects)
+        and i.project_id in (1, 2)
         and i.date >= v_start and i.date < v_end
         and not (coalesce(i.participants, '{}'::jsonb) ? 'derived_from')
         and i.quality = 'תורני' and i.type in ('פרונטלי','וידאו')
@@ -244,24 +361,27 @@ begin
           || coalesce(v_learning.contact_id::text, '') || '|' || v_month_key;
         if not exists (select 1 from public.bonus_cancellations b where b.bonus_key = v_bonus_key) then
           v_bonus := v_bonus + v_cfg.bonus_loyalty_6;
+          v_learning_6_count := v_learning_6_count + 1;
         end if;
       elsif v_learning.learning_count >= 4 then
         v_bonus_key := v_target.activist_code::text || '|בונוס-לימוד-4|'
           || coalesce(v_learning.contact_id::text, '') || '|' || v_month_key;
         if not exists (select 1 from public.bonus_cancellations b where b.bonus_key = v_bonus_key) then
           v_bonus := v_bonus + v_cfg.bonus_loyalty_4;
+          v_learning_4_count := v_learning_4_count + 1;
         end if;
       end if;
     end loop;
 
-    select v_bonus + coalesce(sum(event_count * v_cfg.bonus_mitzvot_level), 0)
-      into v_bonus
+    select coalesce(sum(event_count), 0)::integer
+      into v_mitzvot_count
     from (
-      select c.id, count(*)::numeric as event_count
+      select c.id, count(distinct h ->> 'mitzva')::integer as event_count
       from public.contacts c
       cross join lateral jsonb_array_elements(coalesce(c.mitzvot_history, '[]'::jsonb)) h
       where c.assigned_user_id = v_target.target_user_id
         and c.project_id = any(v_effective_projects)
+        and c.project_id in (1, 2)
         and nullif(h ->> 'mitzva', '') is not null
         and (case when coalesce(h ->> 'to', '') ~ '^-?\d+(?:\.\d+)?$' then (h ->> 'to')::numeric else 0 end)
           > (case when coalesce(h ->> 'from', '') ~ '^-?\d+(?:\.\d+)?$' then (h ->> 'from')::numeric else 0 end)
@@ -276,12 +396,14 @@ begin
         )
       group by c.id
     ) mitzvot_events;
+    v_bonus := v_bonus + (v_mitzvot_count * v_cfg.bonus_mitzvot_level);
 
-    select v_bonus + coalesce(count(*) * v_cfg.bonus_new_participant, 0)
-      into v_bonus
+    select count(*)::integer
+      into v_new_count
     from public.contacts c
     where c.assigned_user_id = v_target.target_user_id
       and c.project_id = any(v_effective_projects)
+      and c.project_id in (1, 2)
       and c.joined_at >= v_start and c.joined_at < v_end
       and (c.source = 'external' or c.referred_by is not null)
       and not exists (
@@ -289,6 +411,44 @@ begin
         where b.bonus_key = v_target.activist_code::text || '|בונוס-חדש|'
           || c.id::text || '|' || v_month_key
       );
+    v_bonus := v_bonus + (v_new_count * v_cfg.bonus_new_participant);
+
+    -- One-time Torani bonus: the third month of the first qualifying
+    -- three-consecutive-calendar-month streak for each activist/contact.
+    with torani_months as (
+      select distinct i.contact_id, date_trunc('month', i.date::timestamp)::date as month_start
+      from public.interactions i
+      join public.contacts c on c.id = i.contact_id
+      where i.actor_user_id = v_target.target_user_id
+        and c.assigned_user_id = v_target.target_user_id
+        and i.project_id = any(v_effective_projects)
+        and i.project_id in (1, 2)
+        and i.quality = 'תורני'
+        and coalesce(i.duration_minutes, 0) >= v_cfg.min_duration_minutes
+        and not (coalesce(i.participants, '{}'::jsonb) ? 'derived_from')
+    ), numbered as (
+      select contact_id, month_start,
+        month_start - (row_number() over (partition by contact_id order by month_start)::integer * interval '1 month') as streak_group
+      from torani_months
+    ), streaks as (
+      select contact_id, min(month_start) as run_start, count(*)::integer as run_length
+      from numbered
+      group by contact_id, streak_group
+    ), first_completions as (
+      select contact_id, min((run_start + interval '2 months')::date) as completion_month
+      from streaks
+      where run_length >= 3
+      group by contact_id
+    )
+    select count(*)::integer into v_torani_count
+    from first_completions completion
+    where completion.completion_month = v_start
+      and not exists (
+        select 1 from public.bonus_cancellations b
+        where b.bonus_key = v_target.activist_code::text || '|בונוס-תורני|'
+          || completion.contact_id::text || '|' || v_month_key
+      );
+    v_bonus := v_bonus + (v_torani_count * 1000);
 
     select coalesce(sum(e.amount), 0) into v_expense
     from public.expenses e
@@ -310,6 +470,57 @@ begin
     tour_total := v_tour;
     expense_total := v_expense;
     grand_total := v_activity + v_bonus + v_tour + v_expense;
+    select coalesce(jsonb_agg(jsonb_build_object(
+      'key', category_key,
+      'count', category_count,
+      'unitRate', unit_rate,
+      'total', category_count * unit_rate
+    ) order by ordinal), '[]'::jsonb)
+      into activity_by_type
+    from (values
+      (1, 'phone-friendly', coalesce((v_activity_counts ->> 'phone-friendly')::integer, 0), v_cfg.rate_phone_friendly),
+      (2, 'phone-torani', coalesce((v_activity_counts ->> 'phone-torani')::integer, 0), v_cfg.rate_phone_torani),
+      (3, 'video-friendly', coalesce((v_activity_counts ->> 'video-friendly')::integer, 0), v_cfg.rate_video_friendly),
+      (4, 'video-torani', coalesce((v_activity_counts ->> 'video-torani')::integer, 0), v_cfg.rate_video_torani),
+      (5, 'frontal-friendly', coalesce((v_activity_counts ->> 'frontal-friendly')::integer, 0), v_cfg.rate_frontal_friendly),
+      (6, 'frontal-torani', coalesce((v_activity_counts ->> 'frontal-torani')::integer, 0), v_cfg.rate_frontal_torani),
+      (7, 'frontal-multi', coalesce((v_activity_counts ->> 'frontal-multi')::integer, 0), v_cfg.rate_multi),
+      (8, 'shabbat-hosting', coalesce((v_activity_counts ->> 'shabbat-hosting')::integer, 0), v_cfg.rate_shabbat_hosting)
+    ) category(ordinal, category_key, category_count, unit_rate);
+
+    select coalesce(jsonb_agg(jsonb_build_object(
+      'type', bonus_type, 'count', bonus_count, 'total', bonus_count * unit_amount
+    ) order by ordinal), '[]'::jsonb)
+      into bonus_by_type
+    from (values
+      (1, 'בונוס-לימוד-4', v_learning_4_count, v_cfg.bonus_loyalty_4),
+      (2, 'בונוס-לימוד-6', v_learning_6_count, v_cfg.bonus_loyalty_6),
+      (3, 'בונוס-מצוות', v_mitzvot_count, v_cfg.bonus_mitzvot_level),
+      (4, 'בונוס-חדש', v_new_count, v_cfg.bonus_new_participant),
+      (5, 'בונוס-תורני', v_torani_count, 1000::numeric)
+    ) bonus(ordinal, bonus_type, bonus_count, unit_amount)
+    where bonus_count > 0;
+
+    select coalesce(jsonb_agg(jsonb_build_object(
+      'reason', reason,
+      'label', case reason
+        when 'short-contact' then 'קשר קצרצר — אינו מזכה בתשלום'
+        when 'min-duration' then 'פחות ממשך המינימום'
+        when 'friendly-window' then 'קשר ידידותי מעבר לחלון הזכאות'
+        when 'torani-transition' then 'הלקוח כבר עבר לקשר תורני'
+        when 'friendly-frontal-cap' then 'חריגה ממכסת ידידותי-פרונטלי'
+        when 'monthly-cap' then 'חריגה מהמכסה החודשית'
+        when 'contact-cap' then 'חריגה מהמכסה מול לקוח'
+        when 'unknown-type' then 'סוג קשר אינו מזכה'
+        else 'הקשר אינו מזכה בתשלום'
+      end,
+      'count', reason_count
+    ) order by reason), '[]'::jsonb)
+      into unpaid_by_reason
+    from (
+      select key as reason, value::integer as reason_count
+      from jsonb_each_text(v_unpaid_counts)
+    ) reasons;
     v_row_count := v_row_count + 1;
     return next;
   end loop;
@@ -366,7 +577,7 @@ begin
   if cardinality(v_parts) <> 4
     or v_parts[1] !~ '^[1-9][0-9]{0,9}$'
     or v_parts[1]::numeric > 2147483647
-    or v_parts[2] not in ('בונוס-לימוד-4','בונוס-לימוד-6','בונוס-מצוות','בונוס-חדש')
+    or v_parts[2] not in ('בונוס-לימוד-4','בונוס-לימוד-6','בונוס-מצוות','בונוס-חדש','בונוס-תורני')
     or v_parts[3] !~ '^[A-Za-z0-9_-]{1,128}$'
     or v_parts[4] !~ '^\d{4}-\d{1,2}$' then
     return false;
@@ -455,7 +666,7 @@ begin
       v_amount := v_cfg.bonus_loyalty_4;
     end if;
   elsif v_bonus_type = 'בונוס-מצוות' then
-    select count(*)::numeric * v_cfg.bonus_mitzvot_level into v_amount
+    select count(distinct h ->> 'mitzva')::numeric * v_cfg.bonus_mitzvot_level into v_amount
     from jsonb_array_elements(coalesce(v_contact.mitzvot_history, '[]'::jsonb)) h
     where nullif(h ->> 'mitzva', '') is not null
       and (case when coalesce(h ->> 'to', '') ~ '^-?\d+(?:\.\d+)?$' then (h ->> 'to')::numeric else 0 end)
@@ -468,6 +679,35 @@ begin
     and v_contact.joined_at >= v_start and v_contact.joined_at < v_end
     and (v_contact.source = 'external' or v_contact.referred_by is not null) then
     v_amount := v_cfg.bonus_new_participant;
+  elsif v_bonus_type = 'בונוס-תורני' and exists (
+    with torani_months as (
+      select distinct date_trunc('month', i.date::timestamp)::date as month_start
+      from public.interactions i
+      where i.actor_user_id = v_contact.assigned_user_id
+        and i.project_id = v_contact.project_id
+        and i.project_id in (1, 2)
+        and i.contact_id::text = v_contact_id
+        and i.quality = 'תורני'
+        and coalesce(i.duration_minutes, 0) >= v_cfg.min_duration_minutes
+        and not (coalesce(i.participants, '{}'::jsonb) ? 'derived_from')
+    ), numbered as (
+      select month_start,
+        month_start - (row_number() over (order by month_start)::integer * interval '1 month') as streak_group
+      from torani_months
+    ), streaks as (
+      select min(month_start) as run_start, count(*)::integer as run_length
+      from numbered
+      group by streak_group
+    ), first_completion as (
+      select min((run_start + interval '2 months')::date) as completion_month
+      from streaks
+      where run_length >= 3
+    )
+    select 1
+    from first_completion
+    where completion_month = v_start
+  ) then
+    v_amount := 1000;
   end if;
 
   if coalesce(v_amount, 0) <= 0 then
