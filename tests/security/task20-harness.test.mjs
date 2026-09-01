@@ -858,6 +858,29 @@ test('PostgreSQL invariants are measured directly and fail closed without caller
   }), /audit|PostgreSQL|assertion/i);
   assert.equal(executed.length, 2);
 
+  database.execute = async () => { throw new Error('sensitive database detail'); };
+  await assert.rejects(() => module.runDirectPostgresAssertions({
+    database, actorId, projectId: 1, expectedRows: 3, period: '2026-08',
+  }), (error) => {
+    assert.match(error.message, /PostgreSQL search-path command failed/i);
+    assert.doesNotMatch(error.message, /sensitive|detail/i);
+    return true;
+  });
+
+  let commandIndex = 0;
+  database.execute = async () => {
+    commandIndex += 1;
+    if (commandIndex === 1) return 'pass';
+    throw new Error('sensitive database detail');
+  };
+  await assert.rejects(() => module.runDirectPostgresAssertions({
+    database, actorId, projectId: 1, expectedRows: 3, period: '2026-08',
+  }), (error) => {
+    assert.match(error.message, /PostgreSQL finance audit command failed/i);
+    assert.doesNotMatch(error.message, /sensitive|detail/i);
+    return true;
+  });
+
   executed.length = 0;
   database.execute = async (sql) => { executed.push(sql); return 'pass'; };
   assert.deepEqual(await module.runDirectPostgresAssertions({

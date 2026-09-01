@@ -1326,7 +1326,9 @@ export async function runDirectPostgresAssertions({
     throw new Error('PostgreSQL assertion refused: direct local database adapter required');
   }
   const claims = JSON.stringify({ sub: actorId, aal: 'aal2', role: 'authenticated' });
-  const searchPathHijack = await database.execute(`begin;
+  let searchPathHijack;
+  try {
+    searchPathHijack = await database.execute(`begin;
 create temporary table payment_config (id integer);
 set local role authenticated;
 do $g5$ begin perform set_config('request.jwt.claims', '${claims}', true); end $g5$;
@@ -1336,11 +1338,16 @@ select case when
     from pg_proc where oid='public.app_finance_summary(text,integer,uuid)'::regprocedure), false)
   then 'pass' else 'fail' end;
 rollback;`);
+  } catch {
+    throw new Error('PostgreSQL search-path command failed');
+  }
   if (searchPathHijack !== 'pass') {
     throw new Error('PostgreSQL search-path assertion failed');
   }
 
-  const financeAuditFailure = await database.execute(`begin;
+  let financeAuditFailure;
+  try {
+    financeAuditFailure = await database.execute(`begin;
 create temporary table g5_atomic_result (value text not null);
 create or replace function pg_temp.g5_block_finance_audit() returns trigger language plpgsql as $$
 begin raise exception 'synthetic audit failure'; end $$;
@@ -1363,6 +1370,9 @@ reset role;
 drop trigger g5_block_finance_audit on app_private.audit_events;
 select value from pg_temp.g5_atomic_result;
 rollback;`);
+  } catch {
+    throw new Error('PostgreSQL finance audit command failed');
+  }
   if (financeAuditFailure !== 'pass') {
     throw new Error('PostgreSQL finance audit atomicity assertion failed');
   }
