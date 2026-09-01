@@ -41,6 +41,27 @@ function buildPdfFixture({ mitzvotRows = 4 } = {}) {
       'האפליקציה עלתה לאוויר לפני כחודש וחצי',
     ],
     summarySentence: 'בטווח שנבחר נרשמו 10 קשרים, ובהם 5 קשרים תורניים.',
+    analytics: {
+      qualityTypeMatrix: {
+        torani: { total: 5, frontal: 3, video: 1, phone: 1, other: 0 },
+        friendly: { total: 5, frontal: 0, video: 1, phone: 3, other: 1 },
+      },
+      relationshipSegments: {
+        generalRelationships: 5_000,
+        trackedClients: 2,
+        activeClients: 2,
+        personalFriendlyClients: 1,
+        personalToraniClients: 1,
+        activeWithoutPersonalQuality: 0,
+      },
+      clientConnectionDistribution: [
+        { key: '1', label: 'קשר אחד', count: 0 },
+        { key: '2', label: '2 קשרים', count: 0 },
+        { key: '3-4', label: '3–4 קשרים', count: 0 },
+        { key: '5-9', label: '5–9 קשרים', count: 2 },
+        { key: '10+', label: '10 קשרים ומעלה', count: 0 },
+      ],
+    },
     rows: [baseRow],
     totals: { ...baseRow, activistName: 'סה״כ כל הפעילים' },
     mitzvotTotals: Array.from({ length: mitzvotRows }, (_, index) => ({
@@ -143,7 +164,9 @@ test('Node generator preserves the patched jsPDF report contract', async () => {
   assert.ok(pageCount > 2, 'production fixture must render across multiple pages');
 
   const repeatedHeaderCount = textRuns.filter((run) => hasTextRun([run], 'סך רמות')).length;
-  assert.equal(repeatedHeaderCount, pageCount - 1, 'mitzvot header must repeat on every continuation page');
+  // The current report has one main page and one executive-analytics page in
+  // addition to the paginated mitzvot table.
+  assert.equal(repeatedHeaderCount, pageCount - 2, 'mitzvot header must repeat on every mitzvot page');
   for (const row of report.mitzvotTotals) {
     assert.equal(hasTextRun(textRuns, row.totalLevels), true, `rendered PDF must retain row ${row.totalLevels}`);
   }

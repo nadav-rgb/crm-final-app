@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
 import DesktopLayout from '../../components/DesktopLayout';
 import { useAuth } from '../../lib/AuthStore';
+import { deriveActivityByTypeFromPayment, exportActivityXlsx } from '../../lib/activityByTypeExcel';
 
 const MONTH_NAMES = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
 
@@ -21,6 +22,7 @@ export default function ActivistPaymentDetail() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [cancellingKey, setCancellingKey] = useState('');
+  const [exportingActivity, setExportingActivity] = useState(false);
 
   const userId = typeof router.query.id === 'string' ? router.query.id : '';
   const projectId = Number(router.query.projectId);
@@ -37,6 +39,10 @@ export default function ActivistPaymentDetail() {
     if (projectNarrowing != null) query.set('projectId', String(projectNarrowing));
     return query.toString();
   }, [period, projectNarrowing]);
+  const activityData = useMemo(
+    () => payment ? deriveActivityByTypeFromPayment(payment) : null,
+    [payment],
+  );
 
   const load = useCallback(async () => {
     if (!router.isReady || !canView || !userId) return;
@@ -132,6 +138,57 @@ export default function ActivistPaymentDetail() {
             </div>
           ))}
         </div>
+
+        {activityData && (
+          <div style={{ background:'#fff', borderRadius:16, padding:'20px', border:'0.5px solid rgba(108,92,231,0.16)', marginBottom:20 }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, marginBottom:12 }}>
+              <div style={{ fontSize:15, fontWeight:700 }}>פעילות לפי סוג</div>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (exportingActivity) return;
+                  setExportingActivity(true);
+                  try {
+                    await exportActivityXlsx(payment.name, currentMonthName, year, activityData);
+                  } catch (err) {
+                    console.error('Activity export failed', err);
+                    window.alert('ייצוא הפעילות נכשל. נסה שוב.');
+                  } finally {
+                    setExportingActivity(false);
+                  }
+                }}
+                disabled={exportingActivity}
+                style={{ background:exportingActivity?'#b7b0e8':'linear-gradient(135deg,#1f7a45,#2ecc71)', color:'#fff', border:'none', borderRadius:9, padding:'7px 12px', fontSize:12, fontWeight:700, cursor:exportingActivity?'default':'pointer', fontFamily:'inherit' }}
+              >
+                {exportingActivity ? '⏳ מייצא…' : '📋 ייצוא פעילות לאקסל'}
+              </button>
+            </div>
+            {activityData.typeRows.map((row) => (
+              <div key={row.label} style={{ display:'grid', gridTemplateColumns:'1fr auto auto', gap:14, padding:'7px 0', borderBottom:'0.5px solid #f2f2f2', fontSize:13 }}>
+                <span>{row.label}</span>
+                <span style={{ color:'#777' }}>{row.count} קשרים</span>
+                <span style={{ fontWeight:700, minWidth:72, textAlign:'left' }}>{row.total.toLocaleString()} ₪</span>
+              </div>
+            ))}
+            {activityData.bonusRows.length > 0 && (
+              <div style={{ marginTop:14 }}>
+                <div style={{ fontSize:13.5, fontWeight:700, marginBottom:5 }}>בונוסים</div>
+                {activityData.bonusRows.map((row) => (
+                  <div key={row.label} style={{ display:'flex', justifyContent:'space-between', padding:'6px 0', fontSize:13 }}>
+                    <span>{row.label} · {row.count}</span>
+                    <span style={{ fontWeight:700 }}>{row.amount.toLocaleString()} ₪</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {activityData.unpaidCount > 0 && (
+              <div style={{ marginTop:14, fontSize:12.5, color:'#777' }}>
+                <div style={{ fontWeight:700, marginBottom:4 }}>לא זוכו: {activityData.unpaidCount}</div>
+                {activityData.unpaidByReason.map((row) => <div key={row.reason}>• {row.reason}: {row.count}</div>)}
+              </div>
+            )}
+          </div>
+        )}
 
         {canCancelBonus && (
           <div style={{ background:'#fff', borderRadius:16, padding:'20px', border:'0.5px solid rgba(192,57,43,0.18)' }}>

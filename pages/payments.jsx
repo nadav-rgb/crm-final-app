@@ -4,6 +4,7 @@ import { useRouter } from 'next/router';
 import DesktopLayout from '../components/DesktopLayout';
 import { useAuth } from '../lib/AuthStore';
 import { exportPayrollXlsx } from '../lib/payrollExcel';
+import { deriveActivityByTypeFromPayment, exportCombinedActivityXlsx } from '../lib/activityByTypeExcel';
 
 const MONTH_NAMES = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
 const PROJECT_LABELS = { 1: 'אחדות יהודית', 2: 'נעים להכיר' };
@@ -23,6 +24,7 @@ export default function PaymentsPage() {
   const router = useRouter();
   const [viewMode, setViewMode] = useState('grid');
   const [exporting, setExporting] = useState(false); // exceljs נטענת ב-import דינמי — הכפתור ננעל בזמן הטעינה
+  const [exportingActivity, setExportingActivity] = useState(false);
   const [paymentRows, setPaymentRows] = useState([]);
   const [loadError, setLoadError] = useState('');
 
@@ -65,13 +67,14 @@ export default function PaymentsPage() {
   }, [canView, filterProject, periodKey, apiFetch]);
 
   const paymentData = useMemo(() => paymentRows.map((row) => ({
+    payment: row,
     activist: { id: row.userId, name: row.name },
     total: row.activityTotal + row.bonusTotal,
     breakdown: [
-      row.activityTotal > 0 ? { type: 'קשר', contactName: 'פעילות מצרפית', desc: 'פעילות', amount: row.activityTotal } : null,
-      row.bonusTotal > 0 ? { type: 'בונוס', contactName: 'בונוסים', desc: 'בונוסים', amount: row.bonusTotal } : null,
+      row.activityTotal > 0 ? { type: 'קשר', amount: row.activityTotal } : null,
+      row.bonusTotal > 0 ? { type: 'בונוס', amount: row.bonusTotal } : null,
     ].filter(Boolean),
-    unpaid: [], expensesTotal: row.expenseTotal, guidePay: row.tourTotal, grandTotal: row.grandTotal,
+    expensesTotal: row.expenseTotal, guidePay: row.tourTotal, grandTotal: row.grandTotal,
   })), [paymentRows]);
 
   if (!canView) return (
@@ -206,14 +209,17 @@ export default function PaymentsPage() {
         <button
           onClick={() => {
             const lines = [`דוח פעילות לתשלום — ${currentMonthName} ${year}`, '='.repeat(40), ''];
-            paymentData.forEach(({ activist, total, breakdown, unpaid, expensesTotal, guidePay, grandTotal }) => {
+            paymentData.forEach(({ activist, payment, expensesTotal, guidePay, grandTotal }) => {
+              const activity = deriveActivityByTypeFromPayment(payment);
               lines.push(`${activist.name}: ${grandTotal.toLocaleString()} ₪`);
-              breakdown.forEach(b => lines.push(`  • ${b.contactName} — ${b.desc}: ${b.amount} ₪`));
+              activity.typeRows.filter(row => row.count > 0)
+                .forEach(row => lines.push(`  • ${row.label}: ${row.count} · ${row.total.toLocaleString()} ₪`));
+              activity.bonusRows.forEach(row => lines.push(`  • ${row.label}: ${row.count} · ${row.amount.toLocaleString()} ₪`));
               if (guidePay > 0) lines.push(`  • הדרכת סיורים: ${guidePay.toLocaleString()} ₪`);
               if (expensesTotal > 0) lines.push(`  • החזר הוצאות: ${expensesTotal.toLocaleString()} ₪`);
-              if (unpaid?.length) {
-                lines.push(`  קשרים שלא זוכו:`);
-                unpaid.forEach(u => lines.push(`    ✗ ${u.contactName} — ${u.desc} (${u.date}): ${u.reason}`));
+              if (activity.unpaidCount > 0) {
+                lines.push('  קשרים שלא זוכו:');
+                activity.unpaidByReason.forEach(row => lines.push(`    ✗ ${row.reason}: ${row.count}`));
               }
               lines.push('');
             });
@@ -228,6 +234,28 @@ export default function PaymentsPage() {
           style={{ background:'linear-gradient(135deg,#6c5ce7,#a29bfe)', color:'#fff', border:'none', borderRadius:12, padding:'12px 24px', fontSize:14, fontWeight:700, cursor:'pointer', fontFamily:'Rubik,sans-serif', boxShadow:'0 2px 8px rgba(108,92,231,0.25)' }}
         >
           📄 דוח פעילות לתשלום {currentMonthName} {year}
+        </button>
+        <button
+          onClick={async () => {
+            if (exportingActivity) return;
+            setExportingActivity(true);
+            try {
+              const activistsData = paymentData.map(({ activist, payment }) => ({
+                activistName: activist.name,
+                data: deriveActivityByTypeFromPayment(payment),
+              }));
+              await exportCombinedActivityXlsx(activistsData, currentMonthName, year);
+            } catch (err) {
+              console.error('Combined activity export failed', err);
+              alert('ייצוא הפעילות המרוכז נכשל. נסה שוב.');
+            } finally {
+              setExportingActivity(false);
+            }
+          }}
+          disabled={exportingActivity || paymentData.length === 0}
+          style={{ background: exportingActivity || paymentData.length === 0 ? '#b7b0e8' : 'linear-gradient(135deg,#1f7a45,#2ecc71)', color:'#fff', border:'none', borderRadius:12, padding:'12px 24px', fontSize:14, fontWeight:700, cursor:exportingActivity || paymentData.length === 0?'default':'pointer', fontFamily:'Rubik,sans-serif' }}
+        >
+          {exportingActivity ? '⏳ מייצא…' : '📋 ייצוא פעילות לכל הפעילים'}
         </button>
       </div>
 
