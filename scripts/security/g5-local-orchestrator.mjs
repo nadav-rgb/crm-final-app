@@ -405,12 +405,23 @@ export async function verifyLocalStackStopped({
     throw new Error('local stack shutdown verification found exact-project volume');
   }
 
+  const labelledNetworks = shutdownDockerLines(runDocker([
+    'network', 'ls', '--filter', `label=${label}`, '--format', '{{.Name}}',
+  ]), 'labelled network inventory');
+  const namedNetworkCandidates = shutdownDockerLines(runDocker([
+    'network', 'ls', '--filter', `name=${projectId}`, '--format', '{{.Name}}',
+  ]), 'named network inventory');
+  const exactNamedNetworks = namedNetworkCandidates.filter((name) => name.includes(projectId));
+  if (labelledNetworks.length || exactNamedNetworks.length) {
+    throw new Error('local stack shutdown verification found exact-project network');
+  }
+
   const listeners = (await Promise.all(expectedListeners.flatMap((port) => [
     probePort('127.0.0.1', port),
     probePort('::1', port),
   ]))).filter(Boolean).length;
   if (listeners) throw new Error('local stack shutdown verification found configured listener');
-  return Object.freeze({ containers: 0, volumes: 0, listeners: 0 });
+  return Object.freeze({ containers: 0, volumes: 0, networks: 0, listeners: 0 });
 }
 
 function safeDatabaseFailureReason(messageValue) {
@@ -1783,14 +1794,17 @@ export async function runConfiguredLocalG5({
           await bffController.stop();
           bffStarted = false;
         }
-        // The exact disposable project reset erases its public and Auth schemas together.
-        // Deleting the now-absent Auth users again would turn a successful abort into a false failure.
         await database.resetToLegacy();
+        for (const actor of actors.actors.values()) {
+          const deleted = await service.auth.admin.deleteUser(actor.id);
+          if (deleted?.error) throw new Error('G5 abort cleanup failed for exact synthetic Auth user');
+        }
       },
     });
     const evidence = sanitizeEvidenceRows(lifecycle.evidence);
     const sanitizedLifecycle = sanitizeLifecycleEvidence(lifecycle.lifecycleEvidence);
-    await stack.stop();
+    const containerNames = target.stackIdentity.containers.map((entry) => entry.name).sort();
+    const shutdown = await stack.stop();
     stackStarted = false;
     await emitEvidence(config.evidencePath, Object.freeze({
       cases: evidence,
@@ -1801,6 +1815,8 @@ export async function runConfiguredLocalG5({
       projectId: config.projectId,
       evidenceCount: evidence.length,
       cleanupClean: lifecycle.cleanup?.clean === true,
+      containerNames,
+      shutdown,
     });
   } finally {
     try {

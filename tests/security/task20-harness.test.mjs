@@ -1106,7 +1106,7 @@ test('local stack controller captures keys in memory and binds start/status/stop
         stdout: stackRunning ? inspections.map((item) => item.Id).join('\n') : '',
         stderr: '',
       };
-      if (args[0] === 'volume') return { status: 0, stdout: '', stderr: '' };
+      if (args[0] === 'volume' || args[0] === 'network') return { status: 0, stdout: '', stderr: '' };
       return { status: 0, stdout: JSON.stringify(inspections), stderr: '' };
     },
     async probePort(host, port) {
@@ -1131,6 +1131,7 @@ test('local stack controller captures keys in memory and binds start/status/stop
   assert.equal(dockerCalls.some((command) => command.startsWith('ps --all --filter label=')), true);
   assert.equal(dockerCalls.some((command) => command.startsWith('ps --all --filter name=')), true);
   assert.equal(dockerCalls.filter((command) => command.startsWith('volume ls')).length, 2);
+  assert.equal(dockerCalls.filter((command) => command.startsWith('network ls')).length, 2);
   assert.deepEqual(new Set(shutdownProbes), new Set([
     ...preparedContract.listenerPorts.flatMap((port) => [
       `127.0.0.1:${port}`, `::1:${port}`,
@@ -1258,7 +1259,7 @@ test('partial non-zero stack start owns cleanup and independently proves exact f
       dockerCalls.push(args.join(' '));
       if (args[0] === 'ps') return { status: 0, stdout: partiallyRunning ? partialContainer.Id : '', stderr: '' };
       if (args[0] === 'inspect') return { status: 0, stdout: JSON.stringify([partialContainer]), stderr: '' };
-      if (args[0] === 'volume') return { status: 0, stdout: '', stderr: '' };
+      if (args[0] === 'volume' || args[0] === 'network') return { status: 0, stdout: '', stderr: '' };
       return { status: 0, stdout: '[]', stderr: '' };
     },
     async probePort(host, port) { probes.push(`${host}:${port}`); return false; },
@@ -1276,6 +1277,7 @@ test('partial non-zero stack start owns cleanup and independently proves exact f
   assert.ok(dockerCalls.some((call) => call.startsWith('ps --all --filter label=')));
   assert.ok(dockerCalls.some((call) => call.startsWith('ps --all --filter name=')));
   assert.equal(dockerCalls.filter((call) => call.startsWith('volume ls')).length, 2);
+  assert.equal(dockerCalls.filter((call) => call.startsWith('network ls')).length, 2);
   assert.deepEqual(new Set(probes.map((entry) => Number(entry.split(':').at(-1)))),
     new Set([...contract.listenerPorts, 60000]));
 });
@@ -1302,7 +1304,9 @@ test('partial start preserves the start error and cleanup failure while still ru
       return { status: 1, stdout: 'private output', stderr: 'private error' };
     },
     runDocker(args) {
-      if (args[0] === 'ps' || args[0] === 'volume') return { status: 0, stdout: '', stderr: '' };
+      if (args[0] === 'ps' || args[0] === 'volume' || args[0] === 'network') {
+        return { status: 0, stdout: '', stderr: '' };
+      }
       return { status: 0, stdout: '[]', stderr: '' };
     },
     async probePort() { probes += 1; return false; },
@@ -1347,7 +1351,7 @@ test('local stack controller rejects an unpinned CLI before project mutation or 
   assert.equal(commandEnvironments[0].SUPABASE_TELEMETRY_DISABLED, '1');
 });
 
-test('stack shutdown proof rejects exact-project containers, volumes and configured listeners', async () => {
+test('stack shutdown proof rejects exact-project containers, volumes, networks and configured listeners', async () => {
   const module = await import('../../scripts/security/g5-local-orchestrator.mjs');
   assert.equal(typeof module.verifyLocalStackStopped, 'function');
   const cleanDocker = (args) => {
@@ -1360,7 +1364,7 @@ test('stack shutdown proof rejects exact-project containers, volumes and configu
     apiPort: localApiPort,
     runDocker: cleanDocker,
     async probePort() { return false; },
-  }), { containers: 0, volumes: 0, listeners: 0 });
+  }), { containers: 0, volumes: 0, networks: 0, listeners: 0 });
 
   await assert.rejects(() => module.verifyLocalStackStopped({
     projectId: localProjectId,
@@ -1382,6 +1386,17 @@ test('stack shutdown proof rejects exact-project containers, volumes and configu
     },
     async probePort() { return false; },
   }), /volume/i);
+  await assert.rejects(() => module.verifyLocalStackStopped({
+    projectId: localProjectId,
+    apiPort: localApiPort,
+    runDocker(args) {
+      if (args[0] === 'network' && args.includes('label=com.supabase.cli.project=' + localProjectId)) {
+        return { status: 0, stdout: `supabase_network_${localProjectId}`, stderr: '' };
+      }
+      return { status: 0, stdout: '', stderr: '' };
+    },
+    async probePort() { return false; },
+  }), /network/i);
   await assert.rejects(() => module.verifyLocalStackStopped({
     projectId: localProjectId,
     apiPort: localApiPort,
@@ -1896,7 +1911,7 @@ test('configured G5 ports keep the complete pinned listener contract separate fr
   }
 });
 
-test('configured G5 entry owns stack start, lifecycle, sanitized evidence write and exact stop', async () => {
+test('configured G5 entry reports measured container identity and exact shutdown proof', async () => {
   const module = await import('../../scripts/security/g5-local-orchestrator.mjs');
   assert.equal(typeof module.runConfiguredLocalG5, 'function');
   const trace = [];
@@ -1930,7 +1945,10 @@ test('configured G5 entry owns stack start, lifecycle, sanitized evidence write 
               },
             };
           },
-          async stop() { trace.push('stack-stop'); },
+          async stop() {
+            trace.push('stack-stop');
+            return { containers: 0, volumes: 0, networks: 0, listeners: 0 };
+          },
         };
       },
       createDatabase() { trace.push('database'); return {}; },
@@ -1961,10 +1979,12 @@ test('configured G5 entry owns stack start, lifecycle, sanitized evidence write 
     projectId: config.projectId,
     evidenceCount: 1,
     cleanupClean: true,
+    containerNames: localSafety().stackIdentity.containers.map((entry) => entry.name).sort(),
+    shutdown: { containers: 0, volumes: 0, networks: 0, listeners: 0 },
   });
 });
 
-test('configured G5 abort cleanup resets the disposable database without a second Auth delete', async () => {
+test('configured G5 abort cleanup resets database then deletes every exact synthetic Auth user', async () => {
   const module = await import('../../scripts/security/g5-local-orchestrator.mjs');
   const trace = [];
   const config = module.loadLocalG5Configuration({
@@ -2000,17 +2020,26 @@ test('configured G5 abort cleanup resets the disposable database without a secon
       },
       createServiceClient() {
         return {
-          auth: { admin: { async deleteUser() { throw new Error('second Auth delete forbidden'); } } },
+          auth: { admin: { async deleteUser(id) { trace.push(`auth-delete:${id}`); return { error: null }; } } },
         };
       },
       async runLifecycle(options) {
-        const actors = new Map([['synthetic', { id: createSecurityRunId() }]]);
+        const actors = new Map([
+          ['synthetic-a', { id: '11111111-1111-4111-8111-111111111111' }],
+          ['synthetic-b', { id: '22222222-2222-4222-8222-222222222222' }],
+        ]);
         await options.abortCleanup({ actors: { actors } });
         throw new Error('synthetic root failure');
       },
     },
   }), /synthetic root failure/);
-  assert.deepEqual(trace, ['stack-start', 'reset', 'stack-stop']);
+  assert.deepEqual(trace, [
+    'stack-start',
+    'reset',
+    'auth-delete:11111111-1111-4111-8111-111111111111',
+    'auth-delete:22222222-2222-4222-8222-222222222222',
+    'stack-stop',
+  ]);
 });
 
 test('partial Auth provisioning deletes only users created by the failed exact run', async () => {
