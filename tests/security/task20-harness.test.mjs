@@ -896,6 +896,8 @@ test('PostgreSQL invariants are measured directly and fail closed without caller
   });
   assert.equal(executed.length, 2);
   assert.match(executed[0], /= 3/);
+  assert.match(executed[1], /grant insert on pg_temp\.g5_atomic_result to authenticated/i);
+  assert.doesNotMatch(executed[1], /grant[^\r\n;]*on app_private\./i);
 });
 
 test('local PostgreSQL adapter enacts expiry, disabled-user and stale-version state', async () => {

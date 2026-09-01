@@ -1349,6 +1349,8 @@ rollback;`);
   try {
     financeAuditFailure = await database.execute(`begin;
 create temporary table g5_atomic_result (value text not null);
+grant usage on schema pg_temp to authenticated;
+grant insert on pg_temp.g5_atomic_result to authenticated;
 create or replace function pg_temp.g5_block_finance_audit() returns trigger language plpgsql as $$
 begin raise exception 'synthetic audit failure'; end $$;
 create trigger g5_block_finance_audit before insert on app_private.audit_events
