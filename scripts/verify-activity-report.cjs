@@ -101,6 +101,67 @@ const AUG = { year: 2026, month: 7 }; // month 0-indexed, אוגוסט = 7
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// buildCombinedActivityWorkbook — לשונית "סיכום כללי" עם 2 פעילים מוערמים
+// + סה"כ ארגוני, ואז לשונית מלאה לכל פעיל.
+// ────────────────────────────────────────────────────────────────────────────
+async function testCombinedWorkbook() {
+  const { buildCombinedActivityWorkbook } = require('../lib/activityByTypeExcel.js');
+
+  const reportA = calcMonthlyPayment(7, [
+    { activist_id: 7, project_id: 1, id: 1, contact_id: 1, type: 'טלפוני', quality: 'תורני', duration_minutes: 20, date: '2026-08-01' },
+  ], contacts, [], [], DEFAULTS, new Set(), AUG);
+  const reportB = calcMonthlyPayment(8, [
+    { activist_id: 8, project_id: 1, id: 2, contact_id: 2, type: 'פרונטלי', quality: 'תורני', duration_minutes: 45, date: '2026-08-02' },
+  ], contacts, [], [], DEFAULTS, new Set(), AUG);
+
+  const activistsData = [
+    { activistName: 'פעיל א', data: deriveActivityByType(reportA, 0, 0) },
+    { activistName: 'פעיל ב', data: deriveActivityByType(reportB, 0, 0) },
+  ];
+
+  const wb = await buildCombinedActivityWorkbook(activistsData, 'אוגוסט', 2026);
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const outPath = path.join(os.tmpdir(), 'activity-report-combined-test.xlsx');
+  await wb.xlsx.writeFile(outPath);
+
+  const ExcelJS = (await import('exceljs')).default;
+  const back = new ExcelJS.Workbook();
+  await back.xlsx.readFile(outPath);
+
+  check('3 לשוניות: סיכום כללי + 2 פעילים', back.worksheets.map(s => s.name),
+    ['סיכום כללי', 'פעיל א', 'פעיל ב']);
+
+  const overview = back.worksheets[0];
+  // כותרת "פעיל א" בשורה 1, כותרת "פעיל ב" אמורה להופיע אחרי הבלוק שלו + 2 שורות ריקות.
+  let firstActivistTitleRow = null, secondActivistTitleRow = null;
+  overview.eachRow((row, rowNumber) => {
+    const v = String(row.getCell(1).value || '');
+    if (v.includes('פעיל א')) firstActivistTitleRow = rowNumber;
+    if (v.includes('פעיל ב') && !v.includes('סה"כ')) secondActivistTitleRow = rowNumber;
+  });
+  check('שתי כותרות הפעילים קיימות בלשונית הראשונה',
+    [Boolean(firstActivistTitleRow), Boolean(secondActivistTitleRow)], [true, true]);
+
+  // שורת סה"כ ארגוני בסוף הלשונית
+  let orgTotalRow = null;
+  overview.eachRow((row, rowNumber) => {
+    if (row.getCell(1).value === 'סה"כ ארגוני לפי סוג פעילות') orgTotalRow = rowNumber;
+  });
+  check('בלוק "סה"כ ארגוני לפי סוג פעילות" קיים בסוף הלשונית', Boolean(orgTotalRow), true);
+
+  // לשונית "פעיל ב" מכילה את הפירוט המלא שלו (בדיוק כמו buildActivityWorkbook עצמאי)
+  const sheetB = back.worksheets.find(s => s.name === 'פעיל ב');
+  let sheetBHasDetail = false;
+  sheetB.eachRow(row => { if (row.getCell(1).value === 'פירוט מלא — מסודר לפי סוג הפעילות') sheetBHasDetail = true; });
+  check('לשונית פעיל ב כוללת את בלוק הפירוט המלא', sheetBHasDetail, true);
+
+  console.log(failures === 0 ? '\nכל הבדיקות עברו (כולל buildCombinedActivityWorkbook).' : `\n${failures} בדיקות נכשלו.`);
+  process.exit(failures === 0 ? 0 : 1);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // buildActivityWorkbook — נכתב ל-Node, נקרא בחזרה, מבנה + נוסחאות + RTL תקינים.
 // ────────────────────────────────────────────────────────────────────────────
 {
@@ -178,7 +239,6 @@ const AUG = { year: 2026, month: 7 }; // month 0-indexed, אוגוסט = 7
         computed, data.grandTotal);
     }
 
-    console.log(failures === 0 ? '\nכל הבדיקות עברו (כולל buildActivityWorkbook).' : `\n${failures} בדיקות נכשלו.`);
-    process.exit(failures === 0 ? 0 : 1);
+    await testCombinedWorkbook();
   })();
 }
