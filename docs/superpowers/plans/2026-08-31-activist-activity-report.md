@@ -37,7 +37,7 @@
 - Test: `scripts/verify-payment-order.cjs`
 
 **Interfaces:**
-- Produces: שורת `breakdown` מסוג `'קשר'` כוללת מעתה גם `date` (string), `duration_minutes` (number), `type` (string), `quality` (string). שורת `unpaid` כוללת מעתה גם `duration_minutes`, `type`, `quality` (כבר יש לה `date`).
+- Produces: שורת `breakdown` מסוג `'קשר'` כוללת מעתה גם `date` (string), `duration_minutes` (number), `interactionType` (string), `quality` (string). שורת `unpaid` כוללת מעתה גם `duration_minutes`, `interactionType`, `quality` (כבר יש לה `date`). ⚠️ השדה נקרא `interactionType`, לא `type` — ראה ההערה בסוף Step 3 למטה.
 
 - [ ] **Step 1: הוסף בדיקה כושלת ל-`scripts/verify-payment-order.cjs`**
 
@@ -57,11 +57,11 @@
   const r = calcMonthlyPayment(7, rows, contacts, [], [], DEFAULTS, new Set(), JULY);
   const paidRow = r.breakdown.find(b => b.type === 'קשר');
   check('שדות גולמיים בשורת breakdown זוכה',
-    [paidRow?.date, paidRow?.duration_minutes, paidRow?.type, paidRow?.quality],
+    [paidRow?.date, paidRow?.duration_minutes, paidRow?.interactionType, paidRow?.quality],
     ['2026-07-05', 45, 'פרונטלי', 'תורני']);
   const unpaidRow = r.unpaid[0];
   check('שדות גולמיים בשורת unpaid',
-    [unpaidRow?.duration_minutes, unpaidRow?.type, unpaidRow?.quality],
+    [unpaidRow?.duration_minutes, unpaidRow?.interactionType, unpaidRow?.quality],
     [5, 'פרונטלי', 'תורני']);
 }
 ```

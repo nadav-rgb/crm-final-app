@@ -1,7 +1,7 @@
 // lib/CrmStore.jsx
 import { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import _messages     from '../data/messages';
-import { deriveMitzvotBonuses } from './paymentCalc';
+import { deriveMitzvotBonuses, deriveToraniBonuses } from './paymentCalc';
 import { BASE_MEETING_QUESTIONS } from '../data/base-meetings';
 import { advanceReminderStageForReports } from './reminderSchedulerDemo';
 import { hydrateNotificationsFromSupabase } from './notificationDemo';
@@ -19,6 +19,36 @@ function scopeQueryToUser(query, currentUser, { activistColumn = 'activist_id', 
     ? currentUser.project_ids
     : (currentUser.project_id ? [currentUser.project_id] : []);
   return query.in(projectColumn, ids.length > 0 ? ids : [-1]);
+}
+
+// גודל עמוד לשליפה עמוד-אחר-עמוד. מופע ה-Supabase של הפרויקט הזה חוסם select() בלי
+// range() ל-1000 שורות **בשקט** — בלי שגיאה, בלי אזהרה, פשוט פחות שורות ממה שבאמת קיים
+// (אומת אמפירית מול טבלאות אחרות בפרויקט — ביקורת קוד, 2026-09-01). קריטי בעיקר
+// ל-interactions/contacts: buildContactContext/deriveToraniBonuses (lib/paymentCalc.js)
+// סורקים את *כל* היסטוריית הלקוח, לא רק החודש הנוכחי, כדי לבדוק חלון-3-חודשים ומעבר-
+// לתורני — חיתוך שקט שם מזיז את עוגן-הזכאות או שובר רצף-בונוס בלי שום שגיאה מוצגת.
+// interactions: 903 שורות היום, גדל ב-~520 בחודש האחרון לבד — יתחיל להיחתך בקרוב.
+const SUPABASE_PAGE_SIZE = 1000;
+
+// שולפת את *כל* השורות שהשאילתה מחזירה, בעמודים של עד SUPABASE_PAGE_SIZE, ולא נעצרת על
+// העמוד הראשון כמו select() רגיל. buildQuery(from, to) מקבל את גבולות הטווח ומחזיר query
+// מוכן (כולל כל ה-.eq/.order/scopeQueryToUser שהקורא צריך, עם .range(from,to) כקריאה
+// האחרונה בשרשרת). מתקדמת לפי כמות השורות שהתקבלה *בפועל* (לא לפי SUPABASE_PAGE_SIZE
+// הקבוע) ונעצרת רק על עמוד ריק לגמרי — כך התוצאה נשארת נכונה גם אם התקרה בפועל בצד
+// השרת נמוכה מ-SUPABASE_PAGE_SIZE. מאומת מול הנתונים החיים (עם עמודים קטנים ומכוונים,
+// כדי לכפות כמה עמודים אמיתיים): התוצאה זהה שורה-אחר-שורה ל-select() לא-מוגבל.
+async function fetchAllRows(buildQuery) {
+  const rows = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await buildQuery(from, from + SUPABASE_PAGE_SIZE - 1);
+    if (error) return { data: null, error };
+    const page = Array.isArray(data) ? data : [];
+    if (page.length === 0) break;
+    rows.push(...page);
+    from += page.length;
+  }
+  return { data: rows, error: null };
 }
 
 const CrmContext = createContext(null);
@@ -137,10 +167,15 @@ async function insertContactToSupabase(contact) {
 // כתיבת השדות הנגזרים חזרה לטבלת contacts (אחרת הם נשארים מקומיים ונעלמים ב-reload)
 async function loadContactsFromSupabase(currentUser) {
   const supabase = getSupabaseClient();
-  // is_active=false = לקוח שנמחק (soft-delete) — לא נטען. השדה NOT NULL default true.
-  let query = supabase.from('contacts').select('*').eq('is_active', true);
-  query = scopeQueryToUser(query, currentUser);
-  const { data, error } = await query;
+  // fetchAllRows: אותו סיכון-חיתוך-שקט כמו interactions (ר' ההערה ליד fetchAllRows) —
+  // contacts קטנה יותר היום (279 שורות), אבל אותה מחלקת-סיכון בדיוק, וגם היא נסרקת
+  // במלואה (buildContactContext קורא contact.joined_at לכל לקוח, לא רק את מי שבחודש הזה).
+  const { data, error } = await fetchAllRows((from, to) => {
+    // is_active=false = לקוח שנמחק (soft-delete) — לא נטען. השדה NOT NULL default true.
+    let query = supabase.from('contacts').select('*').eq('is_active', true).order('id', { ascending: true });
+    query = scopeQueryToUser(query, currentUser);
+    return query.range(from, to);
+  });
   if (error) {
     console.error('Failed to load customers from Supabase contacts table', error);
     return { data: null, error };
@@ -192,6 +227,10 @@ export function CrmProvider({ children }) {
   // הגזירה עצמה חיה ב-lib/paymentCalc.js (deriveMitzvotBonuses) כדי שסקריפטי האימות
   // יחשבו בדיוק אותו דבר — קודם היא הייתה משוכפלת בשלושה מקומות.
   const mitzvotBonuses = useMemo(() => deriveMitzvotBonuses(contacts), [contacts]);
+
+  // בונוס תורני — נגזר מ-interactions הפרסיסטנטי, לא מ-state זמני. אותו דפוס כמו
+  // mitzvotBonuses: מקור-אמת יחיד, נגזר-מחדש בכל טעינה. ראה lib/paymentCalc.js.
+  const toraniBonuses = useMemo(() => deriveToraniBonuses(interactions, contacts), [interactions, contacts]);
 
   const { currentUser, authLoading } = useAuth();
 
@@ -312,9 +351,14 @@ export function CrmProvider({ children }) {
     let active = true;
     (async () => {
       const supabase = getSupabaseClient();
-      let query = supabase.from('interactions').select('*');
-      query = scopeQueryToUser(query, currentUser);
-      const { data, error } = await query;
+      // fetchAllRows: interactions נסרק במלואו (כל ההיסטוריה, לא רק החודש הנוכחי) ע"י
+      // buildContactContext/deriveToraniBonuses — select() בלי range() נחתך בשקט ב-1000
+      // שורות במופע הזה של Supabase (ר' ההערה ליד fetchAllRows, למעלה בקובץ).
+      const { data, error } = await fetchAllRows((from, to) => {
+        let query = supabase.from('interactions').select('*').order('id', { ascending: true });
+        query = scopeQueryToUser(query, currentUser);
+        return query.range(from, to);
+      });
       if (!active) return;
       if (error) { console.error('Failed to load interactions', error); return; }
       if (Array.isArray(data)) setInteractions(data);
@@ -609,7 +653,7 @@ export function CrmProvider({ children }) {
   return (
     <CrmContext.Provider value={{
       contacts, interactions, activists, messages, baseMeetings, BASE_MEETING_QUESTIONS,
-      mitzvotBonuses, newParticipantBonuses, paymentConfig, expenses, tours,
+      mitzvotBonuses, newParticipantBonuses, toraniBonuses, paymentConfig, expenses, tours,
       addInteraction, addParticipantInteractions, updateInteraction, deleteInteraction, addContact, updateContact, deleteContact, updateMitzvot, addExpense, deleteExpense, addMessage, submitBaseMeeting, updateBaseMeetingReport, upsertBaseMeetingReports, advanceBaseMeetingReminders,
       PROJECT_NAMES,
     }}>

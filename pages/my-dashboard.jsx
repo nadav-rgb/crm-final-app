@@ -62,7 +62,7 @@ function CounterCard({ counter, monthLabel }) {
 }
 
 export default function MyDashboardPage() {
-  const { interactions, contacts, mitzvotBonuses, newParticipantBonuses, paymentConfig, expenses, tours } = useCrm();
+  const { interactions, contacts, mitzvotBonuses, newParticipantBonuses, toraniBonuses, paymentConfig, expenses, tours } = useCrm();
   const { currentUser } = useAuth();
   const [cancelledBonuses, setCancelledBonuses] = useState([]); // בונוסים שרכז ביטל — ראה pages/payments.jsx
 
@@ -98,8 +98,9 @@ export default function MyDashboardPage() {
     // סינון בונוסים ליועץ הנוכחי ולחודש הנבחר — זהה לעמוד התשלומים של הרכז (כדי שהמספרים יתאימו).
     const myMitzvot = mitzvotBonuses.filter(b => b.activist_id === currentUser.id && b.month === monthKey);
     const myNew     = newParticipantBonuses.filter(b => b.activist_id === currentUser.id && b.month === monthKey);
-    return calcConsultantDashboard(currentUser.id, interactions, contacts, myMitzvot, myNew, paymentConfig, cancelledBonusKeys, { year, month });
-  }, [currentUser, interactions, contacts, mitzvotBonuses, newParticipantBonuses, paymentConfig, cancelledBonusKeys, monthKey, year, month]);
+    const myTorani  = toraniBonuses.filter(b => b.activist_id === currentUser.id && b.month === monthKey);
+    return calcConsultantDashboard(currentUser.id, interactions, contacts, myMitzvot, myNew, paymentConfig, cancelledBonusKeys, { year, month }, myTorani);
+  }, [currentUser, interactions, contacts, mitzvotBonuses, newParticipantBonuses, toraniBonuses, paymentConfig, cancelledBonusKeys, monthKey, year, month]);
 
   if (!data) return <DesktopLayout title="הדשבורד שלי"><div style={{ padding: 40, color: '#aaa' }}>טוען…</div></DesktopLayout>;
 
