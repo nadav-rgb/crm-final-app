@@ -9,18 +9,21 @@ rewrite. No Production system was contacted while preparing it.
 ## Current Security Status
 
 - Reviewed security branch: `security/hardening-p0`.
-- Security implementation review HEAD: `9d6aea5cb4e8e18a802080331afce747332b6246`.
+- Security implementation review HEAD: `75bda2ad3a4a56ba102f03d6e7d18bb2946ddb19`.
 - Proven fork commit and current `main` merge-base:
   `72b9196f22812e5dc2452efe33f1fbbf23f3dd4c`.
 - Current local and remote target: `main` / `origin/main` at
   `69b4040a993689c63990f3064e58c321254836c5`; verified with `git ls-remote`.
-- Review range at the implementation checkpoint: 94 branch commits, 241 changed files, 29,560
+- Review range at the implementation checkpoint: 97 branch commits, 243 changed files, 30,422
   insertions and 9,302 deletions.
-- Target divergence since the fork: 36 `main` commits versus 94 security-branch commits.
-- Final G5 source/test checkpoint: `9d6aea5cb4e8e18a802080331afce747332b6246`.
+- Target divergence since the fork: 36 `main` commits versus 97 security-branch commits.
+- Final G5/G6 source/test checkpoint: `75bda2ad3a4a56ba102f03d6e7d18bb2946ddb19`.
   The independent review found an authenticated manager INSERT authority gap. A focused regression
   went RED, migration 0019 and the reverse script were fixed in `9d6aea5`, the focused test went
-  GREEN, and the complete disposable G5 lifecycle was recreated and rerun from that commit.
+  GREEN, and the complete disposable G5 lifecycle was recreated. The same reviewer then found that
+  same-project future bonus keys could still be pre-seeded. A second focused regression went RED;
+  direct table INSERT was revoked and the candidate-recomputing RPC was added in `75bda2a`; focused
+  tests went GREEN; and G5 plus G6 were rerun from that exact commit.
 - G5: 19/19 live tests, 48/48 adversarial evidence cases, 47/47 migration checks, 17/17
   classified tables with enabled and forced RLS, exact fixture cleanup, and disposable-stack
   teardown at 0 containers / 0 volumes / 0 networks / 0 listeners.
@@ -36,7 +39,7 @@ scratch from the same implementation checkpoint plus evidence-only documentation
 | Verification | Result | Exact evidence |
 | --- | --- | --- |
 | `npm ci` | PASS | 277 packages added; 278 audited; 0 vulnerabilities |
-| Fresh disposable G5 | PASS | Project `mekarvim-security-g5-5b6553b5dde5`; 19/19 live tests; 48/48 evidence cases; cleanup and destruction exact |
+| Fresh disposable G5 | PASS | Project `mekarvim-security-g5-9de4fb3f09e2`; 19/19 live tests; 48/48 evidence cases; 47/47 migration checks; cleanup and destruction exact |
 | `npm run test:security` | PASS | 344 total; 325 pass; 19 explicit isolated-live skips; 0 fail |
 | G5 correspondence for the 19 skips | PASS | The same 19 gated tests ran live in G5: 19 pass; 0 skip; 0 fail |
 | `npm run test:baseline` | PASS | 51/51: Interaction Report 27/27 plus Payments 24/24 |
@@ -97,7 +100,7 @@ integration was found.
 
 ### Exact merge strategy
 
-Do not rebase 93 commits and do not squash away the security evidence history. Resolve the target
+Do not rebase 97 commits and do not squash away the security evidence history. Resolve the target
 divergence once in a dedicated integration branch and preserve a merge commit:
 
 1. Re-run `git ls-remote origin refs/heads/main`; abort if it no longer equals the reviewed target.
@@ -154,13 +157,13 @@ candidate. Production execution requires a separate owner-approved change window
 | Migration | SHA-256 |
 | --- | --- |
 | `0018_security_foundation.sql` | `6B3CC9126A45EFB8E632E49B40DD7908DFCACB1480E48DD092918F13381CC954` |
-| `0019_security_rls.sql` | `921FD013CE56906C4DC758E1D05FE4ACA9054F1833329CBA2D30CB1B46ED4002` |
+| `0019_security_rls.sql` | `3717F40671783F4EA21D5E6B00F376C1A1C060D607F535EC8B7937C0D5797A4A` |
 | `0020_security_rpcs.sql` | `D0BFDB753A3E60083660409E088559B30F8B44284D015B0DD9E605E82EA54F23` |
 | `0021_meetings_security.sql` | `458F0406B5E9FBEE8AE3B68CD48C9EC9BDBA2881FA10BEDB5E722C2A2CEBEF3E` |
 | `0022_tours_security.sql` | `405516128815C6F8C6CED6D54BD10DD251F9C9880B2320FEE3850B1DB41A6C04` |
 | `0023_notifications_security.sql` | `B64756E61D53A678000900E2AFF5D88C2B41FDE17E2C92A99328FB4F36FEC1EB` |
-| `0024_finance_security.sql` | `9F89DFF958F0F1297FEF2606B4B6C7B0975C925330C9075ABACDF45E46122A3F` |
-| Pre-cutover reverse script | `DC0690B2F03CE556A18D58D3F90E0B1A938FEADCBF5A67641FA7FA0E88D4513E` |
+| `0024_finance_security.sql` | `585326A564CD8D55F8B1496605001F7F844372B7DE1F9F5C714D7BADEF3BC7B1` |
+| Pre-cutover reverse script | `D1F2DA33EA65DB1CCDC562BC357DA3729ADCBFDFEF86830C74959DDEF46E81C8` |
 
 ### Common preflight and execution contract
 
@@ -209,12 +212,14 @@ candidate. Production execution requires a separate owner-approved change window
 - **Backup:** `B1`, a new logical/catalog checkpoint after 0018 and before 0019.
 - **Expected changes:** enabled and forced RLS on all 17 classified tables; exact grants and policies;
   OLD-to-NEW immutable-authority triggers; authenticated INSERT validators deriving actors and
-  checking referenced project authority/initial state; security-invoker directory helpers; redacted
-  atomic audit triggers; service-only `app_security_posture`.
+  checking referenced project authority/initial state; no authenticated direct INSERT grant on
+  derived bonus cancellations; security-invoker directory helpers; redacted atomic audit triggers;
+  service-only `app_security_posture`.
 - **Verification:** call `app_security_posture` as service role; require 17/17 enabled+forced, no
   public/anon table or column grant, exact authenticated column grants/policies, fixed function
   search paths, anonymous denial, representative role projections, and denial of manager-forged
-  actor/contact/house/assignee/beneficiary and tour-state INSERTs.
+  actor/contact/house/assignee/beneficiary and tour-state INSERTs, including same-project fabricated
+  bonus-cancellation keys.
 - **Failure condition:** unknown/missing table, extra policy/grant, permissive-all predicate, missing
   trigger, failed posture call or unexpected anonymous access. Roll back the 0019 transaction.
 - **Rollback:** transaction rollback before commit. Pre-cutover reverse-script rollback removes
@@ -305,15 +310,17 @@ candidate. Production execution requires a separate owner-approved change window
 - **Preconditions:** finance source tables and `payment_config` complete; `app_private.audit_events`
   available; deterministic JS parity fixture is green; 0023 verified.
 - **Backup:** `B6` after 0023 and before 0024.
-- **Expected changes:** one fixed-search-path `app_finance_summary` function returning only eight
-  declared aggregate columns with caller-derived role/project/actor scope and atomic redacted audit.
+- **Expected changes:** fixed-search-path `app_finance_summary` returning only eight declared
+  aggregate columns with caller-derived role/project/actor scope and atomic redacted audit; plus
+  `app_cancel_bonus`, which recomputes the exact derived candidate and server-owned cancellation row.
 - **Verification:** exact output keys; CEO/Head/Finance/Activist scopes and Coordinator denial;
   month/project/actor narrowing; SQL-versus-JS parity; search-path hijack denial; audit failure aborts
-  the read contract.
+  the read contract; direct table INSERT denial; valid candidate success; duplicate and same-project
+  nonexistent/future candidate denial.
 - **Failure condition:** missing source/config, unexpected output key, unexplained parity delta,
   over-broad role scope, mutable search path or non-atomic audit. Roll back 0024 and stop.
-- **Rollback:** transaction rollback before commit. Before application cutover, drop the function via
-  the reviewed reverse script or restore `B6`.
+- **Rollback:** transaction rollback before commit. Before application cutover, drop both 0024
+  functions via the reviewed reverse script or restore `B6`.
 - **No safe schema rollback after:** the application is cut over to the aggregate RPC and old finance
   access paths are removed. Roll back the application first or roll forward.
 - **Immediate monitoring:** finance RPC latency/error rate, scope denials, audit write failures,

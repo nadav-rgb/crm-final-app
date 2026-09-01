@@ -147,14 +147,14 @@ test('report keeps deterministic evidence distinct from measured live proof', as
 test('G5 closeout records exact disposable identity and destruction proof', async () => {
   const report = await readReport();
   for (const pattern of [
-    /mekarvim-security-g5-5b6553b5dde5/,
+    /mekarvim-security-g5-9de4fb3f09e2/,
     /API `56321`; DB `56322`; Studio `56323`; Mail `56324`/,
     /loopback-only.*127\.0\.0\.1/i,
     /twelve exact-project containers/i,
-    /supabase_analytics_mekarvim-security-g5-5b6553b5dde5/,
-    /supabase_edge_runtime_mekarvim-security-g5-5b6553b5dde5/,
-    /supabase_realtime_mekarvim-security-g5-5b6553b5dde5/,
-    /supabase_vector_mekarvim-security-g5-5b6553b5dde5/,
+    /supabase_analytics_mekarvim-security-g5-9de4fb3f09e2/,
+    /supabase_edge_runtime_mekarvim-security-g5-9de4fb3f09e2/,
+    /supabase_realtime_mekarvim-security-g5-9de4fb3f09e2/,
+    /supabase_vector_mekarvim-security-g5-9de4fb3f09e2/,
     /18\/18 excluded container metadata records matched/i,
     /Containers `0`; volumes `0`; networks `0`; listeners `0`/,
     /47\/47 migration checks passed/,

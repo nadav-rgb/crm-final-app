@@ -6,7 +6,7 @@ Branch: `security/hardening-p0`
 
 Starting checkpoint: `5340d9763ce27d396bbc79bf33f342933bedceb8`
 
-G5 source/test checkpoint before this report update: `9d6aea5cb4e8e18a802080331afce747332b6246`
+G5/G6 source and test checkpoint before this report update: `75bda2ad3a4a56ba102f03d6e7d18bb2946ddb19`
 
 This is a time-bound engineering evidence record. It is not authorization to merge, deploy, use
 real sensitive data, or apply these migrations to Production.
@@ -14,7 +14,7 @@ Static contract evidence and live database proof are reported separately.
 
 ## Executive Summary
 
-A fresh disposable local Supabase project, `mekarvim-security-g5-5b6553b5dde5`, was created solely
+A fresh disposable local Supabase project, `mekarvim-security-g5-9de4fb3f09e2`, was created solely
 for CRM Mekarvim G5. Its identity, dedicated ports, exact container labels and loopback-only
 listeners were proven before any destructive reset. No existing database was reused.
 No remote Supabase environment was contacted. Production is untouched.
@@ -60,7 +60,7 @@ G5 database/runtime evidence. It does not remove the remaining operational contr
 
 | Finding | Original defect | Fix commit(s) | Test evidence | Status | Residual risk |
 | --- | --- | --- | --- | --- | --- |
-| `C1` | Broad direct authority/workflow mutation allowed caller-controlled ownership changes. | `bb507ec`, `9d6aea5` | Authority/RLS static suite and direct-JWT G5 matrix, including manager-forged INSERT authority | ADDRESSED | Evidence is time-bound to this G5 runtime. |
+| `C1` | Broad direct authority/workflow mutation allowed caller-controlled ownership changes, including pre-seeding a fabricated derived bonus cancellation. | `bb507ec`, `9d6aea5`, `75bda2a` | Authority/RLS static suite and direct-JWT G5 matrix, including manager-forged INSERT authority, same-project future-key denial and validated derived-candidate RPC | ADDRESSED | Evidence is time-bound to this G5 runtime. |
 | `I1` | CRM/BFF DTO and schema drift dropped operational fields and trusted client-created IDs. | `7eff62a` | Canonical CRM contract and migrated synthetic fixtures | ADDRESSED | Evidence is time-bound to the tested runtime contract. |
 | `I2` | Legacy numeric identities and provider UUID identities could diverge. | `74450ac` | Compatibility suite and live authority-transfer rejection | ADDRESSED | Evidence is time-bound to the G5 fixtures. |
 | `I3` | Notification callers could supply sensitive or cross-resource delivery content. | `920b336` | Notification callgraph and live resource-derived RPC checks | ADDRESSED | External provider runtime remains operator-controlled. |
@@ -91,7 +91,7 @@ non-blocking build and Gradle warnings are recorded below as maintenance risks.
 - Finance, notification, tour, reminder, governance and reporting projections are allowlisted.
 - G5 infrastructure now creates an exact disposable project, enforces loopback Docker publishing,
   measures evidence, performs exact cleanup and proves project-scoped destruction.
-- The G5 RED-to-GREEN sequence added 39 implementation, test and evidence commits after the requested starting checkpoint, covering
+- The closeout sequence added 42 implementation, test and evidence/report commits after the requested starting checkpoint, covering
   entrypoint ownership, loopback binding, migration/posture correctness, TOTP, Finance isolation and
   audit atomicity. Each real defect was committed before recreating and rerunning the disposable DB.
 
@@ -134,7 +134,7 @@ covered all 18 surfaces; no anonymous row leak was observed before or after fixt
 | `meeting_reminders` | Static PASS; live PASS | Enable + force | Exact recipient scope | Scheduler RPC | Denied | Recipient cancel RPC | Recipient and resource derived |
 | `tours` | Static PASS; live PASS | Enable + force | Assigned/scoped manager | Manager workflow | Split authority RPCs | Manager RPC | Report/assign/status separation |
 | `expenses` | Static PASS; live PASS | Enable + force | Owner or Finance scope | Actor/project derived | Owner-safe fields | Manager audited RPC | Coordinator raw read denied |
-| `bonus_cancellations` | Static PASS; live PASS | Enable + force | Approved projection | Derived cancellation RPC | Denied | Denied | Resource and actor derived |
+| `bonus_cancellations` | Static PASS; live PASS | Enable + force | Approved projection | Validated derived-candidate RPC; no direct table grant | Denied | CEO only | Resource, actor, month, type and amount recomputed |
 | `payment_config` | Static PASS; live PASS | Enable + force | Approved projection | Service only | Service only | Service only | Narrow Finance projection |
 | `notifications` | Static PASS; live PASS | Enable + force | Recipient only | Event RPC only | Denied | Denied | Event/resource-derived payload |
 | `notification_reads` | Static PASS; live PASS | Enable + force | Own recipient only | Own marker | Own marker | Own marker | Recipient derived from JWT |
@@ -143,7 +143,7 @@ covered all 18 surfaces; no anonymous row leak was observed before or after fixt
 | `feedback_reports` | Static PASS; live PASS | Enable + force | Reporter/scoped reviewer | Reporter/project derived | Review RPC | Denied | CEO AAL2 or scoped manager |
 | `activist_directory` | Static PASS; live PASS | Security-invoker view over protected sources | Role-specific projection | Not applicable | Not applicable | Not applicable | Protected-source RLS |
 
-The final posture inventory contained 23 public tables, 57 policies and 43 functions. Every one of
+The final posture inventory contained 23 public tables, 57 policies and 45 functions. Every one of
 the 17 protected tables had RLS enabled and forced. Grants and function search paths matched the
 approved posture verifier.
 
@@ -170,7 +170,7 @@ approved posture verifier.
 | `npm audit --omit=dev --json` | PASS (exit 0) | 0 Critical; 0 High; 0 Moderate; 0 Low; 0 total; 310 dependencies in metadata |
 | `node --test tests/security/android-hardening.test.mjs` | PASS (exit 0) | 6 total; 6 pass; 0 skip; 0 fail |
 | `npx cap sync android` | PASS (exit 0) | Generated the ignored pinned Capacitor bridge files required by a clean detached worktree |
-| `$taskAndroidSdk=Join-Path $env:LOCALAPPDATA 'Android\Sdk'; if (-not (Test-Path -LiteralPath $taskAndroidSdk)) { throw 'Android SDK unavailable' }; $env:ANDROID_HOME=$taskAndroidSdk; $env:ANDROID_SDK_ROOT=$taskAndroidSdk; android\gradlew.bat -p android testDebugUnitTest assembleDebug` | PASS (exit 0) | BUILD SUCCESSFUL in 34s; 169 actionable tasks; 169 executed |
+| `$taskAndroidSdk=Join-Path $env:LOCALAPPDATA 'Android\Sdk'; if (-not (Test-Path -LiteralPath $taskAndroidSdk)) { throw 'Android SDK unavailable' }; $env:ANDROID_HOME=$taskAndroidSdk; $env:ANDROID_SDK_ROOT=$taskAndroidSdk; android\gradlew.bat -p android testDebugUnitTest assembleDebug` | PASS (exit 0) | BUILD SUCCESSFUL in 13s; 169 actionable tasks; 169 executed |
 | `$taskAndroidSdk=Join-Path $env:LOCALAPPDATA 'Android\Sdk'; if (Test-Path -LiteralPath 'android\keystore.properties') { throw 'keystore.properties unexpectedly exists' }; $env:ANDROID_HOME=$taskAndroidSdk; $env:ANDROID_SDK_ROOT=$taskAndroidSdk; android\gradlew.bat -p android assembleRelease` | EXPECTED FAIL (exit 1) | Release signing configuration missing: android/keystore.properties; assertion PASS |
 | `node scripts/security/g5-local-orchestrator.mjs` | PASS (exit 0) | 19 live tests; 19 pass; 0 skip; 0 fail; 48/48 evidence cases; 47/47 migration checks; cleanup clean |
 | `node scripts/verify-month-report.cjs <year> <month>` | NOT RUN | Inspection only: `.env.local`; privileged Supabase; person-level output; no approved isolated source |
@@ -184,24 +184,25 @@ pooler-disabled reservation `56329`; edge-inspector reservation `56342`; local B
 Published listeners were loopback-only on `127.0.0.1`.
 
 The identity inventory found twelve exact-project containers:
-`supabase_analytics_mekarvim-security-g5-5b6553b5dde5`,
-`supabase_auth_mekarvim-security-g5-5b6553b5dde5`,
-`supabase_db_mekarvim-security-g5-5b6553b5dde5`,
-`supabase_edge_runtime_mekarvim-security-g5-5b6553b5dde5`,
-`supabase_inbucket_mekarvim-security-g5-5b6553b5dde5`,
-`supabase_kong_mekarvim-security-g5-5b6553b5dde5`,
-`supabase_pg_meta_mekarvim-security-g5-5b6553b5dde5`,
-`supabase_realtime_mekarvim-security-g5-5b6553b5dde5`,
-`supabase_rest_mekarvim-security-g5-5b6553b5dde5`,
-`supabase_storage_mekarvim-security-g5-5b6553b5dde5`,
-`supabase_studio_mekarvim-security-g5-5b6553b5dde5`, and
-`supabase_vector_mekarvim-security-g5-5b6553b5dde5`.
+`supabase_analytics_mekarvim-security-g5-9de4fb3f09e2`,
+`supabase_auth_mekarvim-security-g5-9de4fb3f09e2`,
+`supabase_db_mekarvim-security-g5-9de4fb3f09e2`,
+`supabase_edge_runtime_mekarvim-security-g5-9de4fb3f09e2`,
+`supabase_inbucket_mekarvim-security-g5-9de4fb3f09e2`,
+`supabase_kong_mekarvim-security-g5-9de4fb3f09e2`,
+`supabase_pg_meta_mekarvim-security-g5-9de4fb3f09e2`,
+`supabase_realtime_mekarvim-security-g5-9de4fb3f09e2`,
+`supabase_rest_mekarvim-security-g5-9de4fb3f09e2`,
+`supabase_storage_mekarvim-security-g5-9de4fb3f09e2`,
+`supabase_studio_mekarvim-security-g5-9de4fb3f09e2`, and
+`supabase_vector_mekarvim-security-g5-9de4fb3f09e2`.
 
 ## Negative / Adversarial Tests
 
 Measured denial paths included anonymous table access, direct anonymous PII mutation, cross-project
 and cross-activist CRUD, manager-forged actor/contact/house/assignee/beneficiary and tour-state
-INSERTs, forged tenant/owner/recipient fields, project transfer, legacy-UUID
+INSERTs, direct bonus-cancellation INSERT, same-project nonexistent/future bonus cancellation,
+forged tenant/owner/recipient fields, project transfer, legacy-UUID
 divergence, disabled/stale JWTs, AAL1 privileged access, another recipient's reminder cancellation,
 unassigned tour reporting, arbitrary notification events, private audit reads and Coordinator raw
 Finance access. Expected denials were observed as RLS empty/denied results, stable concealed 404s,
