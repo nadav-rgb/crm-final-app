@@ -8,6 +8,18 @@ begin;
 -- JSONB, while the hardened identity-pair contract uses integer[] on both
 -- meeting_houses and tours. Normalize that one legacy shape before any array
 -- operators, constraints, or dual-write triggers are installed.
+do $$
+declare
+  policy_record record;
+begin
+  for policy_record in
+    select policyname from pg_policies
+    where schemaname = 'public' and tablename = 'meeting_houses'
+  loop
+    execute format('drop policy if exists %I on public.meeting_houses', policy_record.policyname);
+  end loop;
+end $$;
+
 create or replace function app_private.jsonb_integer_array(p_value jsonb)
 returns integer[]
 language plpgsql immutable

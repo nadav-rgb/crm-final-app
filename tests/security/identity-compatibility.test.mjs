@@ -16,6 +16,13 @@ test('I2 legacy JSONB meeting assignments are normalized before array identity b
   assert.match(sql, /security migration refused: meeting_houses assigned_activists must be a JSON array/i);
   assert.match(sql, /alter column assigned_activists type integer\[\]/i);
   assert.match(sql, /jsonb_array_elements_text/i);
+  const legacyPolicyDrop = sql.indexOf("where schemaname = 'public' and tablename = 'meeting_houses'");
+  const canonicalTypeChange = sql.indexOf('alter column assigned_activists type integer[]');
+  assert.ok(legacyPolicyDrop >= 0, 'legacy meeting-house policies must be selected for removal');
+  assert.ok(
+    legacyPolicyDrop < canonicalTypeChange,
+    'legacy meeting-house policies must be dropped before the dependent column type changes',
+  );
 });
 
 test('I2 scalar compatibility trigger derives either side and rejects deliberate divergence', async () => {
