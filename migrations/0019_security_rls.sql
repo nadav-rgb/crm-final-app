@@ -4,6 +4,68 @@
 
 begin;
 
+-- The approved legacy production baseline stores meeting-house assignments as
+-- JSONB, while the hardened identity-pair contract uses integer[] on both
+-- meeting_houses and tours. Normalize that one legacy shape before any array
+-- operators, constraints, or dual-write triggers are installed.
+create or replace function app_private.jsonb_integer_array(p_value jsonb)
+returns integer[]
+language plpgsql immutable
+set search_path = pg_catalog
+as $$
+declare
+  v_result integer[];
+begin
+  if p_value is null then return '{}'::integer[]; end if;
+  if jsonb_typeof(p_value) <> 'array' then
+    raise exception 'security migration refused: meeting_houses assigned_activists must be a JSON array'
+      using errcode = '23514';
+  end if;
+
+  begin
+    select coalesce(array_agg(e.value::integer order by e.ordinality), '{}'::integer[])
+      into v_result
+    from jsonb_array_elements_text(p_value) with ordinality as e(value, ordinality);
+  exception when invalid_text_representation or numeric_value_out_of_range then
+    raise exception 'security migration refused: meeting_houses assigned_activists must contain integers'
+      using errcode = '23514';
+  end;
+  return v_result;
+end $$;
+
+do $$
+declare
+  v_udt_name text;
+begin
+  select c.udt_name into v_udt_name
+  from information_schema.columns c
+  where c.table_schema = 'public'
+    and c.table_name = 'meeting_houses'
+    and c.column_name = 'assigned_activists';
+
+  if v_udt_name = 'jsonb' then
+    if exists (
+      select 1 from public.meeting_houses
+      where assigned_activists is not null
+        and jsonb_typeof(assigned_activists) <> 'array'
+    ) then
+      raise exception 'security migration refused: meeting_houses assigned_activists must be a JSON array'
+        using errcode = '23514';
+    end if;
+
+    alter table public.meeting_houses alter column assigned_activists drop default;
+    alter table public.meeting_houses alter column assigned_activists type integer[]
+      using app_private.jsonb_integer_array(assigned_activists);
+    alter table public.meeting_houses alter column assigned_activists set default '{}';
+    alter table public.meeting_houses alter column assigned_activists set not null;
+  elsif v_udt_name <> '_int4' then
+    raise exception 'security migration refused: incompatible meeting_houses assigned_activists type %', v_udt_name
+      using errcode = '42804';
+  end if;
+end $$;
+
+drop function app_private.jsonb_integer_array(jsonb);
+
 alter table public.meeting_houses
   add column if not exists assigned_user_ids uuid[] not null default '{}';
 alter table public.meeting_reminders

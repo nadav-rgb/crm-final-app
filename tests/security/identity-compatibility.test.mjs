@@ -8,6 +8,16 @@ function triggerStatement(sql, triggerName) {
   return sql.match(new RegExp(`create\\s+trigger\\s+${triggerName}\\b[\\s\\S]*?;`, 'i'))?.[0] ?? '';
 }
 
+test('I2 legacy JSONB meeting assignments are normalized before array identity backfill', async () => {
+  const sql = await read('migrations/0019_security_rls.sql');
+
+  assert.match(sql, /table_name\s*=\s*'meeting_houses'[\s\S]*?column_name\s*=\s*'assigned_activists'[\s\S]*?udt_name\s*=\s*'jsonb'/i);
+  assert.match(sql, /jsonb_typeof\(assigned_activists\)\s*<>\s*'array'/i);
+  assert.match(sql, /security migration refused: meeting_houses assigned_activists must be a JSON array/i);
+  assert.match(sql, /alter column assigned_activists type integer\[\]/i);
+  assert.match(sql, /jsonb_array_elements_text/i);
+});
+
 test('I2 scalar compatibility trigger derives either side and rejects deliberate divergence', async () => {
   const sql = await read('migrations/0018_security_foundation.sql');
   const fn = sql.match(/create or replace function app_private\.sync_identity_pair\(\)[\s\S]*?\$\$;/i)?.[0] ?? '';
