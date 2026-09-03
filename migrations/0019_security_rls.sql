@@ -289,6 +289,13 @@ begin
   end loop;
 end $$;
 
+-- Legacy baseline helpers were SECURITY DEFINER and executable by anon through
+-- PostgREST. All legacy policies have been removed above and no application
+-- code calls them, so remove the obsolete RPC surface without CASCADE.
+drop function if exists public.auth_role();
+drop function if exists public.auth_project_id();
+drop function if exists public.auth_activist_code();
+
 revoke all on all tables in schema public from anon;
 revoke all on all tables in schema public from authenticated;
 grant select, insert, delete on public.projects to authenticated;

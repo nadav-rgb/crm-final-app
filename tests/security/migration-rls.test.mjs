@@ -43,6 +43,9 @@ test('RLS migration forces row security for every sensitive table', async () => 
 test('RLS migration locks helpers, views and audit storage', async () => {
   const sql = await readFile(migrationPath, 'utf8');
   assert.match(sql, /set search_path = pg_catalog, public/i);
+  for (const legacyHelper of ['auth_role', 'auth_project_id', 'auth_activist_code']) {
+    assert.match(sql, new RegExp(`drop function if exists public\\.${legacyHelper}\\(\\)`, 'i'));
+  }
   assert.match(sql, /revoke all on function public\.app_has_project_role\(integer,text\[\]\) from public, anon/i);
   assert.match(sql, /alter view public\.activist_directory set \(security_invoker = on\)/i);
   assert.match(sql, /grant execute on function public\.app_security_posture\(\) to service_role/i);
