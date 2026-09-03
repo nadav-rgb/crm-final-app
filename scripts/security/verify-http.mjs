@@ -5,7 +5,12 @@ const REQUIRED = Object.freeze({
   'referrer-policy': (value) => value === 'strict-origin-when-cross-origin',
   'permissions-policy': (value) => value === 'camera=(), geolocation=(), payment=(), microphone=(self)',
   'x-frame-options': (value) => value === 'DENY',
-  'cache-control': (value) => value === 'no-store, private',
+  'cache-control': (value) => {
+    const directives = new Set(value.toLowerCase().split(',').map((entry) => entry.trim()).filter(Boolean));
+    const names = new Set([...directives].map((entry) => entry.split('=', 1)[0].trim()));
+    return directives.has('no-store') && directives.has('private')
+      && !directives.has('public') && !names.has('s-maxage');
+  },
 });
 
 function exactBaseUrl(value) {
