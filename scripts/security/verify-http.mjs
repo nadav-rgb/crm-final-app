@@ -9,7 +9,7 @@ const REQUIRED = Object.freeze({
     const directives = new Set(value.toLowerCase().split(',').map((entry) => entry.trim()).filter(Boolean));
     const names = new Set([...directives].map((entry) => entry.split('=', 1)[0].trim()));
     return directives.has('no-store') && directives.has('private')
-      && !directives.has('public') && !names.has('s-maxage');
+      && !names.has('public') && !names.has('s-maxage');
   },
 });
 

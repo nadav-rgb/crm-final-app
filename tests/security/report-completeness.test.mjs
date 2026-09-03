@@ -127,6 +127,11 @@ test('completed run has one positive verdict and exact live-evidence statuses', 
     /Live database posture[^\n]*PASS/,
     /Live cross-tenant, IDOR, RLS, and provider MFA behavior[^\n]*PASS/,
     new RegExp(`${G5_REQUIRED_LIVE_TESTS.length} live tests; ${G5_REQUIRED_LIVE_TESTS.length} pass; 0 skip; 0 fail`),
+    /^### Vercel Preview Isolation Evidence$/m,
+    /Before separation[^\n]*11 older entries[^\n]*Preview and Production/,
+    /Target-only update[^\n]*`target: \["production"\]`[^\n]*no value field/,
+    /After separation[^\n]*17 Preview entries[^\n]*`staging\/security-integrated`[^\n]*0 unscoped Preview entries/,
+    /Deployment order[^\n]*environment audit[^\n]*target separation[^\n]*post-change audit[^\n]*`dpl_56ZpcWrFNXLTwGq3d1cMT7pkWGSt`/,
   ]) assert.match(report, required);
 });
 
@@ -213,7 +218,7 @@ test('test evidence names every required command with exact status and bounded r
     [
       '`npm run test:security`',
       /^PASS \(exit 0\)$/,
-      new RegExp(`370 total; 351 pass; ${G5_REQUIRED_LIVE_TESTS.length} explicit live skips; 0 fail`),
+      new RegExp(`372 total; 353 pass; ${G5_REQUIRED_LIVE_TESTS.length} explicit live skips; 0 fail`),
     ],
     [
       '`node --test tests/security/finance-reports-feedback.test.mjs tests/security/jspdf-compatibility.test.mjs tests/security/exceljs-uuid-compatibility.test.mjs`',

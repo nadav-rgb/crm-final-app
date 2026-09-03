@@ -81,17 +81,26 @@ test('HTTP verifier accepts Vercel-added restrictive cache directives', async ()
   }, 'no-store, must-revalidate, no-cache, max-age=0, private');
 });
 
-test('HTTP verifier rejects shared-cache directives even when no-store and private are present', async () => {
-  await withFixture({
-    'GET /': 200,
-    'GET /api/auth/session': 401,
-    'POST /api/auth/logout': 403,
-    'GET /__security_missing__': 404,
-    'GET /500': 500,
-  }, async (baseUrl) => {
-    await assert.rejects(
-      () => verifyHttp(baseUrl),
-      /\/ has invalid cache-control/,
-    );
-  }, 'no-store, private, public, s-maxage=60');
+test('HTTP verifier rejects every unsafe or incomplete cache policy independently', async () => {
+  const invalidPolicies = [
+    'no-store, private, public',
+    'no-store, private, public = shared',
+    'no-store, private, s-maxage=60',
+    'private, no-cache',
+    'no-store, no-cache',
+  ];
+  for (const cacheControl of invalidPolicies) {
+    await withFixture({
+      'GET /': 200,
+      'GET /api/auth/session': 401,
+      'POST /api/auth/logout': 403,
+      'GET /__security_missing__': 404,
+      'GET /500': 500,
+    }, async (baseUrl) => {
+      await assert.rejects(
+        () => verifyHttp(baseUrl),
+        /\/ has invalid cache-control/,
+      );
+    }, cacheControl);
+  }
 });

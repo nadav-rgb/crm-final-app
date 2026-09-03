@@ -72,6 +72,21 @@ RLS, zero client grants on `app_private`, zero anonymous executable SECURITY DEF
 zero staging fixture functions. Supabase API logs contained no 5xx for the final run and Vercel
 error logs were empty.
 
+A final continuation pass found that several older Vercel variables were still jointly targeted
+to Preview and Production even though staging overrides masked the Supabase and cron values. Their
+values were never read or changed. Target-only API updates removed only the Preview target from
+those older entries, leaving their Production target and value intact. The resulting Preview
+inventory contains exactly 17 variables, all scoped only to `staging/security-integrated`; no
+shared Production credential remains available to Preview.
+
+Vercel adds `no-cache`, `must-revalidate` and `max-age=0` to the application's required `no-store,
+private` response. The hosted verifier initially treated that secure superset as a RED exact-string
+mismatch. Commit `de71669fdb11c86b6e6f344eee560804d9b31224` added regression coverage that
+accepts restrictive additions while still rejecting `public` and `s-maxage`. The focused test, the
+complete security suite, local HTTP verification and hosted HTTP verification all returned GREEN.
+Final Preview deployment `dpl_56ZpcWrFNXLTwGq3d1cMT7pkWGSt` is Ready, target `preview`, from branch
+`staging/security-integrated` at that exact commit.
+
 ## Findings
 
 ### Severity inventory
@@ -199,7 +214,7 @@ approved posture verifier.
 | `npm run verify:interaction-report` | PASS (exit 0) | 31 total; 31 pass; 0 skip; 0 fail |
 | `node scripts/verify-payment-order.cjs` | PASS (exit 0) | 93 total; 93 pass; 0 skip; 0 fail |
 | `node scripts/verify-activity-report.cjs` | PASS (exit 0) | 64 total; 64 pass; 0 skip; 0 fail |
-| `npm run test:security` | PASS (exit 0) | 370 total; 351 pass; 19 explicit live skips; 0 fail |
+| `npm run test:security` | PASS (exit 0) | 372 total; 353 pass; 19 explicit live skips; 0 fail |
 | `node --test tests/security/finance-reports-feedback.test.mjs tests/security/jspdf-compatibility.test.mjs tests/security/exceljs-uuid-compatibility.test.mjs` | PASS (exit 0) | 36 total; 36 pass; 0 skip; 0 fail |
 | `npm run test:security -- tests/security/report-completeness.test.mjs` | PASS (exit 0) | 8 total; 8 pass; 0 skip; 0 fail |
 | `npm run build` | PASS (exit 0) | Next.js 16.3.3 Webpack production build; compiled successfully |
@@ -219,7 +234,9 @@ approved posture verifier.
 | `node scripts/security/g5-local-orchestrator.mjs` | PASS (exit 0) | 19 live tests; 19 pass; 0 skip; 0 fail; 48/48 evidence cases; 49/49 migration checks; cleanup clean |
 | Exact-target hosted staging verifier with process-local credentials | PASS (exit 0) | RLS/JWT/IDOR/BOLA; MFA/AAL/session; Finance SQL/JS parity; audit; HTTP/CSP; integrations fail-closed; exact cleanup |
 | Supabase final staging posture and cleanup SQL | PASS | 17/17 forced RLS; 0 private client grants; 0 anonymous SECURITY DEFINER grants; 0 fixture functions; all synthetic and private resource counts 0 |
-| `npx vercel inspect <branch-preview-url>` | PASS | project `crm-final-app`; target `preview`; status Ready; branch alias verified |
+| Vercel Preview environment target audit | PASS | 17 variables; every entry is Preview-only and branch-only; shared Production credentials removed from Preview by target-only updates |
+| `npx vercel inspect <branch-preview-url>` | PASS | project `crm-final-app`; deployment `dpl_56ZpcWrFNXLTwGq3d1cMT7pkWGSt`; target `preview`; status Ready; branch and commit `de71669` verified |
+| Hosted `node scripts/security/verify-http.mjs` | PASS (exit 0) | exact 200/401/403/404/500; unique CSP nonces; `no-store` + `private`; no `public`/`s-maxage` |
 | In-app browser QA at 390x844 and 1440x900 | PASS | Hebrew RTL login rendered; form state worked; no horizontal overflow at either viewport |
 | Vercel and Supabase staging log review | PASS | Vercel error-level log query empty; final Supabase API window 100 requests, 0 server errors; 401/403 were intentional adversarial denials |
 | Seven privileged operational scripts without target acknowledgements | PASS (fail-closed) | All seven exited 1 before environment loading or any data operation |
@@ -227,6 +244,15 @@ approved posture verifier.
 | `node scripts/verify-payroll-xlsx.cjs <year> <month>` | NOT RUN | Inspection only: `.env.local`; privileged Supabase; person/payroll output; no approved isolated source |
 | `git diff --check` | PASS (exit 0) | 0 whitespace errors; checked before each final report commit |
 | `git status --short --branch` | PASS (exit 0) | tracked tree clean after the final-report commit |
+
+### Vercel Preview Isolation Evidence
+
+| Checkpoint | Sanitized result |
+| --- | --- |
+| Before separation | 11 older entries targeted both Preview and Production; credential values remained unread. |
+| Target-only update | Each update sent only `target: ["production"]`; no value field, key replacement or environment-type change was sent. |
+| After separation | 17 Preview entries remained, all limited to `staging/security-integrated`, with 0 unscoped Preview entries and 0 Preview-plus-Production entries. |
+| Deployment order | The environment audit preceded target separation, the post-change audit followed it, and only then was Preview deployment `dpl_56ZpcWrFNXLTwGq3d1cMT7pkWGSt` created at 2026-09-03 18:44:20 +03:00. |
 
 G5 used pinned Supabase CLI `2.115.0`.
 The exact dedicated listeners were API `60321`; DB `60322`; Studio `60323`; Mail `60324`; shadow `60320`; SMTP `60325`; POP3 `60326`; analytics `60327`;
@@ -287,7 +313,9 @@ evidence manifest or this report.
 
 The Vercel CLI-created `.env.local` contained a temporary OIDC value, was never tracked, and was
 deleted before the final current-tree scan. The five staging-only secret variables remain Vercel
-Preview branch secrets and were never printed or written into the repository.
+Preview branch secrets and were never printed or written into the repository. Older provider,
+Supabase, cron and public variables that were jointly scoped to Preview and Production are now
+Production-only; their values were not read or changed during target separation.
 
 ## External Integrations
 
