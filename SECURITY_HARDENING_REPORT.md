@@ -1,8 +1,10 @@
 # CRM Mekarvim Security Hardening Evidence Report
 
-Evidence date: 2026-09-01 (Asia/Jerusalem)
+Evidence date: 2026-09-03 (Asia/Jerusalem)
 
-Branch: `security/integrate-current-main`
+Branch: `staging/security-integrated`
+
+Approved staging source checkpoint: `1be52be54a88b312484d9b53a8dede9c3e0d4230`
 
 Starting checkpoint: `5340d9763ce27d396bbc79bf33f342933bedceb8`
 
@@ -53,6 +55,22 @@ local-live gates and zero failures, activity verification 64/64, focused finance
 production Webpack build, HTTP/CSP,
 Android debug, secret scans, bundle scan and dependency audits all passed. The 19 deterministic
 suite skips are environment gates whose corresponding live tests were measured separately in G5.
+
+Hosted staging closeout was then performed only against Supabase project
+`khnojemwdjkrzjbcryrm` (`mekarvim-staging`, `eu-central-1`) and the Vercel Preview branch
+`staging/security-integrated` for project `crm-final-app`. The schema-only baseline and 0018 were
+not replayed. Migrations 0019 through 0024 were applied in order with a successful verification
+after every step. A real legacy JSONB assignment incompatibility and anonymous legacy auth helper
+exposure were fixed RED-to-GREEN in commits `bdbf384`, `1b0be0a` and `38fdd8c` before continuation.
+
+The hosted synthetic run passed direct JWT/PostgREST cross-user and cross-project isolation,
+IDOR/BOLA and authority-transfer denial, real TOTP/AAL2, Preview BFF session rotation/CSRF/logout,
+Finance SQL-versus-JS parity, audit generation, five-status HTTP/CSP nonce checks and integration
+fail-closed behavior. Exact cleanup returned Auth, public fixtures, identities, sessions, audit,
+rate-limit buckets and notification outbox rows to zero. The final posture remained 17/17 forced
+RLS, zero client grants on `app_private`, zero anonymous executable SECURITY DEFINER functions and
+zero staging fixture functions. Supabase API logs contained no 5xx for the final run and Vercel
+error logs were empty.
 
 ## Findings
 
@@ -181,7 +199,7 @@ approved posture verifier.
 | `npm run verify:interaction-report` | PASS (exit 0) | 31 total; 31 pass; 0 skip; 0 fail |
 | `node scripts/verify-payment-order.cjs` | PASS (exit 0) | 93 total; 93 pass; 0 skip; 0 fail |
 | `node scripts/verify-activity-report.cjs` | PASS (exit 0) | 64 total; 64 pass; 0 skip; 0 fail |
-| `npm run test:security` | PASS (exit 0) | 369 total; 350 pass; 19 explicit live skips; 0 fail |
+| `npm run test:security` | PASS (exit 0) | 370 total; 351 pass; 19 explicit live skips; 0 fail |
 | `node --test tests/security/finance-reports-feedback.test.mjs tests/security/jspdf-compatibility.test.mjs tests/security/exceljs-uuid-compatibility.test.mjs` | PASS (exit 0) | 36 total; 36 pass; 0 skip; 0 fail |
 | `npm run test:security -- tests/security/report-completeness.test.mjs` | PASS (exit 0) | 8 total; 8 pass; 0 skip; 0 fail |
 | `npm run build` | PASS (exit 0) | Next.js 16.3.3 Webpack production build; compiled successfully |
@@ -196,9 +214,14 @@ approved posture verifier.
 | `npm audit --omit=dev --json` | PASS (exit 0) | 0 Critical; 0 High; 0 Moderate; 0 Low; 0 total; 310 dependencies in metadata |
 | `node --test tests/security/android-hardening.test.mjs` | PASS (exit 0) | 6 total; 6 pass; 0 skip; 0 fail |
 | `npx --no-install cap sync android` | PASS (exit 0) | Generated the ignored pinned Capacitor bridge files required by a clean detached worktree |
-| `$taskAndroidSdk=Join-Path $env:LOCALAPPDATA 'Android\Sdk'; if (-not (Test-Path -LiteralPath $taskAndroidSdk)) { throw 'Android SDK unavailable' }; $env:ANDROID_HOME=$taskAndroidSdk; $env:ANDROID_SDK_ROOT=$taskAndroidSdk; android\gradlew.bat -p android testDebugUnitTest assembleDebug` | PASS (exit 0) | BUILD SUCCESSFUL in 13s; 169 actionable tasks; 169 executed |
+| `$taskAndroidSdk=Join-Path $env:LOCALAPPDATA 'Android\Sdk'; if (-not (Test-Path -LiteralPath $taskAndroidSdk)) { throw 'Android SDK unavailable' }; $env:ANDROID_HOME=$taskAndroidSdk; $env:ANDROID_SDK_ROOT=$taskAndroidSdk; android\gradlew.bat -p android testDebugUnitTest assembleDebug` | PASS (exit 0) | BUILD SUCCESSFUL in 27s; 169 actionable tasks; 108 executed; 61 up-to-date |
 | `$taskAndroidSdk=Join-Path $env:LOCALAPPDATA 'Android\Sdk'; if (Test-Path -LiteralPath 'android\keystore.properties') { throw 'keystore.properties unexpectedly exists' }; $env:ANDROID_HOME=$taskAndroidSdk; $env:ANDROID_SDK_ROOT=$taskAndroidSdk; android\gradlew.bat -p android assembleRelease` | EXPECTED FAIL (exit 1) | Release signing configuration missing: android/keystore.properties; assertion PASS |
 | `node scripts/security/g5-local-orchestrator.mjs` | PASS (exit 0) | 19 live tests; 19 pass; 0 skip; 0 fail; 48/48 evidence cases; 49/49 migration checks; cleanup clean |
+| Exact-target hosted staging verifier with process-local credentials | PASS (exit 0) | RLS/JWT/IDOR/BOLA; MFA/AAL/session; Finance SQL/JS parity; audit; HTTP/CSP; integrations fail-closed; exact cleanup |
+| Supabase final staging posture and cleanup SQL | PASS | 17/17 forced RLS; 0 private client grants; 0 anonymous SECURITY DEFINER grants; 0 fixture functions; all synthetic and private resource counts 0 |
+| `npx vercel inspect <branch-preview-url>` | PASS | project `crm-final-app`; target `preview`; status Ready; branch alias verified |
+| In-app browser QA at 390x844 and 1440x900 | PASS | Hebrew RTL login rendered; form state worked; no horizontal overflow at either viewport |
+| Vercel and Supabase staging log review | PASS | Vercel error-level log query empty; final Supabase API window 100 requests, 0 server errors; 401/403 were intentional adversarial denials |
 | Seven privileged operational scripts without target acknowledgements | PASS (fail-closed) | All seven exited 1 before environment loading or any data operation |
 | `node scripts/verify-month-report.cjs <year> <month>` | NOT RUN | Inspection only: `.env.local`; privileged Supabase; person-level output; no approved isolated source |
 | `node scripts/verify-payroll-xlsx.cjs <year> <month>` | NOT RUN | Inspection only: `.env.local`; privileged Supabase; person/payroll output; no approved isolated source |
@@ -248,6 +271,7 @@ multi-project scope, caps, expenses, bonuses, tours and totals with zero unexpla
 | jsPDF | `4.2.1`, Hebrew/RTL and browser-bundle compatibility passed |
 | ExcelJS | `4.4.0`, exact UUID override and workbook round trips passed |
 | Capacitor Android/Core/CLI | `8.4.1`, Android debug verification passed |
+| xmldom transitive override | `0.9.12`; RED audit advisory for `<=0.9.11` remediated; full and production audits returned 0 findings |
 | npm full audit | 0 Critical; 0 High; 0 Moderate; 0 Low |
 | npm production audit | 0 Critical; 0 High; 0 Moderate; 0 Low |
 
@@ -261,12 +285,20 @@ bundle scanner also returned zero findings. G5 credentials, generated passwords,
 data and exact synthetic identifiers stayed process-local and were not included in the sanitized
 evidence manifest or this report.
 
+The Vercel CLI-created `.env.local` contained a temporary OIDC value, was never tracked, and was
+deleted before the final current-tree scan. The five staging-only secret variables remain Vercel
+Preview branch secrets and were never printed or written into the repository.
+
 ## External Integrations
 
 Anthropic remains fail-closed unless explicitly enabled with processing approval. Google Sheets
 requires the dedicated service account and exact spreadsheet/range allowlist. GitHub feedback
 forwarding remains disabled. Notification adapters receive opaque delivery identifiers and construct
 generic payloads internally. No external provider delivery was required for the local G5 verdict.
+
+For the hosted Preview, Anthropic and GitHub feedback are explicitly disabled; no staging Sheets,
+VAPID or FCM credentials are present. Unauthenticated cron calls returned 401 and feedback forwarding
+returned its stable 503 disabled response. All such integrations therefore remained fail-closed.
 
 ## Android
 
@@ -278,9 +310,9 @@ cannot silently fall back to debug signing and is not a release artifact.
 
 ## Remaining Risks
 
-- The evidence is local and time-bound; staging/Production infrastructure, provider-console settings,
-  credential rotation and deployed network policy still require environment-owner verification.
-- HSTS preload is present in code but still requires staging verification before operational use.
+- Evidence remains time-bound; Production infrastructure, provider-console settings, credential
+  rotation and deployed network policy still require environment-owner approval and verification.
+- HSTS preload was verified on staging; browser-preload-list admission remains an external process.
 - Next.js reports `optimizeFonts`, middleware-convention and `_app.getInitialProps` warnings.
 - Gradle reports flat-directory, SDK XML compatibility and deprecation warnings.
 - Real external notification delivery and production signing were intentionally outside this run.
@@ -291,8 +323,8 @@ deployment or maintenance control.
 
 ## External Blockers
 
-No blocker remains for the requested local G5 and G6 closeout. Production access, deployment,
-release signing, remote migration and real-data use remain prohibited and were not attempted.
+No blocker remains for the requested local G5/G6 and hosted staging closeout. Production access,
+deployment, migration, secret reuse and real-data use remain prohibited and were not attempted.
 
 ## Rollback
 
@@ -305,3 +337,5 @@ history rewrite, merge to `main` or Production deployment occurred.
 ## Final Verdict
 
 READY TO ENTER STAGING
+
+Hosted staging approval status (2026-09-03): `READY FOR PRODUCTION APPROVAL`.

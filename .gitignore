@@ -30,3 +30,6 @@ android/key.properties
 # Firebase service account (סוד שרת — לעולם לא בגיט)
 *service-account*.json
 serviceAccount*.json
+.vercel
+.env*
+supabase/.temp/

@@ -213,7 +213,7 @@ test('test evidence names every required command with exact status and bounded r
     [
       '`npm run test:security`',
       /^PASS \(exit 0\)$/,
-      new RegExp(`369 total; 350 pass; ${G5_REQUIRED_LIVE_TESTS.length} explicit live skips; 0 fail`),
+      new RegExp(`370 total; 351 pass; ${G5_REQUIRED_LIVE_TESTS.length} explicit live skips; 0 fail`),
     ],
     [
       '`node --test tests/security/finance-reports-feedback.test.mjs tests/security/jspdf-compatibility.test.mjs tests/security/exceljs-uuid-compatibility.test.mjs`',
