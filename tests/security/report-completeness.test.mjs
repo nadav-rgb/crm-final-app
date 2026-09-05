@@ -6,8 +6,8 @@ import { G5_CASE_MANIFEST, G5_REQUIRED_LIVE_TESTS } from '../../scripts/security
 
 const reportPath = 'SECURITY_HARDENING_REPORT.md';
 const readReport = () => readFile(reportPath, 'utf8');
-const permittedVerdict = ['READY', 'TO', 'ENTER', 'STAGING'].join(' ');
-const prohibitedNegativeVerdict = ['NOT', 'READY', 'TO', 'ENTER', 'STAGING'].join(' ');
+const permittedVerdict = ['READY', 'FOR', 'PRODUCTION', 'APPROVAL'].join(' ');
+const prohibitedNegativeVerdict = ['NOT', 'READY', 'FOR', 'PRODUCTION', 'APPROVAL'].join(' ');
 const prohibitedAbsoluteClaim = ['100%', 'secure'].join(' ');
 
 const requiredHeadings = [
@@ -131,7 +131,7 @@ test('completed run has one positive verdict and exact live-evidence statuses', 
     /Before separation[^\n]*11 older entries[^\n]*Preview and Production/,
     /Target-only update[^\n]*`target: \["production"\]`[^\n]*no value field/,
     /After separation[^\n]*17 Preview entries[^\n]*`staging\/security-integrated`[^\n]*0 unscoped Preview entries/,
-    /Deployment order[^\n]*environment audit[^\n]*target separation[^\n]*post-change audit[^\n]*`dpl_56ZpcWrFNXLTwGq3d1cMT7pkWGSt`/,
+    /Deployment order[^\n]*environment audit[^\n]*target separation[^\n]*post-change audit[^\n]*`dpl_A7rmokNxHnLS7ctwQXidmgeUKhFo`/,
   ]) assert.match(report, required);
 });
 
