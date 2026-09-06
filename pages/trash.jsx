@@ -25,12 +25,12 @@ export default function Trash() {
     const [{ data: contacts }, { data: activists }] = await Promise.all([
       supabase.from('contacts').select('id, name, deleted_at').not('deleted_at', 'is', null),
       currentUser.role === 'ceo' || currentUser.role === 'coord' || currentUser.role === 'head'
-        ? supabase.from('profiles').select('id, name, deleted_at').not('deleted_at', 'is', null)
+        ? supabase.from('profiles').select('activist_code, name, deleted_at').not('deleted_at', 'is', null)
         : Promise.resolve({ data: [] }),
     ]);
     const combined = [
       ...(contacts || []).map(c => ({ entity: 'contact', id: c.id, name: c.name, deletedAt: c.deleted_at })),
-      ...(activists || []).map(a => ({ entity: 'activist', id: a.id, name: a.name, deletedAt: a.deleted_at })),
+      ...(activists || []).map(a => ({ entity: 'activist', id: a.activist_code, name: a.name, deletedAt: a.deleted_at })),
     ].sort((a, b) => new Date(b.deletedAt) - new Date(a.deletedAt));
     setRows(combined);
     setLoading(false);
@@ -40,16 +40,21 @@ export default function Trash() {
 
   async function callAction(entity, id, action) {
     setBusyId(id);
-    const res = await fetch('/api/admin/soft-delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
-      body: JSON.stringify({ entity, id, action }),
-    });
-    const body = await res.json().catch(() => ({}));
-    setBusyId(null);
-    if (!res.ok) { alert(body.error || 'הפעולה נכשלה'); return; }
-    setConfirmPurge(null);
-    await load();
+    try {
+      const res = await fetch('/api/admin/soft-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+        body: JSON.stringify({ entity, id, action }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) { alert(body.error || 'הפעולה נכשלה'); return; }
+      setConfirmPurge(null);
+      await load();
+    } catch (err) {
+      alert('שגיאת רשת: ' + (err.message || 'נסה שוב'));
+    } finally {
+      setBusyId(null);
+    }
   }
 
   if (!can.manageDeleted) {
