@@ -67,6 +67,9 @@ export default function ContactDetail() {
 
   // בעלות — פעיל רואה/עורך רק לקוח ששייך לו; רכז/ראש-פרויקט/מנכ"ל מוגבלים לפי פרויקט (isOwnProject).
   const isOwner = currentUser?.role !== 'activist' || contact.activist_id === currentUser?.id;
+  // תנאי מדויק לכפתורי עריכה/מחיקת-קשר בלבד — לא isOwner (רחב מדי: נכון גם ל-finance,
+  // שלא אמור לראות את הכפתורים האלה. ראה docs/superpowers/specs/2026-09-06-coord-interaction-management-and-torani-bonus-eligibility-design.md).
+  const canManageInteractions = contact.activist_id === currentUser?.id || ['coord', 'head', 'ceo'].includes(currentUser?.role);
 
   function openEdit() {
     setEditForm({
@@ -348,7 +351,7 @@ export default function ContactDetail() {
                       <strong style={{ fontSize: 14 }}>{i.type}</strong>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span style={{ fontSize: 12, color: '#aaa' }}>{i.date}</span>
-                        {isOwner && (
+                        {canManageInteractions && (
                           <>
                             <button onClick={() => openEditInteraction(i)} title="עריכת קשר"
                               style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, padding: 2, lineHeight: 1 }}>✏️</button>
