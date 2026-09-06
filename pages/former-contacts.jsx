@@ -23,7 +23,7 @@ export default function FormerContactsPage() {
 
   return (
     <DesktopLayout title="לקוחות לשעבר" subtitle={`${former.length} לקוחות`}
-      backHref="/contacts" backLabel="← חזרה ללקוחות">
+      backHref="/contacts" backLabel="חזרה ללקוחות">
       {former.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 60, color: '#ccc' }}>
           <div style={{ fontSize: 48, marginBottom: 12 }}>🎉</div>

@@ -189,7 +189,7 @@ export default function AddContactPage() {
   const cardStyle = { background: '#fffaf5', borderRadius: 14, padding: '18px 20px', marginBottom: 14, border: '0.5px solid rgba(0,0,0,0.06)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' };
 
   return (
-    <DesktopLayout title="הוספת לקוח" backHref="/contacts" backLabel="← חזרה ללקוחות">
+    <DesktopLayout title="הוספת לקוח" backHref="/contacts" backLabel="חזרה ללקוחות">
       <div style={{ maxWidth: 580 }}>
 
         {/* בחירת פרויקט — רק לפעיל ששייך ליותר מפרויקט אחד */}

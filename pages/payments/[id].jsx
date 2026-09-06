@@ -96,7 +96,7 @@ export default function ActivistPaymentDetail() {
   }
 
   if (!canView) return (
-    <DesktopLayout title="פירוט תשלום פעיל" backHref={`/payments?y=${year}&m=${month}`} backLabel="← חזרה לתשלומים">
+    <DesktopLayout title="פירוט תשלום פעיל" backHref={`/payments?y=${year}&m=${month}`} backLabel="חזרה לתשלומים">
       <div style={{ textAlign:'center', padding:60, color:'#aaa' }}>
         <div style={{ fontSize:48, marginBottom:12 }}>🔒</div>
         <div>אין הרשאה לדף זה</div>
@@ -105,13 +105,13 @@ export default function ActivistPaymentDetail() {
   );
 
   if (!activist) return (
-    <DesktopLayout title="פירוט תשלום פעיל" backHref={`/payments?y=${year}&m=${month}`} backLabel="← חזרה לתשלומים">
+    <DesktopLayout title="פירוט תשלום פעיל" backHref={`/payments?y=${year}&m=${month}`} backLabel="חזרה לתשלומים">
       <div style={{ textAlign:'center', padding:60, color:'#aaa' }}>פעיל לא נמצא</div>
     </DesktopLayout>
   );
 
   return (
-    <DesktopLayout title={`פירוט תשלום — ${activist.name}`} subtitle={`${currentMonthName} ${year}`} backHref={`/payments?y=${year}&m=${month}`} backLabel="← חזרה לתשלומים">
+    <DesktopLayout title={`פירוט תשלום — ${activist.name}`} subtitle={`${currentMonthName} ${year}`} backHref={`/payments?y=${year}&m=${month}`} backLabel="חזרה לתשלומים">
       <div style={{ maxWidth: 640 }}>
 
         {/* סיכום כולל */}

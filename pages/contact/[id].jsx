@@ -227,12 +227,12 @@ export default function ContactDetail() {
                   : from === 'reminders'                 ? '/reminders'
                   : from === 'former'                    ? '/former-contacts'
                   : `/contacts${view ? `?view=${view}` : ''}`;
-  const backLabel = from === 'activist' && activistId ? '← חזרה לפעיל'
-                  : from === 'landing'                 ? '← חזרה למרכז הפעילות'
-                  : from === 'personal'                ? '← חזרה לאזור האישי'
-                  : from === 'reminders'               ? '← חזרה לתזכורות'
-                  : from === 'former'                  ? '← חזרה ללקוחות לשעבר'
-                  : '← חזרה ללקוחות';
+  const backLabel = from === 'activist' && activistId ? 'חזרה לפעיל'
+                  : from === 'landing'                 ? 'חזרה למרכז הפעילות'
+                  : from === 'personal'                ? 'חזרה לאזור האישי'
+                  : from === 'reminders'               ? 'חזרה לתזכורות'
+                  : from === 'former'                  ? 'חזרה ללקוחות לשעבר'
+                  : 'חזרה ללקוחות';
 
   const isAchdut    = activeProject?.id === 1;
   const sourceLabel = contact.source ? (CONFIG.contactSources?.[contact.source] ?? contact.source) : '—';

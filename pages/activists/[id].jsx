@@ -133,7 +133,7 @@ export default function ActivistDetail() {
   const timeLabel   = timeInSystem(activist.joined_at);
 
   const backHref  = from === 'contact-detail' && contactId ? `/contact/${contactId}` : '/activists';
-  const backLabel = from === 'contact-detail' && contactId ? '← חזרה ללקוח' : '← חזרה לפעילים';
+  const backLabel = from === 'contact-detail' && contactId ? 'חזרה ללקוח' : 'חזרה לפעילים';
 
   const enrichedContacts = ownedContacts.map(c => ({ ...c, ...getReminders(c) }));
 

@@ -86,7 +86,7 @@ export default function AddInteractionPage() {
   // Security: activist can only report for their own contact
   if (currentUser?.role === 'activist' && contact.activist_id !== currentUser.id) {
     return (
-      <DesktopLayout title="הוספת קשר" backHref={`/contact/${contactId}`} backLabel="← חזרה">
+      <DesktopLayout title="הוספת קשר" backHref={`/contact/${contactId}`} backLabel="חזרה">
         <div style={{ textAlign: 'center', padding: 60, color: '#aaa' }}>
           <div style={{ fontSize: 48, marginBottom: 12 }}>🔒</div>
           <div style={{ fontSize: 15 }}>אין הרשאה — לא ניתן לדווח קשר עבור לקוח שאינו שלך</div>
@@ -543,7 +543,7 @@ export default function AddInteractionPage() {
   );
 
   return (
-    <DesktopLayout title={`קשר חדש — ${contact.name}`} backHref={`/contact/${contactId}`} backLabel="← חזרה">
+    <DesktopLayout title={`קשר חדש — ${contact.name}`} backHref={`/contact/${contactId}`} backLabel="חזרה">
       {toastEl}
       <div style={{ maxWidth: 560 }}>
 
