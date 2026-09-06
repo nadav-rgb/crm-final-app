@@ -165,7 +165,7 @@ git commit -m "feat: add BackLink component with correct RTL arrow direction"
 | `pages/meeting-houses/[id].jsx:189` | `'חזרה לבתי מפגש שהסתיימו' : 'חזרה לבתי מפגש חדשים'` | (ללא שינוי — אין חץ) |
 | `pages/meeting-houses/new.jsx:105` | `backLabel="חזרה לבתי מפגש"` | (ללא שינוי — אין חץ) |
 
-עבור `pages/activists/[id].jsx:121` ו-`pages/contact/[id].jsx:193-198` — אלה טרנרים בני כמה ענפים, לא מחרוזת יחידה. הסר את `'← '` מתחילת **כל** ענף:
+עבור `pages/activists/[id].jsx:121` ו-`pages/contact/[id].jsx:213-218 (זזו מ-193-198 עקב תוכנית 1)` — אלה טרנרים בני כמה ענפים, לא מחרוזת יחידה. הסר את `'← '` מתחילת **כל** ענף:
 
 `pages/activists/[id].jsx:121`:
 ```js
@@ -176,7 +176,7 @@ git commit -m "feat: add BackLink component with correct RTL arrow direction"
   const backLabel = from === 'contact-detail' && contactId ? 'חזרה ללקוח' : 'חזרה לפעילים';
 ```
 
-`pages/contact/[id].jsx:193-198`:
+`pages/contact/[id].jsx:213-218 (זזו מ-193-198 עקב תוכנית 1)`:
 ```js
   const backLabel = from === 'activist' && activistId ? '← חזרה לפעיל'
                   : from === 'landing'                 ? '← חזרה למרכז הפעילות'
@@ -279,7 +279,7 @@ git commit -m "feat: replace view-link text arrows with BackLink component"
 ```
 הוסף import: `import BackLink from '../../components/ui/BackLink';`
 
-- [ ] **Step 2: `pages/contact/[id].jsx:258-263`**
+- [ ] **Step 2: `pages/contact/[id].jsx:289-294` (זזו מ-258-263 עקב תוכנית 1)**
 
 מצא:
 ```jsx

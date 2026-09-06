@@ -445,7 +445,7 @@ git commit -m "feat: add trash page for restoring/purging soft-deleted activists
 ### Task 6: כפתורי מחיקה — ניתוב + הוספה, וניווט
 
 **Files:**
-- Modify: `pages/contact/[id].jsx` (`doDelete`, שורות 124-129)
+- Modify: `pages/contact/[id].jsx` (`doDelete`, שורות 130-135 (זזו מ-124-129 עקב תוכנית 1))
 - Modify: `pages/activists/[id].jsx` — כפתור מחיקה חדש (לא קיים היום)
 - Modify: `components/DesktopLayout.jsx`, `pages/landing.jsx`, `components/MobileBottomNav.jsx` — ניווט
 
@@ -454,7 +454,7 @@ git commit -m "feat: add trash page for restoring/purging soft-deleted activists
 
 - [ ] **Step 1: `pages/contact/[id].jsx` — נתב `doDelete` ל-endpoint עבור coord/head**
 
-מצא (שורות 124-129):
+מצא (שורות 130-135, אחרי שינויי תוכנית 1):
 ```js
   async function doDelete() {
     setBusy(true);
