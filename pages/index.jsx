@@ -1,5 +1,6 @@
 // pages/index.jsx — אזור אישי לפעיל/רכז
 import Link from 'next/link';
+import BackLink from '../components/ui/BackLink';
 import { useRouter } from 'next/router';
 import getReminders from '../lib/getReminders';
 import DesktopLayout from '../components/DesktopLayout';
@@ -187,10 +188,10 @@ return (
                 <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a', marginBottom: 4 }}>{c.name}</div>
                 <div style={{ fontSize: 12, color: '#aaa' }}>{c.city} · {c.days_since_last_contact} ימים</div>
                 <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
-                  <Link href={`/contact/${c.id}?from=personal`} className="btn btn-primary"
-                    style={{ flex: 1, textAlign: 'center', textDecoration: 'none', fontSize: 12 }}>
+                  <BackLink href={`/contact/${c.id}?from=personal`} direction="forward"
+                    style={{ flex: 1, justifyContent: 'center', fontSize: 12 }}>
                     צפייה
-                  </Link>
+                  </BackLink>
                 </div>
               </div>
             ))}

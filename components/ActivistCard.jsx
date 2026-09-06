@@ -48,7 +48,7 @@ export default function ActivistCard({ activist, contactCount, interactionCount,
 
       {/* כפתורים */}
       <div style={{ display: 'flex', gap: 6 }}>
-        <BackLink href={`/activists/${activist.id}`} direction="forward">
+        <BackLink href={`/activists/${activist.id}`} direction="forward" style={{ flex: 2, justifyContent: 'center' }}>
           צפייה בפרופיל
         </BackLink>
         {canSeeSensitive && (

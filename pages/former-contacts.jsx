@@ -56,7 +56,7 @@ export default function FormerContactsPage() {
                 }}
                   onMouseEnter={e => { e.currentTarget.style.background = '#27ae60'; e.currentTarget.style.color = '#fff'; }}
                   onMouseLeave={e => { e.currentTarget.style.background = '#edfaf1'; e.currentTarget.style.color = '#27ae60'; }}>
-                  שב לפעילות ↩
+                  שב לפעילות
                 </button>
               </Link>
               <BackLink href={`/contact/${c.id}?from=former`} direction="forward">

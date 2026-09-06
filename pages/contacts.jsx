@@ -188,10 +188,10 @@ function GridCard({ contact, can, viewMode }) {
         </div>
       )}
       <div style={{ display: 'flex', gap: 6, paddingTop: 8, borderTop: '0.5px solid #f0f0f0' }}>
-        <Link href={`/contact/${contact.id}?from=contacts&view=${viewMode}`} className="btn btn-primary"
-          style={{ flex: 1, textAlign: 'center', textDecoration: 'none', fontSize: 12 }}>
+        <BackLink href={`/contact/${contact.id}?from=contacts&view=${viewMode}`} direction="forward"
+          style={{ flex: 1, justifyContent: 'center', fontSize: 12 }}>
           צפייה
-        </Link>
+        </BackLink>
         {can.addContact && (
           <Link href={`/contact/add-interaction/${contact.id}`} className="btn"
             style={{ flex: 1, textAlign: 'center', textDecoration: 'none', fontSize: 12 }}>
