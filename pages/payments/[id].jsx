@@ -3,7 +3,6 @@
 // (calcMonthlyPayment + הדרכת סיורים + החזר הוצאות + ביטול בונוסים) כמו בעמוד הרשימה.
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
-import Link from 'next/link';
 import BackLink from '../../components/ui/BackLink';
 import DesktopLayout from '../../components/DesktopLayout';
 import { useCrm } from '../../lib/CrmStore';
@@ -123,7 +122,7 @@ export default function ActivistPaymentDetail() {
           </div>
           {can.seeActivists && (
             <BackLink href={`/activists/${activist.id}`} direction="forward" variant="link"
-              style={{ color:'#fff', background:'rgba(255,255,255,0.18)', borderRadius:10, padding:'8px 14px' }}>
+              style={{ color:'#fff', fontSize:12, fontWeight:700, background:'rgba(255,255,255,0.18)', borderRadius:10, padding:'8px 14px' }}>
               לפרופיל הפעיל
             </BackLink>
           )}
