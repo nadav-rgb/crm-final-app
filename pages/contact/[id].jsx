@@ -482,7 +482,7 @@ export default function ContactDetail() {
                 <label style={{ fontSize: 12, color: '#777' }}>מגדר</label>
                 <select className="input" value={editForm.gender}
                   onChange={e => setEditForm(f => ({ ...f, gender: e.target.value }))}
-                  style={{ width: '100%', marginBottom: 12, marginTop: 4, fontFamily: 'inherit' }}>
+                  style={{ width: '100%', marginBottom: 12, marginTop: 4, fontFamily: 'inherit', appearance: 'none', WebkitAppearance: 'none', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%239a9aa5' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'left 10px center', paddingLeft: 30 }}>
                   <option value="">—</option>
                   <option value="male">איש</option>
                   <option value="female">אשה</option>
@@ -508,7 +508,7 @@ export default function ContactDetail() {
                 <label style={{ fontSize: 12, color: '#777' }}>סיור משויך</label>
                 <select className="input" value={editForm.tour_id}
                   onChange={e => setEditForm(f => ({ ...f, tour_id: e.target.value }))}
-                  style={{ width: '100%', marginBottom: 12, marginTop: 4, fontFamily: 'inherit' }}>
+                  style={{ width: '100%', marginBottom: 12, marginTop: 4, fontFamily: 'inherit', appearance: 'none', WebkitAppearance: 'none', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%239a9aa5' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'left 10px center', paddingLeft: 30 }}>
                   <option value="">— מחוץ לסיורים —</option>
                   {tours.map(t => (
                     <option key={t.id} value={t.id}>סיור {t.tour_number} · {t.settlement} ({t.date})</option>
@@ -527,7 +527,7 @@ export default function ContactDetail() {
                     if (h) setEditForm(f => ({ ...f, meeting_place_city: h.settlement || h.city || '', meeting_place_number: String(h.houseNumber ?? '') }));
                     setHouseSel(v);
                   }}
-                  style={{ width: '100%', marginBottom: 8, marginTop: 4, fontFamily: 'inherit' }}>
+                  style={{ width: '100%', marginBottom: 8, marginTop: 4, fontFamily: 'inherit', appearance: 'none', WebkitAppearance: 'none', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%239a9aa5' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'left 10px center', paddingLeft: 30 }}>
                   <option value="">— ללא בית מפגש —</option>
                   {houses.map(h => (
                     <option key={houseKey(h)} value={houseKey(h)}>בית מפגש {h.houseNumber} · {h.settlement || h.city || ''}</option>
@@ -570,7 +570,7 @@ export default function ContactDetail() {
                       <div key={mitz} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontSize: 13, color: '#333' }}>{mitz}</span>
                         <select value={lvl} onChange={e => setEditMitzvah(mitz, Number(e.target.value))}
-                          style={{ width: 88, padding: '5px 8px', borderRadius: 8, border: `1.5px solid ${lvl > 0 ? '#6c5ce7' : '#e8e8e8'}`, fontSize: 12.5, background: lvl > 0 ? '#f0effe' : '#fafafa', color: lvl > 0 ? '#6c5ce7' : '#999', fontFamily: 'Rubik, sans-serif' }}>
+                          style={{ width: 88, padding: '5px 8px', borderRadius: 8, border: `1.5px solid ${lvl > 0 ? '#6c5ce7' : '#e8e8e8'}`, fontSize: 12.5, background: lvl > 0 ? '#f0effe' : '#fafafa', color: lvl > 0 ? '#6c5ce7' : '#999', fontFamily: 'Rubik, sans-serif', appearance: 'none', WebkitAppearance: 'none', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%239a9aa5' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'left 10px center', paddingLeft: 30 }}>
                           {CONFIG.mitzvotLevels.map(l => <option key={l} value={l}>רמה {l}</option>)}
                         </select>
                       </div>
@@ -624,7 +624,7 @@ export default function ContactDetail() {
             <label style={{ fontSize: 12, color: '#777' }}>סוג קשר</label>
             <select className="input" value={interForm.type}
               onChange={e => setInterForm(f => ({ ...f, type: e.target.value }))}
-              style={{ width: '100%', marginBottom: 12, marginTop: 4, fontFamily: 'inherit' }}>
+              style={{ width: '100%', marginBottom: 12, marginTop: 4, fontFamily: 'inherit', appearance: 'none', WebkitAppearance: 'none', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%239a9aa5' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'left 10px center', paddingLeft: 30 }}>
               {CONFIG.interactionTypes.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
             {interForm.type !== 'אירוח שבת' && (
@@ -632,7 +632,7 @@ export default function ContactDetail() {
                 <label style={{ fontSize: 12, color: '#777' }}>איכות קשר</label>
                 <select className="input" value={interForm.quality}
                   onChange={e => setInterForm(f => ({ ...f, quality: e.target.value }))}
-                  style={{ width: '100%', marginBottom: 12, marginTop: 4, fontFamily: 'inherit' }}>
+                  style={{ width: '100%', marginBottom: 12, marginTop: 4, fontFamily: 'inherit', appearance: 'none', WebkitAppearance: 'none', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%239a9aa5' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'left 10px center', paddingLeft: 30 }}>
                   <option value="">—</option>
                   {CONFIG.interactionQuality.map(q => <option key={q} value={q}>{q}</option>)}
                 </select>
@@ -655,7 +655,7 @@ export default function ContactDetail() {
             <label style={{ fontSize: 12, color: '#777' }}>תוצאה</label>
             <select className="input" value={interForm.outcome}
               onChange={e => setInterForm(f => ({ ...f, outcome: e.target.value }))}
-              style={{ width: '100%', marginBottom: 12, marginTop: 4, fontFamily: 'inherit' }}>
+              style={{ width: '100%', marginBottom: 12, marginTop: 4, fontFamily: 'inherit', appearance: 'none', WebkitAppearance: 'none', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%239a9aa5' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'left 10px center', paddingLeft: 30 }}>
               <option value="">—</option>
               {CONFIG.outcomeValues.map(o => <option key={o} value={o}>{o}</option>)}
             </select>

@@ -92,7 +92,7 @@ export default function UpdateMitzvotPage() {
                 <div style={{display:'flex',alignItems:'center',gap:8}}>
                   <span style={{fontSize:11,color:'#bbb'}}>היה: {oldVal}</span>
                   <select value={mitzvot[mitz]??0} onChange={e=>setMitzvot(p=>({...p,[mitz]:Number(e.target.value)}))}
-                    style={{padding:'6px 10px',borderRadius:8,border:`1.5px solid ${diff>0?'#27ae60':'#e8e8e8'}`,fontSize:13,background:diff>0?'#edfaf1':'#fafafa',color:diff>0?'#27ae60':'#555',fontFamily:'Rubik,sans-serif',width:90,cursor:'pointer'}}>
+                    style={{padding:'6px 10px',borderRadius:8,border:`1.5px solid ${diff>0?'#27ae60':'#e8e8e8'}`,fontSize:13,background:diff>0?'#edfaf1':'#fafafa',color:diff>0?'#27ae60':'#555',fontFamily:'Rubik,sans-serif',width:90,cursor:'pointer', appearance: 'none', WebkitAppearance: 'none', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%239a9aa5' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'left 10px center', paddingLeft: 30}}>
                     {[0,1,2,3,4].map(l=><option key={l} value={l}>רמה {l}</option>)}
                   </select>
                 </div>

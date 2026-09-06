@@ -137,7 +137,7 @@ export default function MyDashboardPage() {
             const [y, m] = e.target.value.split('-').map(Number);
             setPeriod({ year: y, month: m });
           }}
-          style={{ fontFamily: 'Rubik,sans-serif', fontSize: 13.5, fontWeight: 600, padding: '8px 12px', borderRadius: 10, border: '1.5px solid #e0dcf5', background: '#fff', color: '#3a249b', cursor: 'pointer' }}
+          style={{ fontFamily: 'Rubik,sans-serif', fontSize: 13.5, fontWeight: 600, padding: '8px 12px', borderRadius: 10, border: '1.5px solid #e0dcf5', background: '#fff', color: '#3a249b', cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%239a9aa5' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'left 10px center', paddingLeft: 30 }}
         >
           {monthOptions.map(o => (
             <option key={`${o.year}-${o.month}`} value={`${o.year}-${o.month}`}>{o.label}</option>
