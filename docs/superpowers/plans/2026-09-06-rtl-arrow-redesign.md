@@ -165,7 +165,7 @@ git commit -m "feat: add BackLink component with correct RTL arrow direction"
 | `pages/meeting-houses/[id].jsx:189` | `'חזרה לבתי מפגש שהסתיימו' : 'חזרה לבתי מפגש חדשים'` | (ללא שינוי — אין חץ) |
 | `pages/meeting-houses/new.jsx:105` | `backLabel="חזרה לבתי מפגש"` | (ללא שינוי — אין חץ) |
 
-עבור `pages/activists/[id].jsx:121` ו-`pages/contact/[id].jsx:213-218 (זזו מ-193-198 עקב תוכנית 1)` — אלה טרנרים בני כמה ענפים, לא מחרוזת יחידה. הסר את `'← '` מתחילת **כל** ענף:
+עבור `pages/activists/[id].jsx:121` ו-`pages/contact/[id].jsx:230-235 (זזו שוב עקב תוכנית 2, היו 213-218)` — אלה טרנרים בני כמה ענפים, לא מחרוזת יחידה. הסר את `'← '` מתחילת **כל** ענף:
 
 `pages/activists/[id].jsx:121`:
 ```js
@@ -176,7 +176,7 @@ git commit -m "feat: add BackLink component with correct RTL arrow direction"
   const backLabel = from === 'contact-detail' && contactId ? 'חזרה ללקוח' : 'חזרה לפעילים';
 ```
 
-`pages/contact/[id].jsx:213-218 (זזו מ-193-198 עקב תוכנית 1)`:
+`pages/contact/[id].jsx:230-235 (זזו שוב עקב תוכנית 2, היו 213-218)`:
 ```js
   const backLabel = from === 'activist' && activistId ? '← חזרה לפעיל'
                   : from === 'landing'                 ? '← חזרה למרכז הפעילות'
@@ -279,19 +279,29 @@ git commit -m "feat: replace view-link text arrows with BackLink component"
 ```
 הוסף import: `import BackLink from '../../components/ui/BackLink';`
 
-- [ ] **Step 2: `pages/contact/[id].jsx:289-294` (זזו מ-258-263 עקב תוכנית 1)**
+- [ ] **Step 2: `pages/contact/[id].jsx:311-318`** (המבנה השתנה מאז שהתוכנית נכתבה — עכשיו מפורמט רב-שורתי בתוך `{owner ? (...) : '—'}`; זו הצורה המדויקת הנוכחית, לא זו שבגרסה המקורית של התוכנית)
 
 מצא:
 ```jsx
-<Link href={`/activists/${owner.id}?from=contact-detail&contactId=${contact.id}`} style={{ color: '#534ab7', textDecoration: 'none', fontWeight: 500 }}>
-  {owner.name} ←
-</Link>
+                  {owner ? (
+                    <Link
+                      href={`/activists/${owner.id}?from=contact-detail&contactId=${contact.id}`}
+                      style={{ color: '#534ab7', textDecoration: 'none', fontWeight: 500 }}
+                    >
+                      {owner.name} ←
+                    </Link>
+                  ) : '—'}
 ```
 שנה ל:
 ```jsx
-<BackLink href={`/activists/${owner.id}?from=contact-detail&contactId=${contact.id}`} direction="forward" variant="link" style={{ color: '#534ab7' }}>
-  {owner.name}
-</BackLink>
+                  {owner ? (
+                    <BackLink
+                      href={`/activists/${owner.id}?from=contact-detail&contactId=${contact.id}`}
+                      direction="forward" variant="link" style={{ color: '#534ab7' }}
+                    >
+                      {owner.name}
+                    </BackLink>
+                  ) : '—'}
 ```
 (import כבר קיים בקובץ הזה מ-Task 2/6 בתוכניות אחרות — ודא שלא כפול.)
 
