@@ -8,6 +8,7 @@ import { hydrateNotificationsFromSupabase } from './notificationDemo';
 import { loadPaymentConfig, DEFAULT_CONFIG } from './paymentConfig';
 import { getSupabaseClient } from './supabaseClient';
 import { useAuth } from './AuthStore';
+import { authHeader } from './apiAuth';
 
 // בידוד נתונים בין פעילים: פעיל רואה רק שורות ששייכות לו (activist_id), רכז/ראש-פרויקט/כספים
 // רק שורות בפרויקטים שהם חברים בהם (project_ids), מנכ"ל רואה הכל. הגנת-הגנה בצד לקוח בנוסף ל-RLS.
@@ -475,6 +476,21 @@ export function CrmProvider({ children }) {
     if (!fields || Object.keys(fields).length === 0) return { error: null };
     const row = {};
     INTERACTION_COLUMNS.forEach(key => { if (fields[key] !== undefined) row[key] = fields[key]; });
+
+    // רכז/ראש-פרויקט עורכים קשר של פעיל אחר — endpoint מיוחס (admin client + התראה לבעל
+    // הקשר). activist/ceo ממשיכים בדיוק כמו היום: RLS כבר מתיר (activist=שלו, ceo=הכל).
+    if (currentUser?.role === 'coord' || currentUser?.role === 'head') {
+      const res = await fetch('/api/interactions/manage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+        body: JSON.stringify({ action: 'update', interactionId, fields: row }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) { console.error('Failed to update interaction (managed)', body.error); return { error: body.error || 'update failed' }; }
+      setInteractions(prev => prev.map(i => i.id === interactionId ? { ...i, ...row } : i));
+      return { error: null };
+    }
+
     const supabase = getSupabaseClient();
     const { error } = await supabase.from('interactions').update(row).eq('id', interactionId);
     if (error) { console.error('Failed to update interaction', error); return { error }; }
@@ -483,6 +499,18 @@ export function CrmProvider({ children }) {
   }
 
   async function deleteInteraction(interactionId) {
+    if (currentUser?.role === 'coord' || currentUser?.role === 'head') {
+      const res = await fetch('/api/interactions/manage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+        body: JSON.stringify({ action: 'delete', interactionId }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) { console.error('Failed to delete interaction (managed)', body.error); return { error: body.error || 'delete failed' }; }
+      setInteractions(prev => prev.filter(i => i.id !== interactionId));
+      return { error: null };
+    }
+
     const supabase = getSupabaseClient();
     const { error } = await supabase.from('interactions').delete().eq('id', interactionId);
     if (error) { console.error('Failed to delete interaction', error); return { error }; }
