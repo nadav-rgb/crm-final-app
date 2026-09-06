@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
+import BackLink from '../../../components/ui/BackLink';
 import CONFIG from '../../../data/config';
 import { useCrm } from '../../../lib/CrmStore';
 import { useAuth } from '../../../lib/AuthStore';
@@ -62,13 +63,13 @@ export default function UpdateMitzvotPage() {
         <h2 style={{marginBottom:8}}>הסרגל עודכן!</h2>
         {totalBonus>0 && <div style={{fontSize:16,color:'#27ae60',fontWeight:700,marginBottom:8}}>בונוס: {totalBonus.toLocaleString()} ₪</div>}
         <p style={{color:'#aaa',marginBottom:28}}>סרגל המצוות של {contact.name} עודכן בהצלחה.</p>
-        <Link href={`/contact/${contactId}`} className="btn btn-primary" style={{textDecoration:'none',padding:'10px 24px'}}>חזרה לפרופיל</Link>
+        <BackLink href={`/contact/${contactId}`} direction="back">חזרה לפרופיל</BackLink>
       </div>
     </DesktopLayout>
   );
 
   return (
-    <DesktopLayout title={`עדכון סרגל מצוות — ${contact.name}`} backHref={`/contact/${contactId}`} backLabel="חזרה ←">
+    <DesktopLayout title={`עדכון סרגל מצוות — ${contact.name}`} backHref={`/contact/${contactId}`} backLabel="חזרה">
       <div style={{maxWidth:540}}>
         <div style={{background:'#fffaf5',borderRadius:14,padding:'18px 20px',marginBottom:14,border:'0.5px solid rgba(0,0,0,0.06)',boxShadow:'0 1px 4px rgba(0,0,0,0.04)'}}>
           <div style={{fontSize:13,fontWeight:700,color:'#888',letterSpacing:'0.06em',textTransform:'uppercase',marginBottom:6}}>
@@ -91,7 +92,7 @@ export default function UpdateMitzvotPage() {
                 <div style={{display:'flex',alignItems:'center',gap:8}}>
                   <span style={{fontSize:11,color:'#bbb'}}>היה: {oldVal}</span>
                   <select value={mitzvot[mitz]??0} onChange={e=>setMitzvot(p=>({...p,[mitz]:Number(e.target.value)}))}
-                    style={{padding:'6px 10px',borderRadius:8,border:`1.5px solid ${diff>0?'#27ae60':'#e8e8e8'}`,fontSize:13,background:diff>0?'#edfaf1':'#fafafa',color:diff>0?'#27ae60':'#555',fontFamily:'Rubik,sans-serif',width:90,cursor:'pointer'}}>
+                    style={{padding:'6px 10px',borderRadius:8,border:`1.5px solid ${diff>0?'#27ae60':'#e8e8e8'}`,fontSize:13,background:diff>0?'#edfaf1':'#fafafa',color:diff>0?'#27ae60':'#555',fontFamily:'Rubik,sans-serif',width:90,cursor:'pointer', appearance: 'none', WebkitAppearance: 'none', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%239a9aa5' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'left 10px center', paddingLeft: 30}}>
                     {[0,1,2,3,4].map(l=><option key={l} value={l}>רמה {l}</option>)}
                   </select>
                 </div>

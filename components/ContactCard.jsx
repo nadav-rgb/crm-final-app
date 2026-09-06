@@ -1,5 +1,6 @@
 // components/ContactCard.jsx
 import Link from 'next/link';
+import BackLink from './ui/BackLink';
 import StatusBadge from './StatusBadge';
 import { useAuth } from '../lib/AuthStore';
 
@@ -45,13 +46,12 @@ export default function ContactCard({ contact, fromActivistId }) {
       )}
 
       <div style={{ display: 'flex', gap: 6, borderTop: '0.5px solid #f0f0f0', paddingTop: 8 }}>
-        <Link
+        <BackLink
           href={fromActivistId ? `/contact/${contact.id}?from=activist&activistId=${fromActivistId}` : `/contact/${contact.id}`}
-          className="btn btn-primary"
-          style={{ flex: 1, textAlign: 'center', textDecoration: 'none', display: 'block' }}
+          direction="forward"
         >
           צפייה
-        </Link>
+        </BackLink>
         {can.addContact && isOwnProject && (
           <Link href={`/contact/add-interaction/${contact.id}`} className="btn"
             style={{ flex: 1, textAlign: 'center', textDecoration: 'none' }}>

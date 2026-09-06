@@ -3,7 +3,7 @@
 // (calcMonthlyPayment + הדרכת סיורים + החזר הוצאות + ביטול בונוסים) כמו בעמוד הרשימה.
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
-import Link from 'next/link';
+import BackLink from '../../components/ui/BackLink';
 import DesktopLayout from '../../components/DesktopLayout';
 import { useCrm } from '../../lib/CrmStore';
 import { useAuth } from '../../lib/AuthStore';
@@ -96,7 +96,7 @@ export default function ActivistPaymentDetail() {
   }
 
   if (!canView) return (
-    <DesktopLayout title="פירוט תשלום פעיל" backHref={`/payments?y=${year}&m=${month}`} backLabel="← חזרה לתשלומים">
+    <DesktopLayout title="פירוט תשלום פעיל" backHref={`/payments?y=${year}&m=${month}`} backLabel="חזרה לתשלומים">
       <div style={{ textAlign:'center', padding:60, color:'#aaa' }}>
         <div style={{ fontSize:48, marginBottom:12 }}>🔒</div>
         <div>אין הרשאה לדף זה</div>
@@ -105,13 +105,13 @@ export default function ActivistPaymentDetail() {
   );
 
   if (!activist) return (
-    <DesktopLayout title="פירוט תשלום פעיל" backHref={`/payments?y=${year}&m=${month}`} backLabel="← חזרה לתשלומים">
+    <DesktopLayout title="פירוט תשלום פעיל" backHref={`/payments?y=${year}&m=${month}`} backLabel="חזרה לתשלומים">
       <div style={{ textAlign:'center', padding:60, color:'#aaa' }}>פעיל לא נמצא</div>
     </DesktopLayout>
   );
 
   return (
-    <DesktopLayout title={`פירוט תשלום — ${activist.name}`} subtitle={`${currentMonthName} ${year}`} backHref={`/payments?y=${year}&m=${month}`} backLabel="← חזרה לתשלומים">
+    <DesktopLayout title={`פירוט תשלום — ${activist.name}`} subtitle={`${currentMonthName} ${year}`} backHref={`/payments?y=${year}&m=${month}`} backLabel="חזרה לתשלומים">
       <div style={{ maxWidth: 640 }}>
 
         {/* סיכום כולל */}
@@ -121,9 +121,10 @@ export default function ActivistPaymentDetail() {
             <div style={{ fontSize:36, fontWeight:700 }}>{report.grandTotal.toLocaleString()} ₪</div>
           </div>
           {can.seeActivists && (
-            <Link href={`/activists/${activist.id}`} style={{ color:'#fff', fontSize:12, fontWeight:700, textDecoration:'none', background:'rgba(255,255,255,0.18)', borderRadius:10, padding:'8px 14px' }}>
-              לפרופיל הפעיל ←
-            </Link>
+            <BackLink href={`/activists/${activist.id}`} direction="forward" variant="link"
+              style={{ color:'#fff', fontSize:12, fontWeight:700, background:'rgba(255,255,255,0.18)', borderRadius:10, padding:'8px 14px' }}>
+              לפרופיל הפעיל
+            </BackLink>
           )}
         </div>
 

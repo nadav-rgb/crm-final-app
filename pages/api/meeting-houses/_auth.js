@@ -17,7 +17,7 @@ export async function requireWriteRole(req) {
 
   const { data: profile, error: profErr } = await admin
     .from('profiles')
-    .select('role, project_id, activist_code, name')
+    .select('role, project_id, project_ids, activist_code, name')
     .eq('id', userData.user.id)
     .single();
   if (profErr || !profile) return { ok: false, status: 403, error: 'No profile' };

@@ -189,7 +189,7 @@ export default function AddContactPage() {
   const cardStyle = { background: '#fffaf5', borderRadius: 14, padding: '18px 20px', marginBottom: 14, border: '0.5px solid rgba(0,0,0,0.06)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' };
 
   return (
-    <DesktopLayout title="הוספת לקוח" backHref="/contacts" backLabel="← חזרה ללקוחות">
+    <DesktopLayout title="הוספת לקוח" backHref="/contacts" backLabel="חזרה ללקוחות">
       <div style={{ maxWidth: 580 }}>
 
         {/* בחירת פרויקט — רק לפעיל ששייך ליותר מפרויקט אחד */}
@@ -366,7 +366,7 @@ export default function AddContactPage() {
                 <div key={mitz} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: 14, fontWeight: 400, color: '#333' }}>{mitz}</span>
                   <select value={form.mitzvot[mitz] ?? 0} onChange={e => setMitzvah(mitz, Number(e.target.value))}
-                    style={{ width: 100, padding: '6px 10px', borderRadius: 8, border: `1.5px solid ${form.mitzvot[mitz] > 0 ? '#6c5ce7' : '#e8e8e8'}`, fontSize: 13, background: form.mitzvot[mitz] > 0 ? '#f0effe' : '#fafafa', color: form.mitzvot[mitz] > 0 ? '#6c5ce7' : '#999', fontFamily: 'Rubik, sans-serif' }}>
+                    style={{ width: 100, padding: '6px 10px', borderRadius: 8, border: `1.5px solid ${form.mitzvot[mitz] > 0 ? '#6c5ce7' : '#e8e8e8'}`, fontSize: 13, background: form.mitzvot[mitz] > 0 ? '#f0effe' : '#fafafa', color: form.mitzvot[mitz] > 0 ? '#6c5ce7' : '#999', fontFamily: 'Rubik, sans-serif', appearance: 'none', WebkitAppearance: 'none', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%239a9aa5' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'left 10px center', paddingLeft: 30 }}>
                     {CONFIG.mitzvotLevels.map(l => <option key={l} value={l}>רמה {l}</option>)}
                   </select>
                 </div>

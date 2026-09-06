@@ -556,3 +556,29 @@
   .interaction-report-error button { align-self: flex-start; }
   .interaction-report-loading { grid-template-columns: 1fr; }
 }
+
+/* ── BackLink (components/ui/BackLink.jsx) ───────────────────────────────
+   direction קובע כיוון-גליף + איזה צד (לא variant — buttonlike ולinklike
+   יכולים לשאת כל כיוון, למשל קישור אד-הוק עם variant="link" ו-direction="back"). */
+.backlink-button, .backlink-link {
+  display: inline-flex; align-items: center; font-family: inherit; text-decoration: none; cursor: pointer;
+}
+.backlink-button {
+  gap: 6px; padding: 7px 14px 7px 16px; border-radius: var(--radius-full);
+  border: 1px solid transparent; background: var(--color-white);
+  color: var(--color-brand); font-size: 13.5px; font-weight: 600;
+  box-shadow: var(--shadow-card);
+  transition: background var(--motion-fast), box-shadow var(--motion-fast), border-color var(--motion-fast);
+}
+.backlink-button:hover, .backlink-button:focus-visible {
+  background: var(--color-brand-bg); border-color: var(--color-brand); box-shadow: var(--shadow-btn-hover);
+}
+.backlink-link {
+  gap: 4px; color: var(--text-muted); font-size: 13.5px; font-weight: 500;
+  transition: color var(--motion-fast);
+}
+.backlink-link:hover, .backlink-link:focus-visible { color: var(--color-brand); }
+.backlink-button .chevron, .backlink-link .chevron { flex-shrink: 0; transition: transform var(--motion-fast); }
+.backlink-forward .chevron { transform: scaleX(-1); }
+.backlink-back:hover .chevron, .backlink-back:focus-visible .chevron { transform: translateX(3px); }
+.backlink-forward:hover .chevron, .backlink-forward:focus-visible .chevron { transform: scaleX(-1) translateX(3px); }

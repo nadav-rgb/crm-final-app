@@ -8,7 +8,7 @@ import {
   MoreHorizontal, User, Calendar, UserPlus,
   Star, CreditCard, BellRing, MessageSquare,
   Building2, CheckCircle, BarChart2, LogOut,
-  LayoutDashboard, Receipt, Compass, Activity, AlertCircle,
+  LayoutDashboard, Receipt, Compass, Activity, AlertCircle, Trash2,
 } from 'lucide-react';
 
 const BG = 'linear-gradient(180deg, rgba(42,24,112,0.97) 0%, rgba(58,36,155,0.94) 52%, rgba(35,20,100,0.97) 100%)';
@@ -41,6 +41,7 @@ export default function MobileBottomNav() {
     can.addContact && { href: '/contacts/add',                    icon: <UserPlus     {...ICO} />, label: 'הוסף לקוח' },
     can.seeActivists && { href: '/activists',                     icon: <Star         {...ICO} />, label: 'פעילים' },
     can.seePayments && { href: '/payments',                       icon: <CreditCard   {...ICO} />, label: 'דוחות תשלום' },
+    can.manageDeleted && { href: '/trash', icon: <Trash2 {...ICO} />, label: 'סל מיחזור' },
     currentUser?.role === 'ceo' && { href: '/interaction-report', icon: <BarChart2    {...ICO} />, label: 'דו״ח קשרים' },
     { href: '/expenses',                                          icon: <Receipt      {...ICO} />, label: 'דיווח הוצאות' },
     { href: '/notifications',                                     icon: <BellRing     {...ICO} />, label: 'התראות מערכת' },

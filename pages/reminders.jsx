@@ -1,5 +1,5 @@
 // pages/reminders.jsx — תזכורות קשר
-import Link from 'next/link';
+import BackLink from '../components/ui/BackLink';
 import getReminders from '../lib/getReminders';
 import DesktopLayout from '../components/DesktopLayout';
 import { useCrm } from '../lib/CrmStore';
@@ -75,10 +75,10 @@ export default function RemindersPage() {
                     style={{ flex: 1, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: '#27ae60', borderColor: '#7cc47c' }}>
                     ✓ בוצע
                   </button>
-                  <Link href={`/contact/${c.id}?from=reminders`} className="btn btn-primary"
-                    style={{ flex: 1, textAlign: 'center', textDecoration: 'none', fontSize: 13 }}>
+                  <BackLink href={`/contact/${c.id}?from=reminders`} direction="forward"
+                    style={{ flex: 1, justifyContent: 'center', fontSize: 13 }}>
                     פתח פרופיל
-                  </Link>
+                  </BackLink>
                 </div>
               </div>
             );

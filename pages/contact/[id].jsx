@@ -1,6 +1,7 @@
 // pages/contact/[id].jsx
 import { useRouter } from 'next/router';
 import Link from 'next/link';
+import BackLink from '../../components/ui/BackLink';
 import CONFIG from '../../data/config';
 import getReminders from '../../lib/getReminders';
 import StatusBadge from '../../components/StatusBadge';
@@ -14,6 +15,7 @@ import { getMeetingHouses } from '../../lib/meetingHousesStorage';
 import { fetchMeetingHousesFromSupabase } from '../../lib/meetingHousesSupabase';
 import { PAID_PROJECT_IDS } from '../../lib/paymentCalc';
 import { createInteractionEditedNotification } from '../../lib/notificationDemo';
+import { authHeader } from '../../lib/apiAuth';
 
 export default function ContactDetail() {
   const router = useRouter();
@@ -30,6 +32,9 @@ export default function ContactDetail() {
   const [interForm, setInterForm]           = useState(null);
   const [confirmDelInterId, setConfirmDelInterId] = useState(null);
   const [highlightInterId, setHighlightInterId] = useState(null); // הדגשה זמנית לקשר שנפתח מ"הפעילויות שלי"
+  // שגיאת עריכה/מחיקת קשר שנכשלה בפועל (403 קשר לא בפרויקט שלך / 500 / רשת — coord/head
+  // דרך pages/api/interactions/manage.js). ר' saveEditInteraction/doDeleteInteraction למטה.
+  const [toast, setToast] = useState(null);
 
   // גלילה + הדגשה זמנית לקשר ספציפי — הגעה מ-/my-activities עם ?openInteraction=<id>.
   // מנקה את הפרמטר מיד אחרי הגלילה — אחרת כל עדכון interactions ברקע (למשל סיכום AI שמתעדכן
@@ -67,6 +72,9 @@ export default function ContactDetail() {
 
   // בעלות — פעיל רואה/עורך רק לקוח ששייך לו; רכז/ראש-פרויקט/מנכ"ל מוגבלים לפי פרויקט (isOwnProject).
   const isOwner = currentUser?.role !== 'activist' || contact.activist_id === currentUser?.id;
+  // תנאי מדויק לכפתורי עריכה/מחיקת-קשר בלבד — לא isOwner (רחב מדי: נכון גם ל-finance,
+  // שלא אמור לראות את הכפתורים האלה. ראה docs/superpowers/specs/2026-09-06-coord-interaction-management-and-torani-bonus-eligibility-design.md).
+  const canManageInteractions = contact.activist_id === currentUser?.id || ['coord', 'head', 'ceo'].includes(currentUser?.role);
 
   function openEdit() {
     setEditForm({
@@ -123,6 +131,22 @@ export default function ContactDetail() {
 
   async function doDelete() {
     setBusy(true);
+    if (currentUser?.role === 'coord' || currentUser?.role === 'head' || currentUser?.role === 'ceo') {
+      const res = await fetch('/api/admin/soft-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+        body: JSON.stringify({ entity: 'contact', id: contact.id, action: 'delete' }),
+      });
+      if (!res.ok) { const body = await res.json().catch(() => ({})); alert(body.error || 'המחיקה נכשלה'); setBusy(false); return; }
+      // ה-endpoint המיוחס הזה (בניגוד ל-deleteContact הרגיל למטה) לא מעדכן את ה-state המקומי
+      // של contacts ב-CrmStore — בלי רענון מלא הלקוח שנמחק ימשיך להופיע ב-/contacts עד רענון
+      // ידני. אין ב-CrmStore דרך קיימת לעדכן contacts מבחוץ ל-deleteContact עצמה, אז ניווט קשיח
+      // (לא router.push) הוא התיקון המינימלי הנכון: מכריח טעינה מחדש של כל האפליקציה, כולל
+      // שליפת contacts טרייה מ-Supabase (שכבר מסננת is_active=true, ר' loadContactsFromSupabase).
+      setBusy(false);
+      window.location.href = '/contacts';
+      return;
+    }
     await deleteContact(contact.id);
     setBusy(false);
     router.push('/contacts');
@@ -143,10 +167,11 @@ export default function ContactDetail() {
 
   async function saveEditInteraction() {
     setBusy(true);
+    setToast(null);
     const durNum = Number(interForm.duration_minutes);
     const newDuration = interForm.duration_minutes !== '' && Number.isFinite(durNum) ? durNum : null;
     const original = interactions.find(x => x.id === editingInterId);
-    await updateInteraction(editingInterId, {
+    const { error } = await updateInteraction(editingInterId, {
       type:              interForm.type,
       quality:           interForm.quality,
       duration_minutes:  newDuration,
@@ -155,6 +180,14 @@ export default function ContactDetail() {
       description:       interForm.description?.trim() || '',
       notes:             interForm.notes?.trim() || '',
     });
+    setBusy(false);
+    // רכז/ראש-פרויקט: הקריאה יכולה היום להיכשל באמת (403 קשר לא בפרויקט שלך / 500 / רשת —
+    // ר' pages/api/interactions/manage.js), לא רק להיחסם בשקט ע"י RLS כמו קודם. בלי הבדיקה
+    // הזו המודאל היה נסגר וההתראה למטה הייתה נורית גם כשהעדכון בפועל לא נחת ב-DB.
+    if (error) {
+      setToast({ text: `העריכה לא נשמרה: ${error.message || error || 'שגיאה לא צפויה'}. נסה שוב.` });
+      return;
+    }
     // שדה שמשפיע על גובה התשלום השתנה — הדשבורד כבר מחשב חי; רק מודיעים לפעיל
     const paymentFieldChanged = original && (
       original.type !== interForm.type ||
@@ -164,14 +197,19 @@ export default function ContactDetail() {
     if (paymentFieldChanged && PAID_PROJECT_IDS.includes(contact.project_id) && currentUser) {
       createInteractionEditedNotification({ activist: currentUser, contact });
     }
-    setBusy(false);
     setEditingInterId(null);
   }
 
   async function doDeleteInteraction() {
     setBusy(true);
-    await deleteInteraction(confirmDelInterId);
+    setToast(null);
+    const { error } = await deleteInteraction(confirmDelInterId);
     setBusy(false);
+    // ראה הערה מקבילה ב-saveEditInteraction — אותו סיכון בדיוק, אותה בדיקה.
+    if (error) {
+      setToast({ text: `המחיקה לא בוצעה: ${error.message || error || 'שגיאה לא צפויה'}. נסה שוב.` });
+      return;
+    }
     setConfirmDelInterId(null);
   }
 
@@ -190,12 +228,12 @@ export default function ContactDetail() {
                   : from === 'reminders'                 ? '/reminders'
                   : from === 'former'                    ? '/former-contacts'
                   : `/contacts${view ? `?view=${view}` : ''}`;
-  const backLabel = from === 'activist' && activistId ? '← חזרה לפעיל'
-                  : from === 'landing'                 ? '← חזרה למרכז הפעילות'
-                  : from === 'personal'                ? '← חזרה לאזור האישי'
-                  : from === 'reminders'               ? '← חזרה לתזכורות'
-                  : from === 'former'                  ? '← חזרה ללקוחות לשעבר'
-                  : '← חזרה ללקוחות';
+  const backLabel = from === 'activist' && activistId ? 'חזרה לפעיל'
+                  : from === 'landing'                 ? 'חזרה למרכז הפעילות'
+                  : from === 'personal'                ? 'חזרה לאזור האישי'
+                  : from === 'reminders'               ? 'חזרה לתזכורות'
+                  : from === 'former'                  ? 'חזרה ללקוחות לשעבר'
+                  : 'חזרה ללקוחות';
 
   const isAchdut    = activeProject?.id === 1;
   const sourceLabel = contact.source ? (CONFIG.contactSources?.[contact.source] ?? contact.source) : '—';
@@ -204,6 +242,11 @@ export default function ContactDetail() {
   // הרשאות — פעיל רואה נתונים רגישים רק על לקוח שלו; רכז/ראש-פרויקט/מנכ"ל לפי פרויקט
   const isOwnProject  = can.ownProjectId === null || contact.project_id === can.ownProjectId;
   const showSensitive = can.seeSensitiveData && isOwnProject && isOwner;
+  // F1 (תוקן בביקורת חוצת-משימות) — כפתור *מחיקת* לקוח (לא עריכה): הבעלים (פעיל, מוגבל
+  // לפרויקט שלו — ללא שינוי) + רכז/ראש-פרויקט/מנכ"ל (can.manageDeleted) בלי isOwnProject/isOwner —
+  // הבדיקה האמיתית לפרויקט כבר נאכפת בצד השרת (assertProjectAccess ב-pages/api/admin/soft-delete.js).
+  // אותו דפוס בדיוק כמו canManageInteractions למעלה, לעקביות בין שני סוגי ההרשאות באותו קובץ.
+  const canDeleteContact = (can.addContact && isOwnProject && isOwner) || can.manageDeleted;
 
   return (
     <DesktopLayout
@@ -213,6 +256,18 @@ export default function ContactDetail() {
       backLabel={backLabel}
       actions={showSensitive ? <StatusBadge status={enriched.status} /> : null}
     >
+      {/* שגיאת עריכה/מחיקת קשר — אותו דפוס "toast" בדיוק כמו pages/contact/add-interaction/[id].jsx
+          (TOAST_STYLES.block), כדי שכשל אמיתי (403/500/רשת) יוצג ולא רק ייבלע בשקט */}
+      {toast && (
+        <div style={{ position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 9999,
+                      background: '#fff0f0', border: '1px solid #e0a0a0', color: '#c0392b',
+                      borderRadius: 14, padding: '12px 18px', maxWidth: 440, width: 'calc(100% - 32px)',
+                      boxShadow: '0 8px 30px rgba(0,0,0,0.15)', display: 'flex', gap: 12, alignItems: 'center',
+                      fontSize: 14, fontWeight: 600, fontFamily: 'inherit' }}>
+          <span style={{ flex: 1, lineHeight: 1.5, whiteSpace: 'pre-line' }}>{toast.text}</span>
+          <button onClick={() => setToast(null)} style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', color: 'inherit', lineHeight: 1 }}>✕</button>
+        </div>
+      )}
       <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: 20 }}>
 
         {/* עמודה שמאל — פרטים */}
@@ -255,12 +310,12 @@ export default function ContactDetail() {
                 <td style={{ padding: '7px 0', color: '#999' }}>פעיל אחראי</td>
                 <td style={{ padding: '7px 0' }}>
                   {owner ? (
-                    <Link
+                    <BackLink
                       href={`/activists/${owner.id}?from=contact-detail&contactId=${contact.id}`}
-                      style={{ color: '#534ab7', textDecoration: 'none', fontWeight: 500 }}
+                      direction="forward" variant="link" style={{ color: '#534ab7' }}
                     >
-                      {owner.name} ←
-                    </Link>
+                      {owner.name}
+                    </BackLink>
                   ) : '—'}
                 </td>
               </tr>
@@ -306,13 +361,17 @@ export default function ContactDetail() {
             </Link>
           )}
 
-          {/* F1 — עריכה / מחיקת לקוח */}
-          {can.addContact && isOwnProject && isOwner && (
+          {/* F1 — עריכה / מחיקת לקוח. עריכה: בעלים בלבד (ללא שינוי). מחיקה: כל מי שעונה
+              ל-canDeleteContact (בעלים + רכז/ראש/מנכ"ל) — ר' הגדרתה למעלה. העטיפה החיצונית
+              משתמשת ב-canDeleteContact בלבד (לא בביטוי כפול) כי הבעלות כבר כלולה בהגדרתה. */}
+          {canDeleteContact && (
             <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-              <button onClick={openEdit} className="btn"
-                style={{ flex: 1, cursor: 'pointer', fontFamily: 'inherit' }}>
-                ✏️ עריכת פרטים
-              </button>
+              {can.addContact && isOwnProject && isOwner && (
+                <button onClick={openEdit} className="btn"
+                  style={{ flex: 1, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  ✏️ עריכת פרטים
+                </button>
+              )}
               <button onClick={() => setConfirmDel(true)} className="btn"
                 style={{ flex: 1, cursor: 'pointer', fontFamily: 'inherit', color: '#a32d2d', borderColor: '#d98a8a' }}>
                 🗑️ מחיקה
@@ -348,7 +407,7 @@ export default function ContactDetail() {
                       <strong style={{ fontSize: 14 }}>{i.type}</strong>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span style={{ fontSize: 12, color: '#aaa' }}>{i.date}</span>
-                        {isOwner && (
+                        {canManageInteractions && (
                           <>
                             <button onClick={() => openEditInteraction(i)} title="עריכת קשר"
                               style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, padding: 2, lineHeight: 1 }}>✏️</button>
@@ -423,7 +482,7 @@ export default function ContactDetail() {
                 <label style={{ fontSize: 12, color: '#777' }}>מגדר</label>
                 <select className="input" value={editForm.gender}
                   onChange={e => setEditForm(f => ({ ...f, gender: e.target.value }))}
-                  style={{ width: '100%', marginBottom: 12, marginTop: 4, fontFamily: 'inherit' }}>
+                  style={{ width: '100%', marginBottom: 12, marginTop: 4, fontFamily: 'inherit', appearance: 'none', WebkitAppearance: 'none', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%239a9aa5' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'left 10px center', paddingLeft: 30 }}>
                   <option value="">—</option>
                   <option value="male">איש</option>
                   <option value="female">אשה</option>
@@ -449,7 +508,7 @@ export default function ContactDetail() {
                 <label style={{ fontSize: 12, color: '#777' }}>סיור משויך</label>
                 <select className="input" value={editForm.tour_id}
                   onChange={e => setEditForm(f => ({ ...f, tour_id: e.target.value }))}
-                  style={{ width: '100%', marginBottom: 12, marginTop: 4, fontFamily: 'inherit' }}>
+                  style={{ width: '100%', marginBottom: 12, marginTop: 4, fontFamily: 'inherit', appearance: 'none', WebkitAppearance: 'none', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%239a9aa5' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'left 10px center', paddingLeft: 30 }}>
                   <option value="">— מחוץ לסיורים —</option>
                   {tours.map(t => (
                     <option key={t.id} value={t.id}>סיור {t.tour_number} · {t.settlement} ({t.date})</option>
@@ -468,7 +527,7 @@ export default function ContactDetail() {
                     if (h) setEditForm(f => ({ ...f, meeting_place_city: h.settlement || h.city || '', meeting_place_number: String(h.houseNumber ?? '') }));
                     setHouseSel(v);
                   }}
-                  style={{ width: '100%', marginBottom: 8, marginTop: 4, fontFamily: 'inherit' }}>
+                  style={{ width: '100%', marginBottom: 8, marginTop: 4, fontFamily: 'inherit', appearance: 'none', WebkitAppearance: 'none', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%239a9aa5' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'left 10px center', paddingLeft: 30 }}>
                   <option value="">— ללא בית מפגש —</option>
                   {houses.map(h => (
                     <option key={houseKey(h)} value={houseKey(h)}>בית מפגש {h.houseNumber} · {h.settlement || h.city || ''}</option>
@@ -511,7 +570,7 @@ export default function ContactDetail() {
                       <div key={mitz} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontSize: 13, color: '#333' }}>{mitz}</span>
                         <select value={lvl} onChange={e => setEditMitzvah(mitz, Number(e.target.value))}
-                          style={{ width: 88, padding: '5px 8px', borderRadius: 8, border: `1.5px solid ${lvl > 0 ? '#6c5ce7' : '#e8e8e8'}`, fontSize: 12.5, background: lvl > 0 ? '#f0effe' : '#fafafa', color: lvl > 0 ? '#6c5ce7' : '#999', fontFamily: 'Rubik, sans-serif' }}>
+                          style={{ width: 88, padding: '5px 8px', borderRadius: 8, border: `1.5px solid ${lvl > 0 ? '#6c5ce7' : '#e8e8e8'}`, fontSize: 12.5, background: lvl > 0 ? '#f0effe' : '#fafafa', color: lvl > 0 ? '#6c5ce7' : '#999', fontFamily: 'Rubik, sans-serif', appearance: 'none', WebkitAppearance: 'none', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%239a9aa5' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'left 10px center', paddingLeft: 30 }}>
                           {CONFIG.mitzvotLevels.map(l => <option key={l} value={l}>רמה {l}</option>)}
                         </select>
                       </div>
@@ -565,7 +624,7 @@ export default function ContactDetail() {
             <label style={{ fontSize: 12, color: '#777' }}>סוג קשר</label>
             <select className="input" value={interForm.type}
               onChange={e => setInterForm(f => ({ ...f, type: e.target.value }))}
-              style={{ width: '100%', marginBottom: 12, marginTop: 4, fontFamily: 'inherit' }}>
+              style={{ width: '100%', marginBottom: 12, marginTop: 4, fontFamily: 'inherit', appearance: 'none', WebkitAppearance: 'none', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%239a9aa5' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'left 10px center', paddingLeft: 30 }}>
               {CONFIG.interactionTypes.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
             {interForm.type !== 'אירוח שבת' && (
@@ -573,7 +632,7 @@ export default function ContactDetail() {
                 <label style={{ fontSize: 12, color: '#777' }}>איכות קשר</label>
                 <select className="input" value={interForm.quality}
                   onChange={e => setInterForm(f => ({ ...f, quality: e.target.value }))}
-                  style={{ width: '100%', marginBottom: 12, marginTop: 4, fontFamily: 'inherit' }}>
+                  style={{ width: '100%', marginBottom: 12, marginTop: 4, fontFamily: 'inherit', appearance: 'none', WebkitAppearance: 'none', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%239a9aa5' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'left 10px center', paddingLeft: 30 }}>
                   <option value="">—</option>
                   {CONFIG.interactionQuality.map(q => <option key={q} value={q}>{q}</option>)}
                 </select>
@@ -596,7 +655,7 @@ export default function ContactDetail() {
             <label style={{ fontSize: 12, color: '#777' }}>תוצאה</label>
             <select className="input" value={interForm.outcome}
               onChange={e => setInterForm(f => ({ ...f, outcome: e.target.value }))}
-              style={{ width: '100%', marginBottom: 12, marginTop: 4, fontFamily: 'inherit' }}>
+              style={{ width: '100%', marginBottom: 12, marginTop: 4, fontFamily: 'inherit', appearance: 'none', WebkitAppearance: 'none', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%239a9aa5' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'left 10px center', paddingLeft: 30 }}>
               <option value="">—</option>
               {CONFIG.outcomeValues.map(o => <option key={o} value={o}>{o}</option>)}
             </select>

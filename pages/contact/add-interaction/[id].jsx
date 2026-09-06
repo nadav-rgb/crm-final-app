@@ -1,7 +1,7 @@
 // pages/contact/add-interaction/[id].jsx
 import { useState } from 'react';
 import { useRouter } from 'next/router';
-import Link from 'next/link';
+import BackLink from '../../../components/ui/BackLink';
 import CONFIG from '../../../data/config';
 import { useCrm } from '../../../lib/CrmStore';
 import { useAuth } from '../../../lib/AuthStore';
@@ -86,7 +86,7 @@ export default function AddInteractionPage() {
   // Security: activist can only report for their own contact
   if (currentUser?.role === 'activist' && contact.activist_id !== currentUser.id) {
     return (
-      <DesktopLayout title="הוספת קשר" backHref={`/contact/${contactId}`} backLabel="← חזרה">
+      <DesktopLayout title="הוספת קשר" backHref={`/contact/${contactId}`} backLabel="חזרה">
         <div style={{ textAlign: 'center', padding: 60, color: '#aaa' }}>
           <div style={{ fontSize: 48, marginBottom: 12 }}>🔒</div>
           <div style={{ fontSize: 15 }}>אין הרשאה — לא ניתן לדווח קשר עבור לקוח שאינו שלך</div>
@@ -535,15 +535,13 @@ export default function AddInteractionPage() {
           </div>
         )}
         <p style={{ fontSize: 14, color: '#aaa', marginBottom: 28 }}>הקשר עם {contact.name} נשמר.</p>
-        <Link href={`/contact/${contactId}`} className="btn btn-primary" style={{ textDecoration: 'none', padding: '10px 24px' }}>
-          חזרה לפרופיל הלקוח
-        </Link>
+        <BackLink href={`/contact/${contactId}`} direction="back">חזרה לפרופיל הלקוח</BackLink>
       </div>
     </DesktopLayout>
   );
 
   return (
-    <DesktopLayout title={`קשר חדש — ${contact.name}`} backHref={`/contact/${contactId}`} backLabel="← חזרה">
+    <DesktopLayout title={`קשר חדש — ${contact.name}`} backHref={`/contact/${contactId}`} backLabel="חזרה">
       {toastEl}
       <div style={{ maxWidth: 560 }}>
 

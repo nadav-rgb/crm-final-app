@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
+import BackLink from '../components/ui/BackLink';
 import CONFIG from '../data/config';
 import getReminders from '../lib/getReminders';
 import { timeInSystem } from '../lib/activistStats';
@@ -187,10 +188,10 @@ function GridCard({ contact, can, viewMode }) {
         </div>
       )}
       <div style={{ display: 'flex', gap: 6, paddingTop: 8, borderTop: '0.5px solid #f0f0f0' }}>
-        <Link href={`/contact/${contact.id}?from=contacts&view=${viewMode}`} className="btn btn-primary"
-          style={{ flex: 1, textAlign: 'center', textDecoration: 'none', fontSize: 12 }}>
+        <BackLink href={`/contact/${contact.id}?from=contacts&view=${viewMode}`} direction="forward"
+          style={{ flex: 1, justifyContent: 'center', fontSize: 12 }}>
           צפייה
-        </Link>
+        </BackLink>
         {can.addContact && (
           <Link href={`/contact/add-interaction/${contact.id}`} className="btn"
             style={{ flex: 1, textAlign: 'center', textDecoration: 'none', fontSize: 12 }}>
@@ -271,11 +272,9 @@ function ListRow({ contact, can, last, viewMode }) {
             📞
           </a>
         )}
-        <Link href={href} className="btn btn-primary"
-          onClick={e => e.stopPropagation()}
-          style={{ textDecoration: 'none', fontSize: 12, padding: '6px 20px', minWidth: 80, textAlign: 'center' }}>
-          צפייה →
-        </Link>
+        <BackLink href={href} direction="forward" onClick={e => e.stopPropagation()}>
+          צפייה
+        </BackLink>
       </div>
     </div>
   );

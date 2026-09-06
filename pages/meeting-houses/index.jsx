@@ -211,7 +211,7 @@ function HouseCard({ house, activists = [], onAssign }) {
           <select
             value={selectedId}
             onChange={e => setSelectedId(e.target.value)}
-            style={{ flex: 1, border: '1.5px solid #e8e8e8', borderRadius: 8, padding: '7px 10px', fontFamily: 'inherit', fontSize: 12, color: '#333', background: '#fff' }}
+            style={{ flex: 1, border: '1.5px solid #e8e8e8', borderRadius: 8, padding: '7px 10px', fontFamily: 'inherit', fontSize: 12, color: '#333', background: '#fff', appearance: 'none', WebkitAppearance: 'none', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%239a9aa5' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'left 10px center', paddingLeft: 30 }}
           >
             <option value="">שבץ פעיל...</option>
             {availableActivists.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}

@@ -5,13 +5,14 @@ import Link from 'next/link';
 import { useAuth } from '../lib/AuthStore';
 import { useCrm } from '../lib/CrmStore';
 import MobileBottomNav from './MobileBottomNav';
+import BackLink from './ui/BackLink';
 import { inAnyPaidProject, inProject } from '../lib/projectUtils';
 import { getNotificationsForUser, markNotificationAsRead, markAllNotificationsAsRead } from '../lib/notificationDemo';
 import {
   Home, User, Users, Calendar, UserPlus,
   ClipboardList, Star, CreditCard, Bell, BellRing, Receipt, Compass,
   MessageSquare, Building2, CheckCircle, AlertCircle,
-  BarChart2, FolderOpen, LayoutDashboard, Activity,
+  BarChart2, FolderOpen, LayoutDashboard, Activity, Trash2,
 } from 'lucide-react';
 
 const PROJECTS_LIST = [
@@ -171,6 +172,9 @@ export default function DesktopLayout({ children, title, subtitle, actions, back
           {can.seePayments && (
             <NavItem href="/payments"     icon={<CreditCard    {...ICO} />} label="דוחות תשלום פעילים" open={open} active={router.pathname === '/payments'}         onActivate={() => setOpen(true)} />
           )}
+          {can.manageDeleted && (
+            <NavItem href="/trash" icon={<Trash2 {...ICO} />} label="סל מיחזור" open={open} active={router.pathname === '/trash'} onActivate={() => setOpen(true)} />
+          )}
           {isCeo && (
             <NavItem href="/interaction-report" icon={<BarChart2 {...ICO} />} label="דו״ח קשרים" open={open} active={router.pathname === '/interaction-report'} onActivate={() => setOpen(true)} />
           )}
@@ -283,15 +287,7 @@ export default function DesktopLayout({ children, title, subtitle, actions, back
         {/* כותרת */}
         <div style={{ background: 'rgba(255,255,255,0.8)', backdropFilter: 'blur(12px)', borderBottom: '0.5px solid rgba(0,0,0,0.06)', padding: isMobile ? '12px 16px' : '16px 28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, position: 'relative', zIndex: 2000 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            {backHref && (
-              <Link href={backHref} style={{ textDecoration: 'none' }}>
-                <button style={{ padding: '6px 14px', borderRadius: 10, border: '1.5px solid #e8e8e8', background: '#fff', color: '#6c5ce7', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'Heebo, sans-serif', transition: 'all 0.18s ease' }}
-                  onMouseEnter={e => { e.currentTarget.style.background = '#f0effe'; e.currentTarget.style.borderColor = '#6c5ce7'; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.borderColor = '#e8e8e8'; }}>
-                  {backLabel || '← חזרה'}
-                </button>
-              </Link>
-            )}
+            {backHref && <BackLink href={backHref} direction="back">{backLabel || 'חזרה'}</BackLink>}
             <div>
               <div style={{ fontSize: 20, fontWeight: 700, color: '#2d1f5e', letterSpacing: '-0.3px' }}>{title}</div>
               {subtitle && <div style={{ fontSize: 12, color: '#b8a8e0', marginTop: 2, fontWeight: 500 }}>{subtitle}</div>}

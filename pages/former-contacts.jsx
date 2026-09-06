@@ -1,5 +1,6 @@
 // pages/former-contacts.jsx — לקוחות לשעבר
 import Link from 'next/link';
+import BackLink from '../components/ui/BackLink';
 import getReminders from '../lib/getReminders';
 import DesktopLayout from '../components/DesktopLayout';
 import { useCrm } from '../lib/CrmStore';
@@ -23,7 +24,7 @@ export default function FormerContactsPage() {
 
   return (
     <DesktopLayout title="לקוחות לשעבר" subtitle={`${former.length} לקוחות`}
-      backHref="/contacts" backLabel="← חזרה ללקוחות">
+      backHref="/contacts" backLabel="חזרה ללקוחות">
       {former.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 60, color: '#ccc' }}>
           <div style={{ fontSize: 48, marginBottom: 12 }}>🎉</div>
@@ -55,13 +56,12 @@ export default function FormerContactsPage() {
                 }}
                   onMouseEnter={e => { e.currentTarget.style.background = '#27ae60'; e.currentTarget.style.color = '#fff'; }}
                   onMouseLeave={e => { e.currentTarget.style.background = '#edfaf1'; e.currentTarget.style.color = '#27ae60'; }}>
-                  שב לפעילות ↩
+                  שב לפעילות
                 </button>
               </Link>
-              <Link href={`/contact/${c.id}?from=former`} className="btn"
-                style={{ textDecoration: 'none', fontSize: 12 }}>
+              <BackLink href={`/contact/${c.id}?from=former`} direction="forward">
                 צפייה
-              </Link>
+              </BackLink>
             </div>
           ))}
         </div>

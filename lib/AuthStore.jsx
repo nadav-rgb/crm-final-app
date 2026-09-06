@@ -172,6 +172,7 @@ export function AuthProvider({ children }) {
     seePayments:            role === 'finance' || role === 'head' || role === 'ceo' || role === 'coord',
     seeMeetingHouses:       role === 'ceo' || role === 'head' || role === 'coord' || role === 'finance',
     seeMeetingHouseResults: role === 'ceo' || role === 'head' || role === 'coord' || MEETING_HOUSE_RESULTS_WHITELIST.includes(currentUser?.id),
+    manageDeleted:          ['coord', 'head', 'ceo'].includes(role),
     ownProjectId:           currentUser?.project_id ?? null,
   };
 
