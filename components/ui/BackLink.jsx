@@ -13,13 +13,13 @@ function Chevron() {
   );
 }
 
-export default function BackLink({ href, direction = 'back', variant, children, style }) {
+export default function BackLink({ href, direction = 'back', variant, children, style, onClick }) {
   const isBack = direction === 'back';
   const resolvedVariant = variant || (isBack ? 'button' : 'link');
   const variantClass = resolvedVariant === 'button' ? 'backlink-button' : 'backlink-link';
   const directionClass = isBack ? 'backlink-back' : 'backlink-forward';
   return (
-    <Link href={href} className={`${variantClass} ${directionClass}`} style={style}>
+    <Link href={href} className={`${variantClass} ${directionClass}`} style={style} onClick={onClick}>
       {isBack && <Chevron />}
       {children}
       {!isBack && <Chevron />}

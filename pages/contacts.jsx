@@ -272,7 +272,7 @@ function ListRow({ contact, can, last, viewMode }) {
             📞
           </a>
         )}
-        <BackLink href={href} direction="forward">
+        <BackLink href={href} direction="forward" onClick={e => e.stopPropagation()}>
           צפייה
         </BackLink>
       </div>
