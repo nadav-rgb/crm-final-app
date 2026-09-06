@@ -41,6 +41,8 @@
 | 0014_bonus_cancellations | טבלת `bonus_cancellations` | ✅ הורץ |
 | 0015_participants_reports_project_notification_recipients | `interactions.participants` + RPC `app_notification_recipients` | ✅ הורץ |
 | 0016_feedback_reports | טבלת `feedback_reports` (עמוד `/feedback`) | ✅ הורץ 2026-07-21 |
+| 0025_soft_delete_restore | `profiles.is_active`/`deleted_at`, `contacts.deleted_at`/`deleted_via_activist_id` | ✅ הורץ 2026-09-06 |
+| 0026_activist_directory_hide_deleted | `activist_directory` מסנן `is_active=true`, חושף `is_active`/`deleted_at` | ✅ הורץ 2026-09-06 |
 
 ### 0016 — אימות שבוצע (2026-07-21)
 - הטבלה קיימת עם כל 10 העמודות ✅

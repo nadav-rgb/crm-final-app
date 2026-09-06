@@ -1,4 +1,5 @@
 -- migrations/0026_activist_directory_hide_deleted.sql
+-- הורץ דרך ה-SQL Editor 2026-09-06
 -- עדכון activist_directory: מסתיר פעילים שנמחקו-רכות (0025), חושף is_active/deleted_at.
 -- ⚠️ להריץ רק אחרי 0025 (עמודות is_active/deleted_at ב-profiles).
 --
