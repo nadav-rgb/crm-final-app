@@ -130,7 +130,7 @@ export default function ContactDetail() {
 
   async function doDelete() {
     setBusy(true);
-    if (currentUser?.role === 'coord' || currentUser?.role === 'head') {
+    if (currentUser?.role === 'coord' || currentUser?.role === 'head' || currentUser?.role === 'ceo') {
       const res = await fetch('/api/admin/soft-delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
