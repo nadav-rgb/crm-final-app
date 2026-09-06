@@ -1,5 +1,6 @@
 // pages/former-contacts.jsx — לקוחות לשעבר
 import Link from 'next/link';
+import BackLink from '../components/ui/BackLink';
 import getReminders from '../lib/getReminders';
 import DesktopLayout from '../components/DesktopLayout';
 import { useCrm } from '../lib/CrmStore';
@@ -58,10 +59,9 @@ export default function FormerContactsPage() {
                   שב לפעילות ↩
                 </button>
               </Link>
-              <Link href={`/contact/${c.id}?from=former`} className="btn"
-                style={{ textDecoration: 'none', fontSize: 12 }}>
+              <BackLink href={`/contact/${c.id}?from=former`} direction="forward">
                 צפייה
-              </Link>
+              </BackLink>
             </div>
           ))}
         </div>

@@ -1,5 +1,5 @@
 // components/ActivistCard.jsx
-import Link from 'next/link';
+import BackLink from './ui/BackLink';
 import CONFIG from '../data/config';
 
 const performanceConfig = {
@@ -48,10 +48,9 @@ export default function ActivistCard({ activist, contactCount, interactionCount,
 
       {/* כפתורים */}
       <div style={{ display: 'flex', gap: 6 }}>
-        <Link href={`/activists/${activist.id}`} className="btn"
-          style={{ flex: 2, display: 'block', textAlign: 'center', textDecoration: 'none' }}>
-          צפייה בפרופיל ←
-        </Link>
+        <BackLink href={`/activists/${activist.id}`} direction="forward">
+          צפייה בפרופיל
+        </BackLink>
         {canSeeSensitive && (
           <a href={`tel:${activist.phone}`} className="btn"
             style={{ flex: 1, textAlign: 'center', textDecoration: 'none', color: '#3b6d11', borderColor: '#639922' }}>

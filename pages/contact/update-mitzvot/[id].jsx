@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
+import BackLink from '../../../components/ui/BackLink';
 import CONFIG from '../../../data/config';
 import { useCrm } from '../../../lib/CrmStore';
 import { useAuth } from '../../../lib/AuthStore';
@@ -62,7 +63,7 @@ export default function UpdateMitzvotPage() {
         <h2 style={{marginBottom:8}}>הסרגל עודכן!</h2>
         {totalBonus>0 && <div style={{fontSize:16,color:'#27ae60',fontWeight:700,marginBottom:8}}>בונוס: {totalBonus.toLocaleString()} ₪</div>}
         <p style={{color:'#aaa',marginBottom:28}}>סרגל המצוות של {contact.name} עודכן בהצלחה.</p>
-        <Link href={`/contact/${contactId}`} className="btn btn-primary" style={{textDecoration:'none',padding:'10px 24px'}}>חזרה לפרופיל</Link>
+        <BackLink href={`/contact/${contactId}`} direction="back">חזרה לפרופיל</BackLink>
       </div>
     </DesktopLayout>
   );

@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
+import BackLink from '../components/ui/BackLink';
 import CONFIG from '../data/config';
 import getReminders from '../lib/getReminders';
 import { timeInSystem } from '../lib/activistStats';
@@ -271,11 +272,9 @@ function ListRow({ contact, can, last, viewMode }) {
             📞
           </a>
         )}
-        <Link href={href} className="btn btn-primary"
-          onClick={e => e.stopPropagation()}
-          style={{ textDecoration: 'none', fontSize: 12, padding: '6px 20px', minWidth: 80, textAlign: 'center' }}>
-          צפייה →
-        </Link>
+        <BackLink href={href} direction="forward">
+          צפייה
+        </BackLink>
       </div>
     </div>
   );

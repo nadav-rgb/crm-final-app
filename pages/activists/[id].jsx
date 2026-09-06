@@ -1,7 +1,7 @@
 // pages/activists/[id].jsx
 import { useState } from 'react';
 import { useRouter } from 'next/router';
-import Link from 'next/link';
+import BackLink from '../../components/ui/BackLink';
 import { interactionsLast30, getActivistPerformance, timeInSystem } from '../../lib/activistStats';
 import { useCrm } from '../../lib/CrmStore';
 import { useAuth } from '../../lib/AuthStore';
@@ -260,10 +260,9 @@ export default function ActivistDetail() {
                         }}>{c.status}</span>
                       </div>
                       <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
-                        <Link href={`/contact/${c.id}?from=activist&activistId=${activist.id}`} className="btn btn-primary"
-                          style={{ textDecoration: 'none', fontSize: 12, padding: '6px 18px' }}>
-                          צפייה ←
-                        </Link>
+                        <BackLink href={`/contact/${c.id}?from=activist&activistId=${activist.id}`} direction="forward">
+                          צפייה
+                        </BackLink>
                       </div>
                     </div>
                   );

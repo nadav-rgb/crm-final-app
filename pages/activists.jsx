@@ -1,6 +1,6 @@
 // pages/activists.jsx
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
+import BackLink from '../components/ui/BackLink';
 import CONFIG from '../data/config';
 import { useCrm } from '../lib/CrmStore';
 import { useAuth } from '../lib/AuthStore';
@@ -167,10 +167,9 @@ function ActivistListRow({ activist, contactCount, interactionCount, performance
             📞
           </a>
         )}
-        <Link href={`/activists/${activist.id}`} className="btn btn-primary"
-          style={{ textDecoration: 'none', fontSize: 12, padding: '6px 20px', minWidth: 80, textAlign: 'center' }}>
-          צפייה ←
-        </Link>
+        <BackLink href={`/activists/${activist.id}`} direction="forward">
+          צפייה
+        </BackLink>
       </div>
     </div>
   );
