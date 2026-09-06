@@ -258,7 +258,7 @@ test('server', 'loads live project 1 data without filtering inactive contacts', 
     projects: [{ id: 1, name: 'אחדות יהודית' }],
     contacts: contacts.filter(contact => contact.project_id === 1),
     interactions,
-    activist_directory: activists,
+    profiles: activists,
   });
   const report = await server.loadLiveInteractionReport({
     supabase,
