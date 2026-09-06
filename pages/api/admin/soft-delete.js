@@ -17,6 +17,12 @@ async function assertProjectAccess(admin, auth, projectId) {
   return null;
 }
 
+const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
+function purgeEligible(deletedAt) {
+  if (!deletedAt) return false;
+  return Date.now() - new Date(deletedAt).getTime() >= NINETY_DAYS_MS;
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
@@ -26,15 +32,22 @@ export default async function handler(req, res) {
   const { entity, action, id } = req.body || {};
   if (!id) return res.status(400).json({ error: 'Missing id' });
   if (!['contact', 'activist'].includes(entity)) return res.status(400).json({ error: 'Invalid entity' });
-  if (!['delete', 'restore'].includes(action)) return res.status(400).json({ error: 'Invalid action' });
+  if (!['delete', 'restore', 'purge'].includes(action)) return res.status(400).json({ error: 'Invalid action' });
 
   const admin = getSupabaseAdmin();
 
   if (entity === 'contact') {
-    const { data: contact, error: readErr } = await admin.from('contacts').select('id, project_id').eq('id', id).single();
+    const { data: contact, error: readErr } = await admin.from('contacts').select('id, project_id, deleted_at').eq('id', id).single();
     if (readErr || !contact) return res.status(404).json({ error: 'Contact not found' });
     const accessErr = await assertProjectAccess(admin, auth, contact.project_id);
     if (accessErr) return res.status(accessErr.status).json({ error: accessErr.error });
+
+    if (action === 'purge') {
+      if (!purgeEligible(contact.deleted_at)) return res.status(409).json({ error: 'עדיין לא עברו 90 יום מהמחיקה' });
+      const { error } = await admin.from('contacts').delete().eq('id', id);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ error: null });
+    }
 
     if (action === 'delete') {
       const { error } = await admin.from('contacts').update({ is_active: false, deleted_at: new Date().toISOString() }).eq('id', id);
@@ -47,7 +60,7 @@ export default async function handler(req, res) {
   }
 
   // entity === 'activist' — id הוא activist_code (int), לא profiles.id (uuid).
-  const { data: activist, error: readErr } = await admin.from('profiles').select('id, project_id, project_ids').eq('activist_code', id).single();
+  const { data: activist, error: readErr } = await admin.from('profiles').select('id, project_id, project_ids, deleted_at').eq('activist_code', id).single();
   if (readErr || !activist) return res.status(404).json({ error: 'Activist not found' });
   const activistProjectIds = Array.isArray(activist.project_ids) && activist.project_ids.length > 0
     ? activist.project_ids : (activist.project_id ? [activist.project_id] : []);
@@ -56,6 +69,19 @@ export default async function handler(req, res) {
     const callerIds = projectIdsOf(auth.profile);
     const shares = activistProjectIds.some(p => callerIds.includes(Number(p)));
     if (!shares) return res.status(403).json({ error: 'הפעיל הזה לא בפרויקט שלך' });
+  }
+
+  if (action === 'purge') {
+    if (!purgeEligible(activist.deleted_at)) return res.status(409).json({ error: 'עדיין לא עברו 90 יום מהמחיקה' });
+    const { error: contactsErr } = await admin.from('contacts').delete().eq('deleted_via_activist_id', id);
+    if (contactsErr) return res.status(500).json({ error: contactsErr.message });
+    const { error: profErr } = await admin.from('profiles').delete().eq('activist_code', id);
+    if (profErr) return res.status(500).json({ error: profErr.message });
+    // deleteUser דורש את ה-Auth user id (uuid) — activist.id מה-select למעלה, לא את
+    // ה-activist_code (id, פרמטר הבקשה). לא חוסם על כשל: הפרופיל כבר נמחק בהצלחה.
+    const { error: authErr } = await admin.auth.admin.deleteUser(activist.id);
+    if (authErr) console.error('Profile deleted but auth user deletion failed', authErr);
+    return res.status(200).json({ error: null });
   }
 
   if (action === 'delete') {
