@@ -4,6 +4,7 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
+import BackLink from '../../components/ui/BackLink';
 import DesktopLayout from '../../components/DesktopLayout';
 import { useCrm } from '../../lib/CrmStore';
 import { useAuth } from '../../lib/AuthStore';
@@ -121,9 +122,10 @@ export default function ActivistPaymentDetail() {
             <div style={{ fontSize:36, fontWeight:700 }}>{report.grandTotal.toLocaleString()} ₪</div>
           </div>
           {can.seeActivists && (
-            <Link href={`/activists/${activist.id}`} style={{ color:'#fff', fontSize:12, fontWeight:700, textDecoration:'none', background:'rgba(255,255,255,0.18)', borderRadius:10, padding:'8px 14px' }}>
-              לפרופיל הפעיל ←
-            </Link>
+            <BackLink href={`/activists/${activist.id}`} direction="forward" variant="link"
+              style={{ color:'#fff', background:'rgba(255,255,255,0.18)', borderRadius:10, padding:'8px 14px' }}>
+              לפרופיל הפעיל
+            </BackLink>
           )}
         </div>
 

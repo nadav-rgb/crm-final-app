@@ -1,6 +1,7 @@
 // pages/contact/[id].jsx
 import { useRouter } from 'next/router';
 import Link from 'next/link';
+import BackLink from '../../components/ui/BackLink';
 import CONFIG from '../../data/config';
 import getReminders from '../../lib/getReminders';
 import StatusBadge from '../../components/StatusBadge';
@@ -309,12 +310,12 @@ export default function ContactDetail() {
                 <td style={{ padding: '7px 0', color: '#999' }}>פעיל אחראי</td>
                 <td style={{ padding: '7px 0' }}>
                   {owner ? (
-                    <Link
+                    <BackLink
                       href={`/activists/${owner.id}?from=contact-detail&contactId=${contact.id}`}
-                      style={{ color: '#534ab7', textDecoration: 'none', fontWeight: 500 }}
+                      direction="forward" variant="link" style={{ color: '#534ab7' }}
                     >
-                      {owner.name} ←
-                    </Link>
+                      {owner.name}
+                    </BackLink>
                   ) : '—'}
                 </td>
               </tr>

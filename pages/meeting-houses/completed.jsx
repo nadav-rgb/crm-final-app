@@ -1,6 +1,7 @@
 // pages/meeting-houses/completed.jsx
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import BackLink from '../../components/ui/BackLink';
 import DesktopLayout from '../../components/DesktopLayout';
 import { useAuth } from '../../lib/AuthStore';
 import { useCrm } from '../../lib/CrmStore';
@@ -221,9 +222,9 @@ function CompletedDetailModal({ house, baseMeetings, onClose, activistName }) {
 
         {/* Link to full detail page */}
         <div style={{ marginTop: 16, textAlign: 'center' }}>
-          <Link href={`/meeting-houses/${house.id}`} style={{ color: '#6c5ce7', fontSize: 12, fontWeight: 600, textDecoration: 'none' }}>
-            לדף הבית מפגש המלא →
-          </Link>
+          <BackLink href={`/meeting-houses/${house.id}`} direction="forward" variant="link" style={{ color: '#6c5ce7', fontSize: 12, fontWeight: 600 }}>
+            לדף הבית מפגש המלא
+          </BackLink>
         </div>
       </div>
     </div>
