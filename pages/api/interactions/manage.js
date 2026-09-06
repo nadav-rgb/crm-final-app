@@ -7,9 +7,13 @@ import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import { requireWriteRole } from '../meeting-houses/_auth';
 import { notifyRecipients } from '../../../lib/notifyRecipients';
 
-// אותם 7 שדות שטופס העריכה הקיים שולח (pages/contact/[id].jsx saveEditInteraction) —
-// לא יותר. whitelist מונע כתיבה לשדות שהלקוח לא אמור לגעת בהם (activist_id, project_id וכו').
-const EDITABLE_FIELDS = ['type', 'quality', 'duration_minutes', 'date', 'outcome', 'description', 'notes'];
+// שדות שקריאות אמיתיות שולחות ל-updateInteraction (lib/CrmStore.jsx) עבור coord/head —
+// שני מקורות: טופס העריכה (pages/contact/[id].jsx saveEditInteraction) וכתיבת סיכום-AI
+// (pages/contact/add-interaction/[id].jsx, אחרי summarizeInteractionText — updateInteraction(id,
+// { ai_summary })). whitelist מונע כתיבה לשדות שהלקוח לא אמור לגעת בהם (activist_id, project_id
+// וכו'); כל שדה חדש שקורא אמיתי צריך לכתוב חייב להתווסף כאן במפורש — אחרת הוא מסונן בשקט
+// (ר' הגנת "No editable fields" למטה, שהופכת מקרה כזה בעתיד לכשל גלוי במקום no-op שקט).
+const EDITABLE_FIELDS = ['type', 'quality', 'duration_minutes', 'date', 'outcome', 'description', 'notes', 'ai_summary', 'next_action', 'next_action_date'];
 
 function projectIdsOf(profile) {
   if (Array.isArray(profile.project_ids) && profile.project_ids.length > 0) return profile.project_ids.map(Number);
@@ -55,6 +59,10 @@ export default async function handler(req, res) {
     if (!fields || typeof fields !== 'object') return res.status(400).json({ error: 'Missing fields' });
     const row = {};
     EDITABLE_FIELDS.forEach(key => { if (fields[key] !== undefined) row[key] = fields[key]; });
+    // שומר מפני no-op שקט: אם כל השדות שנשלחו סוננו (לא ב-whitelist), admin.update({}) של
+    // PostgREST "מצליח" בלי לשנות כלום — הקורא (updateInteraction) לא מבחין בין הצלחה
+    // אמיתית לכשל שקט הזה. עדיף כשל גלוי כאן, שיחשוף מיד קורא עתידי ששולח שדה לא-רשום.
+    if (Object.keys(row).length === 0) return res.status(400).json({ error: 'No editable fields provided' });
     const { error: writeErr } = await admin.from('interactions').update(row).eq('id', interactionId);
     if (writeErr) return res.status(500).json({ error: writeErr.message });
 
