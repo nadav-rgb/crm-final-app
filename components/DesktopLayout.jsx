@@ -11,7 +11,7 @@ import {
   Home, User, Users, Calendar, UserPlus,
   ClipboardList, Star, CreditCard, Bell, BellRing, Receipt, Compass,
   MessageSquare, Building2, CheckCircle, AlertCircle,
-  BarChart2, FolderOpen, LayoutDashboard, Activity,
+  BarChart2, FolderOpen, LayoutDashboard, Activity, Trash2,
 } from 'lucide-react';
 
 const PROJECTS_LIST = [
@@ -170,6 +170,9 @@ export default function DesktopLayout({ children, title, subtitle, actions, back
           )}
           {can.seePayments && (
             <NavItem href="/payments"     icon={<CreditCard    {...ICO} />} label="דוחות תשלום פעילים" open={open} active={router.pathname === '/payments'}         onActivate={() => setOpen(true)} />
+          )}
+          {can.manageDeleted && (
+            <NavItem href="/trash" icon={<Trash2 {...ICO} />} label="סל מיחזור" open={open} active={router.pathname === '/trash'} onActivate={() => setOpen(true)} />
           )}
           {isCeo && (
             <NavItem href="/interaction-report" icon={<BarChart2 {...ICO} />} label="דו״ח קשרים" open={open} active={router.pathname === '/interaction-report'} onActivate={() => setOpen(true)} />

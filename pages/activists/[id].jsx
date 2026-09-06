@@ -89,6 +89,8 @@ export default function ActivistDetail() {
   const { contacts, interactions, activists } = useCrm();
   const { can, filterProject, currentUser } = useAuth();
   const canSendNotification = ['coord', 'head', 'ceo'].includes(currentUser?.role);
+  const [confirmDel, setConfirmDel] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   // רק רכז/ראש-פרויקט/מנכ"ל יכולים לצפות בפרטי פעיל אחר (תואם ל-can.seeActivists בעמוד הרשימה).
   if (!can.seeActivists) {
@@ -97,6 +99,19 @@ export default function ActivistDetail() {
 
   const activist = activists.find(a => a.id === Number(id));
   if (!activist) return <DesktopLayout title="פעיל"><div>פעיל לא נמצא</div></DesktopLayout>;
+
+  async function doDeleteActivist() {
+    setBusy(true);
+    const res = await fetch('/api/admin/soft-delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+      body: JSON.stringify({ entity: 'activist', id: activist.id, action: 'delete' }),
+    });
+    const body = await res.json().catch(() => ({}));
+    setBusy(false);
+    if (!res.ok) { alert(body.error || 'המחיקה נכשלה'); return; }
+    router.push('/activists');
+  }
 
   // סוקפינג לפי הפרויקט הנבחר: רכז של פרויקט מסוים רואה רק את הצד שלו
   // אצל פעיל דו-פרויקטלי (לקוחות, פעילות וסטטיסטיקה של אותו פרויקט בלבד).
@@ -138,6 +153,13 @@ export default function ActivistDetail() {
         {/* עמודה שמאל — פרטים + פעילות אחרונה */}
         <div>
           {canSendNotification && <SendNotificationBox activist={activist} />}
+
+          {can.manageDeleted && (
+            <button onClick={() => setConfirmDel(true)} className="btn"
+              style={{ width: '100%', marginBottom: 12, cursor: 'pointer', fontFamily: 'inherit', color: '#a32d2d', borderColor: '#d98a8a' }}>
+              🗑️ מחיקת פעיל
+            </button>
+          )}
 
           {/* פרטים אישיים */}
           <div style={{ background: '#fff', borderRadius: 16, padding: 20, border: '0.5px solid rgba(0,0,0,0.07)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', marginBottom: 12 }}>
@@ -251,6 +273,22 @@ export default function ActivistDetail() {
           }
         </div>
       </div>
+
+      {confirmDel && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 500 }}
+          onClick={() => setConfirmDel(false)}>
+          <div style={{ padding: 24, maxWidth: 380, background: '#fff', borderRadius: 16 }} onClick={e => e.stopPropagation()}>
+            <p style={{ marginTop: 0 }}>
+              למחוק את <strong>{activist.name}</strong>? כל אנשי הקשר שלו ({ownedContacts.length}) יוסתרו יחד איתו.
+              ניתן לשחזר תוך 90 יום דרך סל המיחזור.
+            </p>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn" onClick={() => setConfirmDel(false)} disabled={busy}>ביטול</button>
+              <button className="btn" style={{ background: '#a32d2d', color: '#fff' }} disabled={busy} onClick={doDeleteActivist}>מחק</button>
+            </div>
+          </div>
+        </div>
+      )}
     </DesktopLayout>
   );
 }

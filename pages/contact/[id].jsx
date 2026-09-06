@@ -14,6 +14,7 @@ import { getMeetingHouses } from '../../lib/meetingHousesStorage';
 import { fetchMeetingHousesFromSupabase } from '../../lib/meetingHousesSupabase';
 import { PAID_PROJECT_IDS } from '../../lib/paymentCalc';
 import { createInteractionEditedNotification } from '../../lib/notificationDemo';
+import { authHeader } from '../../lib/apiAuth';
 
 export default function ContactDetail() {
   const router = useRouter();
@@ -129,7 +130,16 @@ export default function ContactDetail() {
 
   async function doDelete() {
     setBusy(true);
-    await deleteContact(contact.id);
+    if (currentUser?.role === 'coord' || currentUser?.role === 'head') {
+      const res = await fetch('/api/admin/soft-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+        body: JSON.stringify({ entity: 'contact', id: contact.id, action: 'delete' }),
+      });
+      if (!res.ok) { const body = await res.json().catch(() => ({})); alert(body.error || 'המחיקה נכשלה'); setBusy(false); return; }
+    } else {
+      await deleteContact(contact.id);
+    }
     setBusy(false);
     router.push('/contacts');
   }
