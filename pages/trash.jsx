@@ -15,19 +15,31 @@ export default function Trash() {
   const { can, currentUser } = useAuth();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null); // שגיאת שליפה אמיתית — שונה במפורש מ"אין פריטים"
   const [busyId, setBusyId] = useState(null);
   const [confirmPurge, setConfirmPurge] = useState(null); // { entity, id, name }
 
   async function load() {
     if (!currentUser) return;
     setLoading(true);
+    setLoadError(null);
     const supabase = getSupabaseClient();
-    const [{ data: contacts }, { data: activists }] = await Promise.all([
+    const [{ data: contacts, error: contactsErr }, { data: activists, error: activistsErr }] = await Promise.all([
       supabase.from('contacts').select('id, name, deleted_at').not('deleted_at', 'is', null),
       currentUser.role === 'ceo' || currentUser.role === 'coord' || currentUser.role === 'head'
         ? supabase.from('profiles').select('activist_code, name, deleted_at').not('deleted_at', 'is', null)
-        : Promise.resolve({ data: [] }),
+        : Promise.resolve({ data: [], error: null }),
     ]);
+    // כשל אמיתי בשליפה (למשל עמודת deleted_at לא קיימת עדיין — המיגרציה לא רצה, או שגיאת
+    // רשת) חייב להיות מוצג בבירור. בלי הבדיקה הזו "0 שורות כי נכשל" נראה זהה ל"0 שורות כי
+    // אין באמת כלום למחזר" — בניגוד לעיקרון "כשל קולני" של הפרויקט (ר' CLAUDE.md).
+    if (contactsErr || activistsErr) {
+      console.error('Failed to load trash', { contactsErr, activistsErr });
+      setLoadError(contactsErr?.message || activistsErr?.message || 'שגיאה לא ידועה');
+      setRows([]);
+      setLoading(false);
+      return;
+    }
     const combined = [
       ...(contacts || []).map(c => ({ entity: 'contact', id: c.id, name: c.name, deletedAt: c.deleted_at })),
       ...(activists || []).map(a => ({ entity: 'activist', id: a.activist_code, name: a.name, deletedAt: a.deleted_at })),
@@ -65,8 +77,13 @@ export default function Trash() {
     <DesktopLayout title="סל מיחזור">
       <div style={{ padding: 24 }}>
         {loading && <p>טוען…</p>}
-        {!loading && rows.length === 0 && <p>אין פריטים מחוקים כרגע.</p>}
-        {!loading && rows.map(r => {
+        {!loading && loadError && (
+          <p style={{ color: '#a32d2d', fontWeight: 600 }}>
+            ⚠ שגיאה בטעינת סל המיחזור — {loadError}. זו לא בהכרח אומרת שאין פריטים מחוקים; נסה לרענן את הדף.
+          </p>
+        )}
+        {!loading && !loadError && rows.length === 0 && <p>אין פריטים מחוקים כרגע.</p>}
+        {!loading && !loadError && rows.map(r => {
           const left = daysLeft(r.deletedAt);
           return (
             <div key={`${r.entity}-${r.id}`} className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 16, marginBottom: 10 }}>
