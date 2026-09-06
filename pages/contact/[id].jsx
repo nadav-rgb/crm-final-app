@@ -137,9 +137,16 @@ export default function ContactDetail() {
         body: JSON.stringify({ entity: 'contact', id: contact.id, action: 'delete' }),
       });
       if (!res.ok) { const body = await res.json().catch(() => ({})); alert(body.error || 'המחיקה נכשלה'); setBusy(false); return; }
-    } else {
-      await deleteContact(contact.id);
+      // ה-endpoint המיוחס הזה (בניגוד ל-deleteContact הרגיל למטה) לא מעדכן את ה-state המקומי
+      // של contacts ב-CrmStore — בלי רענון מלא הלקוח שנמחק ימשיך להופיע ב-/contacts עד רענון
+      // ידני. אין ב-CrmStore דרך קיימת לעדכן contacts מבחוץ ל-deleteContact עצמה, אז ניווט קשיח
+      // (לא router.push) הוא התיקון המינימלי הנכון: מכריח טעינה מחדש של כל האפליקציה, כולל
+      // שליפת contacts טרייה מ-Supabase (שכבר מסננת is_active=true, ר' loadContactsFromSupabase).
+      setBusy(false);
+      window.location.href = '/contacts';
+      return;
     }
+    await deleteContact(contact.id);
     setBusy(false);
     router.push('/contacts');
   }
@@ -234,6 +241,11 @@ export default function ContactDetail() {
   // הרשאות — פעיל רואה נתונים רגישים רק על לקוח שלו; רכז/ראש-פרויקט/מנכ"ל לפי פרויקט
   const isOwnProject  = can.ownProjectId === null || contact.project_id === can.ownProjectId;
   const showSensitive = can.seeSensitiveData && isOwnProject && isOwner;
+  // F1 (תוקן בביקורת חוצת-משימות) — כפתור *מחיקת* לקוח (לא עריכה): הבעלים (פעיל, מוגבל
+  // לפרויקט שלו — ללא שינוי) + רכז/ראש-פרויקט/מנכ"ל (can.manageDeleted) בלי isOwnProject/isOwner —
+  // הבדיקה האמיתית לפרויקט כבר נאכפת בצד השרת (assertProjectAccess ב-pages/api/admin/soft-delete.js).
+  // אותו דפוס בדיוק כמו canManageInteractions למעלה, לעקביות בין שני סוגי ההרשאות באותו קובץ.
+  const canDeleteContact = (can.addContact && isOwnProject && isOwner) || can.manageDeleted;
 
   return (
     <DesktopLayout
@@ -348,13 +360,17 @@ export default function ContactDetail() {
             </Link>
           )}
 
-          {/* F1 — עריכה / מחיקת לקוח */}
-          {can.addContact && isOwnProject && isOwner && (
+          {/* F1 — עריכה / מחיקת לקוח. עריכה: בעלים בלבד (ללא שינוי). מחיקה: כל מי שעונה
+              ל-canDeleteContact (בעלים + רכז/ראש/מנכ"ל) — ר' הגדרתה למעלה. העטיפה החיצונית
+              משתמשת ב-canDeleteContact בלבד (לא בביטוי כפול) כי הבעלות כבר כלולה בהגדרתה. */}
+          {canDeleteContact && (
             <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-              <button onClick={openEdit} className="btn"
-                style={{ flex: 1, cursor: 'pointer', fontFamily: 'inherit' }}>
-                ✏️ עריכת פרטים
-              </button>
+              {can.addContact && isOwnProject && isOwner && (
+                <button onClick={openEdit} className="btn"
+                  style={{ flex: 1, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  ✏️ עריכת פרטים
+                </button>
+              )}
               <button onClick={() => setConfirmDel(true)} className="btn"
                 style={{ flex: 1, cursor: 'pointer', fontFamily: 'inherit', color: '#a32d2d', borderColor: '#d98a8a' }}>
                 🗑️ מחיקה
