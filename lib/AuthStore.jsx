@@ -50,6 +50,7 @@ const USERNAME_TO_EMAIL = {
   'שמואל הכט':        'mekarvim37@achdut-crm.test',
   'ישראל מרוויס':     'mekarvim38@achdut-crm.test',
   'עזרא הללויה':      'mekarvim39@achdut-crm.test',
+  'נחום פליישמן':     'mekarvim40@achdut-crm.test',
   // === פעילים (נעים להכיר) ===
   'רפאל קליימן':      'mekarvim32@achdut-crm.test',
   'אלי לינקר':        'mekarvim33@achdut-crm.test',
