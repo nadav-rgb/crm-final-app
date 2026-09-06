@@ -480,15 +480,20 @@ export function CrmProvider({ children }) {
     // רכז/ראש-פרויקט עורכים קשר של פעיל אחר — endpoint מיוחס (admin client + התראה לבעל
     // הקשר). activist/ceo ממשיכים בדיוק כמו היום: RLS כבר מתיר (activist=שלו, ceo=הכל).
     if (currentUser?.role === 'coord' || currentUser?.role === 'head') {
-      const res = await fetch('/api/interactions/manage', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
-        body: JSON.stringify({ action: 'update', interactionId, fields: row }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) { console.error('Failed to update interaction (managed)', body.error); return { error: body.error || 'update failed' }; }
-      setInteractions(prev => prev.map(i => i.id === interactionId ? { ...i, ...row } : i));
-      return { error: null };
+      try {
+        const res = await fetch('/api/interactions/manage', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+          body: JSON.stringify({ action: 'update', interactionId, fields: row }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) { console.error('Failed to update interaction (managed)', body.error); return { error: body.error || 'update failed' }; }
+        setInteractions(prev => prev.map(i => i.id === interactionId ? { ...i, ...row } : i));
+        return { error: null };
+      } catch (err) {
+        console.error('Network error during interaction update', err);
+        return { error: 'Network error: ' + (err?.message || 'unknown') };
+      }
     }
 
     const supabase = getSupabaseClient();
@@ -500,15 +505,20 @@ export function CrmProvider({ children }) {
 
   async function deleteInteraction(interactionId) {
     if (currentUser?.role === 'coord' || currentUser?.role === 'head') {
-      const res = await fetch('/api/interactions/manage', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
-        body: JSON.stringify({ action: 'delete', interactionId }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) { console.error('Failed to delete interaction (managed)', body.error); return { error: body.error || 'delete failed' }; }
-      setInteractions(prev => prev.filter(i => i.id !== interactionId));
-      return { error: null };
+      try {
+        const res = await fetch('/api/interactions/manage', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+          body: JSON.stringify({ action: 'delete', interactionId }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) { console.error('Failed to delete interaction (managed)', body.error); return { error: body.error || 'delete failed' }; }
+        setInteractions(prev => prev.filter(i => i.id !== interactionId));
+        return { error: null };
+      } catch (err) {
+        console.error('Network error during interaction delete', err);
+        return { error: 'Network error: ' + (err?.message || 'unknown') };
+      }
     }
 
     const supabase = getSupabaseClient();
