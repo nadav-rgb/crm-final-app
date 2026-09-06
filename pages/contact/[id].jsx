@@ -30,6 +30,9 @@ export default function ContactDetail() {
   const [interForm, setInterForm]           = useState(null);
   const [confirmDelInterId, setConfirmDelInterId] = useState(null);
   const [highlightInterId, setHighlightInterId] = useState(null); // הדגשה זמנית לקשר שנפתח מ"הפעילויות שלי"
+  // שגיאת עריכה/מחיקת קשר שנכשלה בפועל (403 קשר לא בפרויקט שלך / 500 / רשת — coord/head
+  // דרך pages/api/interactions/manage.js). ר' saveEditInteraction/doDeleteInteraction למטה.
+  const [toast, setToast] = useState(null);
 
   // גלילה + הדגשה זמנית לקשר ספציפי — הגעה מ-/my-activities עם ?openInteraction=<id>.
   // מנקה את הפרמטר מיד אחרי הגלילה — אחרת כל עדכון interactions ברקע (למשל סיכום AI שמתעדכן
@@ -146,10 +149,11 @@ export default function ContactDetail() {
 
   async function saveEditInteraction() {
     setBusy(true);
+    setToast(null);
     const durNum = Number(interForm.duration_minutes);
     const newDuration = interForm.duration_minutes !== '' && Number.isFinite(durNum) ? durNum : null;
     const original = interactions.find(x => x.id === editingInterId);
-    await updateInteraction(editingInterId, {
+    const { error } = await updateInteraction(editingInterId, {
       type:              interForm.type,
       quality:           interForm.quality,
       duration_minutes:  newDuration,
@@ -158,6 +162,14 @@ export default function ContactDetail() {
       description:       interForm.description?.trim() || '',
       notes:             interForm.notes?.trim() || '',
     });
+    setBusy(false);
+    // רכז/ראש-פרויקט: הקריאה יכולה היום להיכשל באמת (403 קשר לא בפרויקט שלך / 500 / רשת —
+    // ר' pages/api/interactions/manage.js), לא רק להיחסם בשקט ע"י RLS כמו קודם. בלי הבדיקה
+    // הזו המודאל היה נסגר וההתראה למטה הייתה נורית גם כשהעדכון בפועל לא נחת ב-DB.
+    if (error) {
+      setToast({ text: `העריכה לא נשמרה: ${error.message || error || 'שגיאה לא צפויה'}. נסה שוב.` });
+      return;
+    }
     // שדה שמשפיע על גובה התשלום השתנה — הדשבורד כבר מחשב חי; רק מודיעים לפעיל
     const paymentFieldChanged = original && (
       original.type !== interForm.type ||
@@ -167,14 +179,19 @@ export default function ContactDetail() {
     if (paymentFieldChanged && PAID_PROJECT_IDS.includes(contact.project_id) && currentUser) {
       createInteractionEditedNotification({ activist: currentUser, contact });
     }
-    setBusy(false);
     setEditingInterId(null);
   }
 
   async function doDeleteInteraction() {
     setBusy(true);
-    await deleteInteraction(confirmDelInterId);
+    setToast(null);
+    const { error } = await deleteInteraction(confirmDelInterId);
     setBusy(false);
+    // ראה הערה מקבילה ב-saveEditInteraction — אותו סיכון בדיוק, אותה בדיקה.
+    if (error) {
+      setToast({ text: `המחיקה לא בוצעה: ${error.message || error || 'שגיאה לא צפויה'}. נסה שוב.` });
+      return;
+    }
     setConfirmDelInterId(null);
   }
 
@@ -216,6 +233,18 @@ export default function ContactDetail() {
       backLabel={backLabel}
       actions={showSensitive ? <StatusBadge status={enriched.status} /> : null}
     >
+      {/* שגיאת עריכה/מחיקת קשר — אותו דפוס "toast" בדיוק כמו pages/contact/add-interaction/[id].jsx
+          (TOAST_STYLES.block), כדי שכשל אמיתי (403/500/רשת) יוצג ולא רק ייבלע בשקט */}
+      {toast && (
+        <div style={{ position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 9999,
+                      background: '#fff0f0', border: '1px solid #e0a0a0', color: '#c0392b',
+                      borderRadius: 14, padding: '12px 18px', maxWidth: 440, width: 'calc(100% - 32px)',
+                      boxShadow: '0 8px 30px rgba(0,0,0,0.15)', display: 'flex', gap: 12, alignItems: 'center',
+                      fontSize: 14, fontWeight: 600, fontFamily: 'inherit' }}>
+          <span style={{ flex: 1, lineHeight: 1.5, whiteSpace: 'pre-line' }}>{toast.text}</span>
+          <button onClick={() => setToast(null)} style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', color: 'inherit', lineHeight: 1 }}>✕</button>
+        </div>
+      )}
       <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: 20 }}>
 
         {/* עמודה שמאל — פרטים */}
